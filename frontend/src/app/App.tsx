@@ -13,7 +13,7 @@ import { useCurrentRound } from '../lib/queries'
 import { Realtime } from '../lib/realtime'
 
 // Monaco and Blockly are large, so the workspace loads only once a team has its nation
-const Workspace = lazy(() => import('../workspace/workspace/Workspace').then((m) => ({ default: m.Workspace })))
+const Workspace = lazy(() => import('../workspace/editor/Workspace').then((m) => ({ default: m.Workspace })))
 
 const CLOCK_SYNC_MS = 30_000
 

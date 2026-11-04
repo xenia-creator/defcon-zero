@@ -1,7 +1,7 @@
 {
  "openapi": "3.1.0",
  "info": {
-  "title": "Iron Curtain Command Server",
+  "title": "DEFCON Zero Command Server",
   "version": "1.0.0"
  },
  "paths": {
