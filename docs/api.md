@@ -127,6 +127,7 @@ Response `200`:
   "opens_at": "2026-11-12T10:00:00Z",
   "closes_at": "2026-11-12T10:45:00Z",
   "config": {
+    "moves": ["C", "D"],
     "max_modules": 3,
     "block_limit": 40,
     "rounds_per_match": 200,
@@ -136,8 +137,12 @@ Response `200`:
 }
 ```
 
-- **[NEW] `game`:** one of `prisoners_dilemma`, `blotto`, `trust`. **The frontend must choose the game, editor and docs from `game`, never from `number`.** `number` is for display only (DEFCON level).
-- **[NEW] `config`:** per-round rules. The editor reads its limits from here instead of hardcoding them. Keys may differ per game; `max_modules` and `block_limit` are always present. Game-specific keys (for example `battlefields` and `troops` for Blotto) will be added once the engine signatures are confirmed.
+- **[NEW] `game`:** one of `prisoners_dilemma`, `theatre_of_war`, `foreign_aid`. **The frontend must choose the game, editor and docs from `game`, never from `number`.** `number` is for display only (DEFCON level).
+- **[NEW] `config`:** per-round rules. The editor reads its limits and move blocks from here instead of hardcoding them.
+  - `moves`: the valid moves for this game (see section 8).
+  - `max_modules`: maximum Blockly modules per submission.
+  - `block_limit`: maximum blocks per submission.
+  - `rounds_per_match`, `repetitions`: match settings, shown for information.
 - `status`: `waiting` → `open` → `running` → `review` → `published`.
 
 ### `GET /rounds`
@@ -189,8 +194,9 @@ All return the updated Round object. Invalid transitions return `409 INVALID_ROU
 
 - **[NEW] `blocks`:** the Blockly workspace JSON, stored alongside the generated Python so old versions can be reopened in the editor. Python cannot be converted back into blocks, so both are stored. `modules` holds at most `config.max_modules` items (3), validated on the server.
 - `status`: `pending` → `running` → `accepted` or `rejected`.
-- `check.error`: set when `rejected` (syntax error, timeout, invalid return value).
+- `check.error`: set when `rejected` (syntax error, timeout, invalid move).
 - `check.test_results`: results of test matches against sample bots. This replaces separate practice routes for now.
+- **[NEW]** `check.test_results[].opponent` is the engine identifier of the sample bot, for example `tit_for_tat`, `grudger_aid`, `fortress`.
 - Submissions are **never overwritten**; every submit creates a new version.
 - **The latest `accepted` submission created before `closes_at` is the one that plays.**
 
@@ -288,15 +294,19 @@ There is no fair-play report route. Reports go to organisers directly, and organ
 
 ## 8. Bot strategy signatures **[NEW, PENDING CONFIRMATION]**
 
-> Owned by the engine (Shashwat). The engine is the source of truth: these signatures will be updated to match whatever the engine calls. **Do not build editor templates for Blotto or Trust until these are confirmed.**
+All games use the same signature. Only the allowed moves differ, and they are listed in `config.moves` for each round.
 
-| Game | Signature | Returns | Status |
-|---|---|---|---|
-| Prisoner's Dilemma | `strategy(my_history, opp_history)` | `"C"` or `"D"` | Matches current engine, to be confirmed |
-| Theatre of War (Blotto) | TBC | TBC | Pending Shashwat |
-| Foreign Aid (Trust) | TBC | TBC | Pending Shashwat |
+    strategy(my_history, opp_history) -> move
 
-`my_history` and `opp_history` are lists of previous moves, oldest first, empty on the first turn.
+| Game | `game` key | Moves |
+|---|---|---|
+| Prisoner's Dilemma | `prisoners_dilemma` | `"C"`, `"D"` |
+| Theatre of War | `theatre_of_war` | `"ATTACK"`, `"DEFEND"`, `"EXPAND"` |
+| Foreign Aid | `foreign_aid` | `"AID"`, `"WITHHOLD"` |
+
+`my_history` and `opp_history` are lists of previous moves, oldest first, empty on the first turn. Returning anything not in `config.moves` is an invalid move.
+
+Move strings and the shared signature are pending confirmation from Shashwat.
 
 ---
 
