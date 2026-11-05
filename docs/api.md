@@ -292,21 +292,29 @@ There is no fair-play report route. Reports go to organisers directly, and organ
 
 ---
 
-## 8. Bot strategy signatures **[NEW, PENDING CONFIRMATION]**
+## 8. Bot strategy signatures **[NEW]**
 
 All games use the same signature. Only the allowed moves differ, and they are listed in `config.moves` for each round.
 
     strategy(my_history, opp_history) -> move
 
-| Game | `game` key | Moves |
-|---|---|---|
-| Prisoner's Dilemma | `prisoners_dilemma` | `"C"`, `"D"` |
-| Theatre of War | `theatre_of_war` | `"ATTACK"`, `"DEFEND"`, `"EXPAND"` |
-| Foreign Aid | `foreign_aid` | `"AID"`, `"WITHHOLD"` |
+| Game | `game` key | Moves | Status |
+|---|---|---|---|
+| Prisoner's Dilemma | `prisoners_dilemma` | `"C"`, `"D"` | Confirmed against engine |
+| Theatre of War | `theatre_of_war` | `"ATTACK"`, `"DEFEND"`, `"EXPAND"` | Pending: not in engine yet |
+| Foreign Aid | `foreign_aid` | `"AID"`, `"WITHHOLD"` | Pending: not in engine yet |
 
 `my_history` and `opp_history` are lists of previous moves, oldest first, empty on the first turn. Returning anything not in `config.moves` is an invalid move.
 
-Move strings and the shared signature are pending confirmation from Shashwat.
+Example (Prisoner's Dilemma):
+
+```python
+def strategy(my_history, opp_history):
+    # Tit for Tat: cooperate first, then copy the opponent's last move
+    return opp_history[-1] if opp_history else "C"
+```
+
+Theatre of War and Foreign Aid move strings are pending confirmation from Shashwat. **Do not build editor templates for them until they are confirmed.**
 
 ---
 
