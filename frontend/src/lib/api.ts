@@ -1,14 +1,13 @@
 /**
- * Talks to the backend described in docs/api.md. Calls go to the page's own
- * address (the Vite server passes them on), or to VITE_API_BASE if it is set.
+ * Talks to the backend described in docs/api.md, at the address in config.ts.
  */
 import type { z } from 'zod'
 import { useAuth } from './auth'
+import { API_URL } from './config'
 
 // A hung server must not leave a button stuck on "Transmitting…"
 const REQUEST_TIMEOUT_MS = 30_000
 
-const BASE = `${(import.meta.env.VITE_API_BASE ?? '').replace(/\/$/, '')}/api/v1`
 
 export class ApiError extends Error {
   constructor(
@@ -32,7 +31,7 @@ async function send(method: string, path: string, body: unknown, extra: Record<s
   const abort = new AbortController()
   const timeout = setTimeout(() => abort.abort(), REQUEST_TIMEOUT_MS)
   try {
-    return await fetch(BASE + path, { method, headers, body: body === undefined ? undefined : JSON.stringify(body), signal: abort.signal })
+    return await fetch(API_URL + path, { method, headers, body: body === undefined ? undefined : JSON.stringify(body), signal: abort.signal })
   } finally {
     clearTimeout(timeout)
   }

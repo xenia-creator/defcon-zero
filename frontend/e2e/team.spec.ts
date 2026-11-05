@@ -6,7 +6,7 @@
 import { expect, test as base, type Page } from '@playwright/test'
 import { execFileSync } from 'node:child_process'
 
-const mock = (page: Page, path: string, data: unknown = {}) => page.request.post(`http://localhost:8001/__mock/${path}`, { data })
+const mock = (page: Page, path: string, data: unknown = {}) => page.request.post(`http://localhost:8012/__mock/${path}`, { data })
 
 const test = base.extend<{ crashes: string[] }>({
   crashes: [
@@ -111,7 +111,7 @@ test.describe('login', () => {
     await page.getByRole('button', { name: 'Enter' }).click()
     await expect(page.getByRole('alert')).toHaveText('Wrong username or password.')
 
-    await mock(page, 'fail', { '/api/v1/auth/login': 502 })
+    await mock(page, 'fail', { '/auth/login': 502 })
     await page.getByRole('button', { name: 'Enter' }).click()
     await expect(page.getByRole('alert')).toContainText('Could not reach the server')
     await mock(page, 'fail', {})
@@ -208,7 +208,7 @@ test.describe('claiming a country', () => {
   })
 
   test('a failed country list offers a retry', async ({ page }) => {
-    await mock(page, 'fail', { '/api/v1/territories': 500 })
+    await mock(page, 'fail', { '/territories': 500 })
     await login(page)
     await expect(page.getByRole('button', { name: 'Retry' })).toBeVisible()
     await mock(page, 'fail', {})
@@ -252,10 +252,10 @@ test.describe('submitting', () => {
     await page.keyboard.press('ControlOrMeta+End')
     await page.keyboard.type('# keep me')
     await expect(page.getByText('Draft saved in this browser.')).toBeVisible()
-    await page.route('**/api/v1/submissions', (r) => r.abort())
+    await page.route('**/submissions', (r) => r.abort())
     await submitButton(page).click()
     await expect(page.getByText('Could not reach the server. Your draft is saved')).toBeVisible({ timeout: 15_000 })
-    await page.unroute('**/api/v1/submissions')
+    await page.unroute('**/submissions')
     await page.reload()
     await expect(page.locator('.monaco-editor').first()).toContainText('keep me')
   })
@@ -266,7 +266,7 @@ test.describe('submitting', () => {
     await page.keyboard.press('ControlOrMeta+End')
     await page.keyboard.type('# typed before the crash')
     await expect(page.getByText('Draft saved in this browser.')).toBeVisible()
-    await page.route('**/api/v1/**', (r) => r.fulfill({ status: 502, contentType: 'text/html', body: '<html>Bad gateway</html>' }))
+    await page.route('http://lab.test:8012/**', (r) => r.fulfill({ status: 502, contentType: 'text/html', body: '<html>Bad gateway</html>' }))
     await page.reload()
     await expect(page.locator('.monaco-editor').first()).toContainText('typed before the crash', { timeout: 20_000 })
     await expect(page.getByLabel('Username')).toHaveCount(0)
@@ -274,7 +274,7 @@ test.describe('submitting', () => {
 
   test('a window that closed unnoticed gets the server’s answer, then the screen catches up', async ({ page }) => {
     await readyWorkspace(page)
-    await page.route('**/api/v1/submissions', (r) =>
+    await page.route('**/submissions', (r) =>
       r.request().method() === 'POST'
         ? r.fulfill({ status: 409, contentType: 'application/json', body: JSON.stringify({ error: { code: 'ROUND_NOT_OPEN', message: 'The submission window is closed' } }) })
         : r.continue(),
@@ -306,7 +306,7 @@ test.describe('submitting', () => {
     await readyWorkspace(page)
     const keys: string[] = []
     let first = true
-    await page.route('**/api/v1/submissions', (r) => {
+    await page.route('**/submissions', (r) => {
       if (r.request().method() !== 'POST') return r.continue()
       keys.push(r.request().headers()['idempotency-key'])
       if (first) {
@@ -326,18 +326,18 @@ test.describe('submitting', () => {
     expect(keys[2]).not.toBe(keys[0])
   })
 
-  test('code without blocks sends no layout', async ({ page }) => {
+  test('code without blocks still sends an empty block list, as the backend requires', async ({ page }) => {
     await readyWorkspace(page)
     await submitButton(page).click()
     await expect(page.getByTestId('latest-result')).toContainText('vs Tit for tat')
     const [stored] = await (await mock(page, 'submissions')).json()
-    expect(stored.blocks).toBeNull()
+    expect(stored.blocks).toEqual({ modules: [] })
     expect(stored.code).toContain('def strategy')
   })
 
   test('the server refusing the code shows its message', async ({ page }) => {
     await readyWorkspace(page)
-    await page.route('**/api/v1/submissions', (r) =>
+    await page.route('**/submissions', (r) =>
       r.request().method() === 'POST'
         ? r.fulfill({ status: 422, contentType: 'application/json', body: JSON.stringify({ error: { code: 'INVALID_CODE', message: "Line 3: importing 'os' is not allowed." } }) })
         : r.continue(),
@@ -368,13 +368,13 @@ test.describe('submitting', () => {
     await page.keyboard.type('#laterwork')
     await expect(editor).toContainText('#laterwork')
 
-    await page.route('**/api/v1/submissions/*', (r) => r.abort())
+    await page.route('**/submissions/*', (r) => r.abort())
     await page.getByRole('button', { name: 'Load', exact: true }).click()
     await page.getByRole('dialog').getByRole('button', { name: 'Load version' }).click()
     await expect(page.getByText('Could not load version 1')).toBeVisible()
     await expect(editor).toContainText('#laterwork')
 
-    await page.unroute('**/api/v1/submissions/*')
+    await page.unroute('**/submissions/*')
     await page.getByRole('button', { name: 'Load', exact: true }).click()
     await page.getByRole('dialog').getByRole('button', { name: 'Load version' }).click()
     await expect(editor).not.toContainText('#laterwork')
@@ -478,7 +478,7 @@ test.describe('the timer', () => {
   test('shows the connection dropping and coming back', async ({ page }) => {
     await readyWorkspace(page)
     await expect(page.getByText('connected', { exact: true })).toBeVisible()
-    await mock(page, 'fail', { '/api/v1/rounds/current': 502 })
+    await mock(page, 'fail', { '/rounds/current': 502 })
     await expect(page.getByText('reconnecting')).toBeVisible()
     await expect(page.getByTestId('timer')).toBeVisible()
     await expect(submitButton(page)).toBeEnabled()
@@ -490,7 +490,7 @@ test.describe('the timer', () => {
 test('a round that failed to load recovers on its own', async ({ page }) => {
   await login(page)
   await claim(page)
-  await mock(page, 'fail', { '/api/v1/rounds/current': 500 })
+  await mock(page, 'fail', { '/rounds/current': 500 })
   await page.reload()
   await expect(page.getByRole('button', { name: 'Submissions closed' })).toBeVisible()
   await mock(page, 'fail', {})
@@ -500,7 +500,7 @@ test('a round that failed to load recovers on its own', async ({ page }) => {
 test('a server error while restoring still gives the team an editor', async ({ page }) => {
   await login(page)
   await claim(page)
-  await mock(page, 'fail', { '/api/v1/submissions': 500 })
+  await mock(page, 'fail', { '/submissions': 500 })
   await page.reload()
   await expect(page.locator('.monaco-editor').first()).toContainText('def strategy', { timeout: 20_000 })
 })
@@ -581,7 +581,7 @@ test.describe('the three rounds', () => {
 test('routes outside the contract are never called, and nobody is told they are being reported', async ({ page }) => {
   const called: string[] = []
   page.on('request', (r) => {
-    if (/\/api\/v1\/(practice|fairplay|ws|clock|config)\b/.test(r.url())) called.push(r.url())
+    if (/:8012\/(practice|fairplay|ws|clock|config|api)\b/.test(r.url())) called.push(r.url())
   })
   await readyWorkspace(page)
   await page.evaluate(() => window.dispatchEvent(new Event('blur')))
@@ -929,7 +929,7 @@ test.describe('layout and wording', () => {
 
   test('a gateway error at login reads plainly', async ({ page }) => {
     await page.goto('/')
-    await mock(page, 'fail', { '/api/v1/auth/login': 502 })
+    await mock(page, 'fail', { '/auth/login': 502 })
     await page.getByLabel('Username').fill('team1')
     await page.getByLabel('Password').fill('demo')
     await page.getByRole('button', { name: 'Enter' }).click()

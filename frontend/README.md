@@ -37,7 +37,7 @@ You need Node 20 or later, and Google Chrome for the browser tests.
 ```bash
 cd frontend
 npm install
-npm run mock    # a stand-in for the backend, on port 8001
+npm run mock    # a stand-in for the backend, on port 8002
 npm run dev     # in a second terminal, then open http://localhost:5173
 ```
 
@@ -56,7 +56,9 @@ npm run test:e2e    # real browser: tries to break the screens
 
 The screens follow `docs/api.md` v2, and `src/lib/contract.ts` checks every server answer against it. If the contract changes, change that file and `mock/server.mjs`.
 
-The backend is expected on port 8001. To point the dev server somewhere else: `API_TARGET=http://192.168.1.10:8001 npm run dev`.
+The backend address is one value, in `src/lib/config.ts`. By default it is port 8002 on the machine serving the page. To use another: `VITE_API_URL=http://192.168.1.10:8002 npm run dev`.
+
+To use Sumedh's backend instead of the mock, run it on port 8002 (see `backend/README.md`) and start only `npm run dev`. The mock uses the same port, so run one or the other.
 
 ## How blocks work
 

@@ -9,7 +9,7 @@
 import { randomUUID } from 'node:crypto'
 import { createServer } from 'node:http'
 
-const PORT = Number(process.env.MOCK_PORT ?? 8001)
+const PORT = Number(process.env.MOCK_PORT ?? 8002)
 const TERRITORIES = ['AR', 'AU', 'BR', 'CA', 'CL', 'DK', 'EG', 'FI', 'FR', 'DE', 'IN', 'JP', 'KE', 'MX', 'NO', 'PE', 'ES', 'SE', 'TR', 'VN']
 const BOTS = {
   prisoners_dilemma: ['tit_for_tat', 'always_defect', 'always_cooperate'],
@@ -58,7 +58,8 @@ const me = (username, { team }) => ({ username, role: 'team', ...team })
 function submit(team, body, key) {
   if (team.status === 'disqualified') return error(403, 'TEAM_DISQUALIFIED', 'Your team has been disqualified.')
   if (db.round.status !== 'open') return error(409, 'ROUND_NOT_OPEN', 'The round is not open.')
-  if ((body.blocks?.modules?.length ?? 0) > db.round.config.max_modules) return error(400, 'VALIDATION_ERROR', 'Too many modules.')
+  if (!Array.isArray(body.blocks?.modules)) return error(400, 'VALIDATION_ERROR', 'body.blocks: Field required')
+  if (body.blocks.modules.length > db.round.config.max_modules) return error(400, 'VALIDATION_ERROR', 'Too many modules.')
   const again = key && db.submissions.find((s) => s.key === key)
   if (again) return { status: 200, body: detail(again) }
   const mine = db.submissions.filter((s) => s.teamId === team.id && s.roundId === body.round_id)
@@ -121,7 +122,7 @@ function control(path, body) {
 }
 
 function route(req, path, body, query) {
-  if (path === '/api/v1/auth/login') {
+  if (path === '/auth/login') {
     const user = db.users[body.username]
     if (!user || body.password !== 'demo') return error(401, 'INVALID_CREDENTIALS', 'Wrong username or password.')
     const token = randomUUID()
@@ -134,20 +135,20 @@ function route(req, path, body, query) {
   const user = db.users[username]
   const { team } = user
   const key = `${req.method} ${path}`
-  if (key === 'GET /api/v1/rounds/current') return { status: 200, body: roundOut(db.round) }
-  if (key === 'GET /api/v1/territories') return { status: 200, body: { territories: db.territories } }
+  if (key === 'GET /rounds/current') return { status: 200, body: roundOut(db.round) }
+  if (key === 'GET /territories') return { status: 200, body: { territories: db.territories } }
   if (!team) return error(403, 'FORBIDDEN', 'Only for teams.')
   switch (key) {
-    case 'GET /api/v1/me': return { status: 200, body: me(username, user) }
-    case 'POST /api/v1/teams/claim': return claim(username, team, body)
-    case 'GET /api/v1/submissions': {
+    case 'GET /me': return { status: 200, body: me(username, user) }
+    case 'POST /teams/claim': return claim(username, team, body)
+    case 'GET /submissions': {
       const roundId = Number(query.get('round_id'))
       const mine = db.submissions.filter((s) => s.teamId === team.id && (!roundId || s.roundId === roundId))
       return { status: 200, body: { submissions: mine.map(summary), server_time: iso(Date.now()) } }
     }
-    case 'POST /api/v1/submissions': return submit(team, body, req.headers['idempotency-key'])
+    case 'POST /submissions': return submit(team, body, req.headers['idempotency-key'])
   }
-  const found = path.match(/^\/api\/v1\/submissions\/(\d+)$/)
+  const found = path.match(/^\/submissions\/(\d+)$/)
   if (found) {
     const submission = db.submissions.find((s) => s.id === Number(found[1]) && s.teamId === team.id)
     return submission ? { status: 200, body: detail(submission) } : error(404, 'NOT_FOUND', 'Submission not found.')
@@ -166,6 +167,14 @@ const server = createServer((req, res) => {
       body = raw ? JSON.parse(raw) : {}
     } catch {
       // answered below as an empty body
+    }
+    // The page and the backend are on different ports, so the browser needs these, as the real backend sends
+    res.setHeader('Access-Control-Allow-Origin', '*')
+    res.setHeader('Access-Control-Allow-Methods', '*')
+    res.setHeader('Access-Control-Allow-Headers', '*')
+    if (req.method === 'OPTIONS') {
+      res.writeHead(200)
+      return res.end()
     }
     const send = (status, value) => {
       res.writeHead(status, { 'Content-Type': 'application/json' })

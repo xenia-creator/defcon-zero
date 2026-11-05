@@ -13,7 +13,8 @@ export default defineConfig({
     viewport: { width: 1440, height: 900 },
   },
   webServer: [
-    { command: 'node mock/server.mjs', port: 8001, reuseExistingServer: false },
-    { command: 'npm run build && npx vite preview --port 4173', port: 4173, reuseExistingServer: false, timeout: 120_000 },
+    // A port of its own, so the tests never touch a real backend running on 8002
+    { command: 'node mock/server.mjs', port: 8012, reuseExistingServer: false, env: { MOCK_PORT: '8012' } },
+    { command: 'npm run build && npx vite preview --port 4173', port: 4173, reuseExistingServer: false, timeout: 120_000, env: { VITE_API_URL: 'http://lab.test:8012' } },
   ],
 })

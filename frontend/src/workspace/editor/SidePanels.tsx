@@ -5,11 +5,11 @@ import { useSubmission, useSubmissions } from '../../lib/queries'
 import { assemble, generateModules, handCodeOf } from '../blocks/generate'
 import { type Agent, parseAgent } from './drafts'
 
-/** What POST /submissions takes: the code as one file, and the block layouts if there are any. */
+/** What POST /submissions takes: the code as one file, and the block layouts. The backend needs blocks even when there are none. */
 export const toSubmission = (agent: Agent, moves: string[], roundId: number) => ({
   round_id: roundId,
   code: assemble(agent.hand_code, generateModules(agent.modules, moves)),
-  blocks: agent.modules.length ? { modules: agent.modules } : null,
+  blocks: { modules: agent.modules },
 })
 
 /** A stored version back in the editor: the team's own code and its blocks. */
