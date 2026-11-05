@@ -24,7 +24,7 @@ Private repo for the core team. Do not share outside the team.
 | DEFCON 2 | Theatre of War | 15 to 8 |
 | DEFCON 1 | Foreign Aid | 8 to 2, winner and runner up |
 
-Full rules: `engine/rules.md`
+Full rules: `docs/rules.md`
 
 ## Rules for working in this repo
 

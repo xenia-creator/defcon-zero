@@ -1,12 +1,12 @@
 # DEFCON ZERO – Game Rules
 
-**Status: draft v0.2 – not approved.**
+**Status: draft v0.3 – not approved.** The engine implements this draft, including the proposed Round 2 and Round 3 numbers. Section 11 is still open.
 
 Tags used in this document:
 
-- **[IMPLEMENTED]** – already works in the engine code (Round 1 only).
-- **[PROPOSED]** – PROPOSED – REQUIRES TEAM APPROVAL. A sensible default I chose.
-- **[TBD]** – TBD – TEAM DECISION REQUIRED. The team must decide.
+- **[IMPLEMENTED]** – already works in the engine code (Round 1 only, unless a later section says the engine now follows a proposed rule).
+- **[PROPOSED]** – REQUIRES TEAM APPROVAL. A sensible default chosen for the draft.
+- **[TBD]** – TEAM DECISION REQUIRED. The team must decide.
 
 Every number in Rounds 2 and 3 is **[PROPOSED]**. The event report that should define these games was not available.
 
@@ -235,10 +235,10 @@ def strategy(my_history, opp_history):
 
 ### Rounds 2 and 3 [PROPOSED]
 
-No Rounds 2 or 3 bots have been written yet, so their inputs are open. Proposal:
+The engine now uses the same two histories as Round 1. A `state` object was not added. Whether bots should also see scores or resources is still **[TBD]**.
 
 - Bots receive the same two histories, now holding that round's actions (`ATTACK`/`DEFEND`/`EXPAND` or `AID`/`WITHHOLD`).
-- A single `state` object carrying extra fields is possible, but nothing like it exists in the code today. It would need to be built. Fields would be: current turn, both histories, valid actions, scores (Round 2), and each player's resources (Round 3). **[TBD]**
+- The histories store the move that was scored: after noise, and after an unaffordable `AID` becomes `WITHHOLD`.
 - Total turns are never shown, so a hidden turn count still works.
 
 ---
@@ -261,10 +261,19 @@ No Rounds 2 or 3 bots have been written yet, so their inputs are open. Proposal:
 
 ---
 
-## 10. Work needed in the engine (not done here)
+## 10. Engine status
 
-- The engine's move checks, noise rule and forfeit scoring currently cover Round 1 only. Each round needs its own action set, noise rule and forfeit credit.
-- Foreign Aid keeps resources between turns, so it needs a game that can store state.
+Implemented from this draft, still subject to the decisions in section 11:
+
+- Each round has its own action set, noise rule and forfeit credit.
+- Foreign Aid stores both players' resources and scores the match by the final amounts.
+- The built-in bots for all three rounds are registered by id.
+
+Still elsewhere:
+
+- `engine/sandbox.py` still accepts only `C` and `D`, and still pays the Round 1 forfeit itself. That file was left for the sandbox owner.
+- `DEFAULT_EVENT` is still the older four-round sample. Advancement and the real DEFCON round order are team decisions.
+- Both bots in a match still share one random stream. That is for the sandbox owner to fix.
 
 ---
 
@@ -292,5 +301,6 @@ No Rounds 2 or 3 bots have been written yet, so their inputs are open. Proposal:
 
 | Version | Date | Change |
 |---|---|---|
+| 0.3 | 2026-11-05 | Engine implements this draft. Round 2 and 3 bots use the two-history signature. History stores the scored move. |
 | 0.2 | 2026-11-05 | Shortened and simplified. DEFCON ZERO only. Rounds 2 and 3 use only their own actions. |
 | 0.1 | 2026-11-05 | First draft. |
