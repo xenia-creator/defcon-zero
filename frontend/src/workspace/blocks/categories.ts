@@ -30,6 +30,9 @@ const BLOCK_SETS: Record<string, BlockSet> = {
   },
 }
 
+/** docs/api.md has no block limits, so these are fixed here for now. */
+export const BLOCK_RULES = { max_modules: 3, max_blocks: 20, categories: ['logic', 'history', 'chance'] }
+
 const NO_BLOCKS: BlockSet = { args: 'my_history, opp_history', moves: [], categories: {} }
 
 export const blockSet = (game: string): BlockSet => BLOCK_SETS[game] ?? NO_BLOCKS

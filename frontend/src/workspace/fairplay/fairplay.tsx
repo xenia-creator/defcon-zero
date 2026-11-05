@@ -1,26 +1,22 @@
 /**
- * Fair play signals: full screen exits, tab switches, focus loss and, when the
- * server enables it, a probe that flags any route to the internet. Reports are
- * batched. They are signals for invigilators, not a control: a modified client
+ * Fair play signals: full screen exits, tab switches and focus loss, sent in
+ * batches. They are signals for invigilators, not a control: a modified client
  * could stay silent, so the network cut and the invigilators are what enforce.
+ * Off for now (see lib/features.ts), because docs/api.md has no route for them.
  */
 import { useEffect, useRef, useState } from 'react'
 import { Button } from '../../components/ui'
-import { ApiError, api, unwrap } from '../../lib/api'
+import { z } from 'zod'
+import { ApiError, request } from '../../lib/api'
 import { serverNow } from '../../lib/clock'
-import { useClientConfig } from '../../lib/queries'
 
 type Report = { kind: string; detail: string; client_ts: number }
 
 const FLUSH_MS = 5000
-const PROBE_MS = 15_000
-const PROBE_TIMEOUT_MS = 3000
 const DEDUPE_MS = 2000
 const MAX_QUEUED = 200 // also the most the server takes in one batch
 
 export function useFairplayReporting(enabled: boolean) {
-  const { data: config } = useClientConfig(enabled)
-  // Outside the effects, so nothing queued is lost when the config arrives
   const queue = useRef<Report[]>([])
   const last = useRef<Record<string, number>>({})
 
@@ -49,7 +45,7 @@ export function useFairplayReporting(enabled: boolean) {
       if (!batch.length) return
       queue.current = []
       try {
-        unwrap(await api.POST('/api/v1/fairplay/events', { body: { events: batch } }))
+        await request('POST', '/fairplay/events', z.unknown(), { events: batch })
       } catch (err) {
         // A server that refuses this batch would refuse it forever; anything else can be retried
         if (!(err instanceof ApiError && err.status >= 400 && err.status < 500)) {
@@ -65,24 +61,6 @@ export function useFairplayReporting(enabled: boolean) {
       clearInterval(flush)
     }
   }, [enabled, report])
-
-  const probeUrl = config?.probe_internet ? config.probe_url : null
-  useEffect(() => {
-    if (!enabled || !probeUrl) return
-    const probe = setInterval(async () => {
-      const abort = new AbortController()
-      const timeout = setTimeout(() => abort.abort(), PROBE_TIMEOUT_MS)
-      try {
-        await fetch(`${probeUrl}?t=${Date.now()}`, { mode: 'no-cors', cache: 'no-store', signal: abort.signal })
-        report('internet_reachable', probeUrl)
-      } catch {
-        // Unreachable is what we want
-      } finally {
-        clearTimeout(timeout)
-      }
-    }, PROBE_MS)
-    return () => clearInterval(probe)
-  }, [enabled, probeUrl, report])
 }
 
 export function FullscreenBanner() {

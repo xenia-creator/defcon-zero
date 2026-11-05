@@ -3,45 +3,45 @@ import { useQueryClient } from '@tanstack/react-query'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ErrorBoundary } from '../../components/ErrorBoundary'
 import { Button, Empty, Guard, Panel, WindowTimer, inputClass, useConfirm } from '../../components/ui'
-import { ApiError, api, errorMessage, unwrap, type Schemas } from '../../lib/api'
+import { ApiError, request } from '../../lib/api'
 import { newId } from '../../lib/ids'
 import { serverNow, windowRemaining } from '../../lib/clock'
+import { Submitted, type Round, type Team } from '../../lib/contract'
+import { FEATURES } from '../../lib/features'
 import { useLive } from '../../lib/live'
-import { useCurrentRound, useSubmissions } from '../../lib/queries'
+import { useCurrentRound, useSubmission, useSubmissions } from '../../lib/queries'
 import { BlockEditor } from '../blocks/BlockEditor'
-import { blockSet } from '../blocks/categories'
+import { BLOCK_RULES, blockSet } from '../blocks/categories'
 import { exampleLayout, examplesFor } from '../blocks/examples'
 import { generateModules } from '../blocks/generate'
 import { countBlocks, moduleName, newModule, type Layout } from '../blocks/layout'
-import { History, LatestResult, Practice, agentFromDetail, toBody } from './SidePanels'
-import { MAX_CODE_LENGTH, loadDraft, saveDraft, type Agent } from './drafts'
-import { DEFAULT_GAME, TOTAL_ROUNDS, gameInfo } from './games'
+import { History, LatestResult, Practice, toSubmission } from './SidePanels'
+import { MAX_CODE_LENGTH, loadDraft, loadVersion, saveDraft, saveVersion, type Agent } from './drafts'
+import { DEFAULT_GAME, TOTAL_ROUNDS, gameInfo, gameKeyOf } from './games'
 import { monaco, setGameHints, setModuleNames } from './monaco'
 
 const AUTOSAVE_MS = 2000
-const VALIDATE_DEBOUNCE_MS = 600
-const VALIDATE_RETRY_MS = 5000
 const LAST_GAME = 'ic.game'
 const DEADLINE_WARNINGS = [300, 60]
 
 /** Teams heads-down in their code may not be watching the timer. */
-function useDeadlineWarnings(round: Schemas['RoundOut'] | null | undefined) {
+function useDeadlineWarnings(round: Round | null | undefined) {
   const toast = useLive((s) => s.toast)
   const before = useRef<number | null>(null)
   useEffect(() => {
     const tick = () => {
-      const left = windowRemaining(round, serverNow())
-      if (!left || left.paused) {
+      const seconds = windowRemaining(round, serverNow())
+      if (seconds === null) {
         before.current = null
         return
       }
       // Only the closest one, if organisers cut the time past both at once
-      const passed = DEADLINE_WARNINGS.filter((mark) => before.current !== null && before.current > mark && left.seconds <= mark)
+      const passed = DEADLINE_WARNINGS.filter((mark) => before.current !== null && before.current > mark && seconds <= mark)
       if (passed.length) {
         const mark = Math.min(...passed)
         toast('bad', `${mark / 60} minute${mark > 60 ? 's' : ''} left. Only submitted versions play, so submit now.`)
       }
-      before.current = left.seconds
+      before.current = seconds
     }
     tick()
     const id = setInterval(tick, 1000)
@@ -59,74 +59,12 @@ function lastGame() {
 }
 
 type Editor = Parameters<OnMount>[0]
-type Check = 'checking' | 'done' | 'unavailable'
 
-/** The server builds the agent as the team edits: errors, generated module code and the round's rules. */
-function useValidation(agent: Agent | null, editor: Editor | null, tooLong: boolean) {
-  const [result, setResult] = useState<Schemas['ValidateOut'] | null>(null)
-  const [check, setCheck] = useState<Check>('checking')
-  const [attempt, setAttempt] = useState(0)
-  useEffect(() => {
-    if (!agent || tooLong) return
-    let stale = false
-    // A retry after a failure keeps its message up, so it doesn't flicker
-    if (attempt === 0) setCheck('checking')
-    let retry: ReturnType<typeof setTimeout> | undefined
-    const id = setTimeout(async () => {
-      try {
-        const answer = unwrap(await api.POST('/api/v1/practice/validate', { body: toBody(agent) }))
-        // A slow answer about older code must not replace a newer one
-        if (stale) return
-        setResult(answer)
-        setCheck('done')
-      } catch {
-        // The submission is checked on the server anyway, so this never blocks submitting
-        if (stale) return
-        setCheck('unavailable')
-        retry = setTimeout(() => setAttempt((n) => n + 1), VALIDATE_RETRY_MS)
-      }
-    }, VALIDATE_DEBOUNCE_MS)
-    return () => {
-      stale = true
-      clearTimeout(id)
-      clearTimeout(retry)
-    }
-  }, [agent, tooLong, attempt])
-
-  // New code starts a fresh check rather than continuing the retries for the old code
-  useEffect(() => setAttempt(0), [agent])
-
-  const errors = useMemo(() => (check === 'unavailable' ? [] : (result?.errors ?? [])), [check, result])
-  useEffect(() => {
-    const model = editor?.getModel()
-    if (!model) return
-    monaco.editor.setModelMarkers(
-      model,
-      'sandbox',
-      errors
-        .filter((e) => e.module === null)
-        .map((e) => {
-          const line = Math.min(Math.max(e.line ?? 1, 1), model.getLineCount())
-          return {
-            severity: monaco.MarkerSeverity.Error,
-            message: e.message,
-            startLineNumber: line,
-            endLineNumber: line,
-            startColumn: 1,
-            endColumn: model.getLineMaxColumn(line),
-          }
-        }),
-    )
-  }, [errors, editor])
-  return { result, errors, check }
-}
-
-/** Submit with an idempotency key, retrying network and gateway failures with the same key so nothing is stored twice. */
-async function submitAgent(agent: Agent) {
-  const key = newId()
+/** Retries network and gateway failures, so a blip at the deadline doesn't lose a submission. Trying twice can at worst store one extra version. */
+async function submitAgent(agent: Agent, game: string) {
   for (let attempt = 0; ; attempt++) {
     try {
-      return unwrap(await api.POST('/api/v1/submissions', { body: toBody(agent), headers: { 'Idempotency-Key': key } }))
+      return await request('POST', '/submissions', Submitted, toSubmission(agent, game))
     } catch (err) {
       if ((err instanceof ApiError && err.status < 500) || attempt >= 2) throw err
       await new Promise((r) => setTimeout(r, 500 * (attempt + 1)))
@@ -136,8 +74,22 @@ async function submitAgent(agent: Agent) {
 
 function submitFailure(err: unknown): string {
   if (!(err instanceof ApiError) || err.status >= 500) return 'Could not reach the server. Your draft is saved here, so try again.'
-  const first = Array.isArray(err.details.errors) ? (err.details.errors[0] as { message?: unknown } | undefined) : undefined
-  return typeof first?.message === 'string' ? `${err.message}: ${first.message}` : err.message
+  return err.message
+}
+
+/** The server reports errors as "Line 3: ...". Where it names a line, mark it in the editor. */
+function useErrorMarkers(editor: Editor | null, errors: string[]) {
+  useEffect(() => {
+    const model = editor?.getModel()
+    if (!model) return
+    const markers = errors.flatMap((message) => {
+      const found = message.match(/^Line (\d+):/)
+      const line = found ? Number(found[1]) : 0
+      if (line < 1 || line > model.getLineCount()) return []
+      return [{ severity: monaco.MarkerSeverity.Error, message, startLineNumber: line, endLineNumber: line, startColumn: 1, endColumn: model.getLineMaxColumn(line) }]
+    })
+    monaco.editor.setModelMarkers(model, 'server', markers)
+  }, [editor, errors])
 }
 
 /** If Monaco itself fails, a plain text box keeps the team able to work and submit. */
@@ -182,10 +134,10 @@ function CodeEditor({ value, onChange, onMount }: { value: string; onChange: (co
 type Tab = 'code' | number
 
 /** Each game gets a fresh workspace. Leaving one saves its draft, so nothing is lost when the round moves on. */
-export function Workspace({ team }: { team: Schemas['TeamOut'] }) {
+export function Workspace({ team }: { team: Team }) {
   const { data: round } = useCurrentRound()
   const toast = useLive((s) => s.toast)
-  const key = round?.game.key
+  const key = round ? gameKeyOf(round) : undefined
   const shown = useRef(key)
   useEffect(() => {
     if (!key) return
@@ -194,24 +146,27 @@ export function Workspace({ team }: { team: Schemas['TeamOut'] }) {
     } catch {
       // only a convenience for reloading while offline
     }
-    if (shown.current && shown.current !== key) toast('info', `The round has moved on to ${round?.game.name}. Your earlier code is saved with its own round.`)
+    if (shown.current && shown.current !== key) toast('info', `The round has moved on to ${round?.name}. Your earlier code is saved with its own round.`)
     shown.current = key
-  }, [key, round?.game.name, toast])
+  }, [key, round?.name, toast])
 
   // Never wait for the round: with the server down the team still needs their draft
   const gameKey = key ?? lastGame()
   return <RoundWorkspace key={gameKey} team={team} gameKey={gameKey} />
 }
 
-function RoundWorkspace({ team, gameKey }: { team: Schemas['TeamOut']; gameKey: string }) {
+function RoundWorkspace({ team, gameKey }: { team: Team; gameKey: string }) {
   const { data: round } = useCurrentRound()
-  const { data: submissions, isError: submissionsFailed } = useSubmissions()
-  const game = gameInfo(gameKey, round?.game.name)
+  const { data: submissions } = useSubmissions()
+  const game = gameInfo(gameKey, round?.name)
   const blocks = blockSet(gameKey)
   useEffect(() => setGameHints(game, blocks.args), [game, blocks.args])
   // The list holds every round's versions. Only this round's can play this round's game
-  const opensAt = round?.opens_at
-  const thisRound = useMemo(() => (opensAt == null ? [] : (submissions ?? []).filter((s) => s.created_at >= opensAt)), [submissions, opensAt])
+  const opensAt = round?.opensAt
+  const thisRound = useMemo(() => (opensAt == null ? [] : (submissions ?? []).filter((s) => s.createdAt !== null && s.createdAt >= opensAt)), [submissions, opensAt])
+  const newest = thisRound[0]
+  const { data: latestDetail } = useSubmission(newest?.id)
+  const latestFinished = !!latestDetail && latestDetail.id === newest?.id && latestDetail.status !== 'pending'
   const toast = useLive((s) => s.toast)
   const queries = useQueryClient()
   useDeadlineWarnings(round)
@@ -251,11 +206,22 @@ function RoundWorkspace({ team, gameKey }: { team: Schemas['TeamOut']; gameKey: 
   const { dialog, ask } = useConfirm()
 
   const tooLong = (agent?.hand_code.length ?? 0) > MAX_CODE_LENGTH
-  const { errors, check } = useValidation(agent, editor, tooLong)
   const generated = useMemo(() => generateModules(agent?.modules ?? [], gameKey), [agent, gameKey])
   const blockProblems = generated.reduce((n, m) => n + m.problems.length, 0)
 
-  const rules = game.blocks && round ? round.block_rules : { max_modules: 0, max_blocks: 1, categories: [] }
+  const rules = game.blocks ? BLOCK_RULES : { max_modules: 0, max_blocks: 1, categories: [] }
+  const noStrategy = agent !== null && !/^\s*def\s+strategy\s*\(/m.test(agent.hand_code)
+  useErrorMarkers(editor, useMemo(() => (latestDetail?.status === 'rejected' ? latestDetail.errors : []), [latestDetail]))
+
+  // The server's result arrives by polling, so say when it does
+  const waitingOn = useRef<number | null>(null)
+  useEffect(() => {
+    if (newest?.status === 'pending') waitingOn.current = newest.id
+    if (latestFinished && waitingOn.current === latestDetail.id) {
+      waitingOn.current = null
+      toast(latestDetail.status === 'accepted' ? 'good' : 'bad', `Version ${latestDetail.version} ${latestDetail.status}`)
+    }
+  }, [newest, latestDetail, latestFinished, toast])
   const names = useMemo(() => agent?.modules.map(moduleName) ?? [], [agent])
   useEffect(() => setModuleNames(names), [names])
 
@@ -270,27 +236,15 @@ function RoundWorkspace({ team, gameKey }: { team: Schemas['TeamOut']; gameKey: 
     return next
   }, [hasBlocks])
 
-  // Restore: the autosaved draft, else the latest submitted version, else the template.
-  // If the server can't be reached the team still gets an editor and can load a version later.
+  // Restore: the autosaved draft, else the template. The server doesn't send code back, so a new machine starts fresh
   useEffect(() => {
-    if (restoring.current || (submissions === undefined && !submissionsFailed)) return
+    if (restoring.current) return
     restoring.current = true
     ;(async () => {
       const draft = await loadDraft(team.id, gameKey)
-      if (draft) return void load(draft)
-      const newest = thisRound[0]
-      if (newest) {
-        try {
-          const detail = unwrap(await api.GET('/api/v1/submissions/{submission_id}', { params: { path: { submission_id: newest.id } } }))
-          const restored = agentFromDetail(detail)
-          if (restored) return void markSent(load(restored))
-        } catch {
-          toast('bad', `Could not fetch version ${newest.version}. Use Load in the version history to try again.`)
-        }
-      }
-      load({ hand_code: game.template, modules: [] })
+      load(draft ?? { hand_code: game.template, modules: [] })
     })()
-  }, [submissions, submissionsFailed, thisRound, team.id, gameKey, game.template, load, markSent, toast])
+  }, [team.id, gameKey, game.template, load])
 
   const flush = useCallback(() => {
     const current = latest.current
@@ -377,29 +331,25 @@ function RoundWorkspace({ team, gameKey }: { team: Schemas['TeamOut']; gameKey: 
     })
   }
 
-  function askToLoad(id: string, version: number) {
+  function askToLoad(id: number, version: number) {
     ask({
       title: `Load version ${version}`,
       body: 'This replaces what is in your editor now. Anything you have not submitted will be lost.',
       confirmLabel: 'Load version',
-      run: async () => {
-        try {
-          const detail = unwrap(await api.GET('/api/v1/submissions/{submission_id}', { params: { path: { submission_id: id } } }))
-          const next = agentFromDetail(detail)
-          if (!next) throw new Error('unreadable version')
-          saveDraft(team.id, gameKey, load(next))
-        } catch (err) {
-          toast('bad', errorMessage(err, `Could not load version ${version}. Try again.`))
-        }
+      run: () => {
+        const next = loadVersion(team.id, id)
+        if (next) saveDraft(team.id, gameKey, load(next))
+        else toast('bad', `This browser has no copy of version ${version}.`)
       },
     })
   }
 
   const examples = examplesFor(gameKey, rules.categories, rules.max_blocks)
   const unused = (i: number) => !agent?.hand_code.includes(`${names[i]}(`)
-  const fallen = team.eliminated_in != null
-  const paused = round?.status === 'open' && round.paused_remaining !== null
-  const canSubmit = !!round?.window_open && !fallen && !busy && agent !== null && errors.length === 0 && blockProblems === 0 && !tooLong
+  const fallen = team.status !== 'alive'
+  const windowOpen = round?.status === 'open'
+  const problems = blockProblems + (noStrategy ? 1 : 0)
+  const canSubmit = windowOpen && !fallen && !busy && agent !== null && problems === 0 && !tooLong
 
   async function submit() {
     if (agent === null || sending.current) return
@@ -407,15 +357,16 @@ function RoundWorkspace({ team, gameKey }: { team: Schemas['TeamOut']; gameKey: 
     setBusy(true)
     flush()
     try {
-      const s = await submitAgent(agent)
+      const s = await submitAgent(agent, gameKey)
       markSent(agent)
-      toast('info', `Version ${s.version} received. Testing in the sandbox…`)
+      saveVersion(team.id, s.id, agent)
+      toast('info', `Version ${s.version} received. Testing against the bots…`)
       queries.invalidateQueries({ queryKey: ['submissions'] })
     } catch (err) {
       toast('bad', submitFailure(err))
       // The window may have closed or the team fallen since the last update
       queries.invalidateQueries({ queryKey: ['round'] })
-      queries.invalidateQueries({ queryKey: ['teams'] })
+      queries.invalidateQueries({ queryKey: ['team'] })
     } finally {
       sending.current = false
       setBusy(false)
@@ -425,26 +376,22 @@ function RoundWorkspace({ team, gameKey }: { team: Schemas['TeamOut']; gameKey: 
   const accepted = thisRound.find((s) => s.status === 'accepted')
   const notSent = thisRound.length > 0 && agent !== null && JSON.stringify(agent) !== lastSent
   const activeModule = typeof tab === 'number' && agent && tab < agent.modules.length ? tab : null
-  const moduleErrors = (i: number) => errors.filter((e) => e.module === i)
-  const generalErrors = errors.filter((e) => e.module === null && e.line === null && e.kind === 'blocks')
-  const submitLabel = busy ? 'Transmitting…' : round?.window_open ? 'Submit strategy' : paused ? 'Window paused' : 'Submissions closed'
+  const submitLabel = busy ? 'Transmitting…' : windowOpen ? 'Submit strategy' : 'Submissions closed'
 
   const status = tooLong ? (
     <span className="text-alert">Code is too long</span>
-  ) : check === 'unavailable' && !blockProblems ? (
-    <span className="text-amber">Can't check right now. The server checks on submit.</span>
-  ) : errors.length + blockProblems ? (
+  ) : problems ? (
     <span className="text-alert">
-      {errors.length + blockProblems} problem{errors.length + blockProblems > 1 ? 's' : ''}
+      {problems} problem{problems > 1 ? 's' : ''}
     </span>
-  ) : check === 'checking' ? (
-    <span>Checking…</span>
   ) : agent?.modules.some((_, i) => unused(i)) ? (
     <span className="text-amber">No errors, but a module isn't used yet</span>
   ) : generated.some((m) => m.warnings.length > 0) ? (
     <span className="text-amber">No errors, but a module has gaps</span>
   ) : (
-    <span className="text-coop">Passes all checks</span>
+    <span className="text-coop" title="The server checks your code fully when you submit">
+      Ready to submit
+    </span>
   )
 
   const tabs = (
@@ -456,7 +403,7 @@ function RoundWorkspace({ team, gameKey }: { team: Schemas['TeamOut']; gameKey: 
         className={`cursor-pointer px-4 py-2 text-xs font-bold tracking-widest uppercase ${tab === 'code' ? 'bg-panel text-paper' : 'text-muted hover:text-paper'}`}
       >
         strategy.py
-        {errors.some((e) => e.module === null && e.kind === 'code') && <span className="ml-2 text-alert">●</span>}
+        {noStrategy && <span className="ml-2 text-alert">●</span>}
       </button>
       {agent?.modules.map((layout, i) => {
         const blocks = countBlocks(layout)
@@ -473,7 +420,7 @@ function RoundWorkspace({ team, gameKey }: { team: Schemas['TeamOut']; gameKey: 
             <span className={`font-normal tabular-nums ${blocks > rules.max_blocks ? 'text-alert' : 'text-muted'}`}>
               {blocks}/{rules.max_blocks}
             </span>
-            {moduleErrors(i).length + (generated[i]?.problems.length ?? 0) > 0 && <span className="text-alert">●</span>}
+            {(generated[i]?.problems.length ?? 0) > 0 && <span className="text-alert">●</span>}
           </button>
         )
       })}
@@ -495,11 +442,7 @@ function RoundWorkspace({ team, gameKey }: { team: Schemas['TeamOut']; gameKey: 
     <div className="grid min-h-full grid-cols-1 gap-3 p-3 lg:h-full lg:grid-cols-[1fr_380px]">
       <section className="flex min-h-[70vh] flex-col border border-steel bg-panel/90 lg:min-h-0">
         {tabs}
-        {generalErrors.map((e, i) => (
-          <p key={i} className="border-b border-alert-dim bg-alert/10 px-4 py-1.5 text-xs text-alert">
-            {e.message}
-          </p>
-        ))}
+        {noStrategy && <p className="border-b border-alert-dim bg-alert/10 px-4 py-1.5 text-xs text-alert">strategy.py must define a strategy function.</p>}
         {tooLong && (
           <p className="border-b border-alert-dim bg-alert/10 px-4 py-1.5 text-xs text-alert">
             Your code is {agent?.hand_code.length.toLocaleString()} characters and the limit is {MAX_CODE_LENGTH.toLocaleString()}. Shorten it to submit.
@@ -540,11 +483,6 @@ function RoundWorkspace({ team, gameKey }: { team: Schemas['TeamOut']; gameKey: 
                   <div className="grid max-h-64 shrink-0 grid-cols-[1fr_minmax(0,16rem)] gap-4 overflow-y-auto border-t border-steel bg-ink/80 p-3">
                     <div className="min-w-0">
                       <span className="label !text-[10px]">Generated Python</span>
-                      {moduleErrors(activeModule).map((e, i) => (
-                        <p key={i} className="mt-1 text-xs text-alert">
-                          {e.message}
-                        </p>
-                      ))}
                       {generated[activeModule]?.problems.map((problem) => (
                         <p key={problem} className="mt-1 text-xs text-alert">
                           {problem}
@@ -593,7 +531,7 @@ function RoundWorkspace({ team, gameKey }: { team: Schemas['TeamOut']; gameKey: 
       <div className="flex min-h-0 flex-col gap-3 overflow-y-auto">
         <Guard name="Command">
           {/* Stays in view, so Submit and the timer are always reachable while reading results below */}
-          <Panel className="z-10 shrink-0 !bg-panel lg:sticky lg:top-0" title={round ? `Round ${round.index} of ${TOTAL_ROUNDS}` : 'Command'} right={round && <span className="label !text-amber">{game.name}</span>}>
+          <Panel className="z-10 shrink-0 !bg-panel lg:sticky lg:top-0" title={round ? `Round ${round.number} of ${TOTAL_ROUNDS}` : 'Command'} right={round && <span className="label !text-amber">{game.name}</span>}>
             <div className="flex flex-col gap-3">
               {fallen ? (
                 <>
@@ -606,7 +544,7 @@ function RoundWorkspace({ team, gameKey }: { team: Schemas['TeamOut']; gameKey: 
                   <Button variant="primary" onClick={submit} disabled={!canSubmit}>
                     {submitLabel}
                   </Button>
-                  {round?.status !== 'draft' && (
+                  {round?.status !== 'waiting' && (
                     <p className="text-xs text-muted">
                       {round?.status === 'open'
                         ? accepted
@@ -634,9 +572,9 @@ function RoundWorkspace({ team, gameKey }: { team: Schemas['TeamOut']; gameKey: 
             </div>
           </Panel>
         </Guard>
-        {thisRound[0] && (
+        {newest && (
           <Guard name="Latest version">
-            <LatestResult submission={thisRound[0]} />
+            <LatestResult version={newest.version} detail={latestDetail?.id === newest.id ? latestDetail : undefined} />
           </Guard>
         )}
         {round && (
@@ -647,9 +585,6 @@ function RoundWorkspace({ team, gameKey }: { team: Schemas['TeamOut']; gameKey: 
                 {game.brief && <p>{game.brief}</p>}
                 {game.question && <p className="text-muted italic">{game.question}</p>}
                 <p className="text-muted">
-                  {round.turns ?? 'Hidden number of'} turns{round.noise > 0 ? ` · ${Math.round(round.noise * 100)}% random errors` : ''} · {round.repetitions} repetitions
-                </p>
-                <p className="text-muted">
                   Blocks:{' '}
                   {rules.max_modules
                     ? `up to ${rules.max_modules} module${rules.max_modules > 1 ? 's' : ''} of ${rules.max_blocks} blocks · ${rules.categories.map((c) => blocks.categories[c]?.label ?? c).join(', ') || 'moves only'}`
@@ -659,13 +594,13 @@ function RoundWorkspace({ team, gameKey }: { team: Schemas['TeamOut']; gameKey: 
             </details>
           </Guard>
         )}
-        {agent && (
+        {FEATURES.practice && agent && (
           <Guard name="Practice match">
-            <Practice agent={agent} tooLong={tooLong} gameKey={gameKey} game={game} startNoise={game.usesNoise ? (round?.noise ?? 0) : 0} />
+            <Practice agent={agent} tooLong={tooLong} gameKey={gameKey} game={game} startNoise={0} />
           </Guard>
         )}
         <Guard name="Version history">
-          <History onLoad={askToLoad} opensAt={opensAt} />
+          <History teamId={team.id} onLoad={askToLoad} opensAt={opensAt} />
         </Guard>
       </div>
       {dialog}

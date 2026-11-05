@@ -1,11 +1,13 @@
 /**
- * Server clock sync. The client measures the round trip to GET /clock and takes
- * the offset as server time minus the midpoint. Countdowns are always drawn from
- * server time; deadlines are only enforced on the server.
+ * Server time. Every round answer carries server_time, and the offset is that
+ * minus the midpoint of the round trip. Countdowns are always drawn from server
+ * time, never the browser's clock; deadlines are only enforced on the server.
  */
 import { useEffect, useState } from 'react'
 import { create } from 'zustand'
-import { api, unwrap } from './api'
+
+// Ordinary network jitter must not make the countdown jump
+const IGNORE_DRIFT_MS = 500
 
 export const useClock = create<{ offset: number; synced: boolean }>(() => ({ offset: 0, synced: false }))
 
@@ -13,10 +15,11 @@ export function offsetFrom(sentAt: number, serverMs: number, receivedAt: number)
   return serverMs - (sentAt + receivedAt) / 2
 }
 
-export async function syncClock() {
-  const sentAt = Date.now()
-  const { server_time } = unwrap(await api.GET('/api/v1/clock'))
-  useClock.setState({ offset: offsetFrom(sentAt, server_time * 1000, Date.now()), synced: true })
+export function syncClock(sentAt: number, serverMs: number | null, receivedAt: number) {
+  if (serverMs === null) return
+  const offset = offsetFrom(sentAt, serverMs, receivedAt)
+  const { offset: current, synced } = useClock.getState()
+  if (!synced || Math.abs(offset - current) > IGNORE_DRIFT_MS) useClock.setState({ offset, synced: true })
 }
 
 export const serverNow = () => Date.now() + useClock.getState().offset
@@ -31,14 +34,9 @@ export function useServerNow(intervalMs = 250) {
 }
 
 /** Seconds left in a round's window, or null when no window is running. */
-export function windowRemaining(
-  round: { status: string; closes_at: number | null; paused_remaining: number | null } | null | undefined,
-  nowMs: number,
-): { seconds: number; paused: boolean } | null {
-  if (!round || round.status !== 'open') return null
-  if (round.paused_remaining !== null) return { seconds: round.paused_remaining, paused: true }
-  if (round.closes_at === null) return null
-  return { seconds: Math.max(0, round.closes_at - nowMs / 1000), paused: false }
+export function windowRemaining(round: { status: string; closesAt: number | null } | null | undefined, nowMs: number): number | null {
+  if (!round || round.status !== 'open' || round.closesAt === null) return null
+  return Math.max(0, (round.closesAt - nowMs) / 1000)
 }
 
 export function formatDuration(seconds: number) {

@@ -25,7 +25,7 @@ createRoot(document.getElementById('root')!).render(
         fallback={() => (
           <div className="flex min-h-screen flex-col items-center justify-center gap-4 p-6 text-center">
             <p className="stamp text-2xl text-alert">System fault</p>
-            <p className="text-sm text-muted">The screen hit a problem. Your draft is saved in this browser and on the server's version history.</p>
+            <p className="text-sm text-muted">The screen hit a problem. Your draft is saved in this browser.</p>
             <Button variant="primary" onClick={() => window.location.reload()}>
               Reload
             </Button>

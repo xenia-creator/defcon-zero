@@ -1,48 +1,77 @@
 import { useQuery } from '@tanstack/react-query'
-import { api, unwrap } from './api'
+import { z } from 'zod'
+import { ApiError, request } from './api'
 import { useAuth } from './auth'
-import { useConnection } from './realtime'
+import { syncClock } from './clock'
+import { Round, SubmissionDetail, Submissions, Team, Territories } from './contract'
 
-const POLL_MS = 5_000
+// docs/api.md: poll the round every 2 seconds, and every second while a submission is pending
+const ROUND_POLL_MS = 2_000
+const PENDING_POLL_MS = 1_000
+const SUBMISSIONS_POLL_MS = 5_000
+const TEAM_POLL_MS = 5_000
+const TERRITORIES_POLL_MS = 3_000
 
 const useLoggedIn = () => useAuth((s) => !!s.session)
-/** Polling takes over whenever the WebSocket is down, so the timer and results never go stale. */
-const usePollWhenOffline = () => useConnection((s) => (s.status === 'connected' ? false : POLL_MS))
 
-export const useCurrentRound = () => {
-  const offlinePoll = usePollWhenOffline()
-  return useQuery({
+export const useCurrentRound = () =>
+  useQuery({
     queryKey: ['round', 'current'],
     enabled: useLoggedIn(),
-    // A failed load must not leave the screen saying "closed" while the window is open
-    refetchInterval: (query) => (query.state.status === 'error' ? POLL_MS : offlinePoll),
-    queryFn: async () => unwrap(await api.GET('/api/v1/rounds/current')),
+    retry: false, // the next poll is the retry
+    refetchInterval: ROUND_POLL_MS,
+    staleTime: 0,
+    queryFn: async () => {
+      const sentAt = Date.now()
+      try {
+        const round = await request('GET', '/rounds/current', Round)
+        syncClock(sentAt, round.serverTime, Date.now())
+        return round
+      } catch (err) {
+        if (err instanceof ApiError && err.code === 'NOT_FOUND') return null // no round yet
+        throw err
+      }
+    },
   })
-}
 
-export const useCountries = () =>
-  useQuery({ queryKey: ['countries'], queryFn: async () => unwrap(await api.GET('/api/v1/countries')) })
-
-export const useSubmissions = () => {
-  const offlinePoll = usePollWhenOffline()
-  return useQuery({
-    queryKey: ['submissions'],
-    queryFn: async () => unwrap(await api.GET('/api/v1/submissions')),
-    refetchInterval: (query) => (query.state.data?.some((s) => s.status === 'checking') ? POLL_MS : offlinePoll),
-  })
-}
-
-export const useClientConfig = (enabled: boolean) =>
+export const useTeam = (enabled: boolean) =>
   useQuery({
-    queryKey: ['config'],
+    queryKey: ['team', 'me'],
     enabled,
-    queryFn: async () => unwrap(await api.GET('/api/v1/config')),
-    staleTime: Infinity,
+    refetchInterval: TEAM_POLL_MS,
+    staleTime: 0,
+    queryFn: () => request('GET', '/teams/me', Team),
+  })
+
+export const useTerritories = () =>
+  useQuery({
+    queryKey: ['territories'],
+    refetchInterval: TERRITORIES_POLL_MS,
+    staleTime: 0,
+    queryFn: () => request('GET', '/territories', Territories),
+  })
+
+export const useSubmissions = () =>
+  useQuery({
+    queryKey: ['submissions'],
+    queryFn: () => request('GET', '/submissions', Submissions),
+    refetchInterval: (query) => (query.state.data?.some((s) => s.status === 'pending') ? PENDING_POLL_MS : SUBMISSIONS_POLL_MS),
+    staleTime: 0,
+  })
+
+/** One version's result. A finished one never changes, so it stops polling. */
+export const useSubmission = (id: number | undefined) =>
+  useQuery({
+    queryKey: ['submission', id],
+    enabled: id !== undefined,
+    queryFn: () => request('GET', `/submissions/${id}`, SubmissionDetail),
+    refetchInterval: (query) => (query.state.data && query.state.data.status !== 'pending' ? false : PENDING_POLL_MS),
+    staleTime: (query) => (query.state.data && query.state.data.status !== 'pending' ? Infinity : 0),
   })
 
 export const useBots = () =>
   useQuery({
     queryKey: ['bots'],
-    queryFn: async () => unwrap(await api.GET('/api/v1/practice/bots')),
+    queryFn: () => request('GET', '/practice/bots', z.array(z.object({ key: z.string(), description: z.string().default('') }))),
     staleTime: Infinity,
   })

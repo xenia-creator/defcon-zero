@@ -1,9 +1,12 @@
 import { describe, expect, it } from 'vitest'
 import { EXAMPLES, exampleLayout, examplesFor } from '../workspace/blocks/examples'
-import { generateModules } from '../workspace/blocks/generate'
+import { assemble, generateModules } from '../workspace/blocks/generate'
 import { countBlocks, moduleName } from '../workspace/blocks/layout'
+import { nationNameProblem } from '../workspace/auth/ClaimCountry'
 import { newestDraft, parseAgent } from '../workspace/editor/drafts'
+import { gameInfo, gameKeyOf } from '../workspace/editor/games'
 import { parseSession } from './auth'
+import { Round, SubmissionDetail, Team } from './contract'
 import { formatDuration, offsetFrom, windowRemaining } from './clock'
 import { newId } from './ids'
 
@@ -13,12 +16,12 @@ describe('clock sync', () => {
     expect(offsetFrom(1000, 5050, 1100)).toBe(4000)
   })
 
-  it('counts down from server time and freezes while paused', () => {
-    const open = { status: 'open', closes_at: 100, paused_remaining: null }
-    expect(windowRemaining(open, 40_000)).toEqual({ seconds: 60, paused: false })
-    expect(windowRemaining(open, 200_000)).toEqual({ seconds: 0, paused: false })
-    expect(windowRemaining({ ...open, paused_remaining: 42 }, 999_999)).toEqual({ seconds: 42, paused: true })
-    expect(windowRemaining({ ...open, status: 'locked' }, 0)).toBeNull()
+  it('counts down from server time', () => {
+    const open = { status: 'open', closesAt: 100_000 }
+    expect(windowRemaining(open, 40_000)).toBe(60)
+    expect(windowRemaining(open, 200_000)).toBe(0)
+    expect(windowRemaining({ ...open, status: 'running' }, 0)).toBeNull()
+    expect(windowRemaining({ ...open, closesAt: null }, 0)).toBeNull()
   })
 
   it('formats durations', () => {
@@ -37,15 +40,47 @@ describe('ids', () => {
 })
 
 describe('stored session', () => {
-  it.each(['not json', 'null', '{}', '[]', '{"access":"a","refresh":"b","user":{}}', '{"access":1,"refresh":2,"user":null}'])(
+  it.each(['not json', 'null', '{}', '[]', '{"access":"a","username":"x"}', '{"access":1,"username":2,"role":3,"team":null}', '{"access":"a","refresh":"b","user":{}}'])(
     'rejects %s',
     (raw) => expect(parseSession(raw)).toBeNull(),
   )
 
   it('accepts a real one', () => {
-    const user = { id: '1', username: 'team1', role: 'team', team: null }
-    expect(parseSession(JSON.stringify({ access: 'a', refresh: 'b', user }))?.user.username).toBe('team1')
+    const team = { id: 7, nation_name: null, territory_code: null, status: 'alive' }
+    expect(parseSession(JSON.stringify({ access: 'a', username: 'team07', role: 'team', team }))?.team?.id).toBe(7)
+    expect(parseSession(JSON.stringify({ access: 'a', username: 'admin', role: 'organiser', team: null }))?.team).toBeNull()
   })
+})
+
+describe('reading the contract', () => {
+  const round = { id: 2, number: 2, name: 'Theatre of War', defcon: 2, status: 'open', opens_at: '2026-11-20T10:00:00Z', closes_at: '2026-11-20T10:45:00Z', server_time: '2026-11-20T10:12:31Z' }
+
+  it('reads the example round from docs/api.md, with dates as times', () => {
+    const parsed = Round.parse(round)
+    expect(parsed.number).toBe(2)
+    expect((parsed.closesAt! - parsed.serverTime!) / 1000).toBe(32 * 60 + 29)
+  })
+
+  it('treats a missing or unreadable date as no date, instead of a broken timer', () => {
+    expect(Round.parse({ ...round, closes_at: 'soon' }).closesAt).toBeNull()
+    expect(Round.parse({ ...round, opens_at: null }).opensAt).toBeNull()
+  })
+
+  it('reads the example team and submission, and refuses a wrong shape', () => {
+    expect(Team.parse({ id: 7, nation_name: 'Red Fox Republic', territory_code: 'BRA' }).status).toBe('alive')
+    expect(SubmissionDetail.parse({ id: 41, version: 3, status: 'accepted', errors: [], test_results: [{ opponent: 'tit_for_tat', my_score: 600, opp_score: 600 }] }).test_results[0].my_score).toBe(600)
+    expect(Round.safeParse({ ...round, number: 'two' }).success).toBe(false)
+  })
+
+  it('picks a game from the round number, and survives an unknown one', () => {
+    expect([1, 2, 3].map((number) => gameKeyOf({ number }))).toEqual(['prisoners_dilemma', 'theatre_of_war', 'foreign_aid'])
+    expect(gameInfo(gameKeyOf({ number: 9 }), 'Surprise').blocks).toBe(false)
+  })
+})
+
+describe('nation names', () => {
+  it.each([['', 'Choose'], ['ab', '3 to 24'], ['x'.repeat(25), '3 to 24'], ['Red-Fox', 'letters']])('rejects %j', (name, why) => expect(nationNameProblem(name)).toContain(why))
+  it.each(['Red Fox Republic', 'abc', 'Team 7'])('accepts %j', (name) => expect(nationNameProblem(name)).toBeNull())
 })
 
 describe('drafts', () => {
@@ -180,5 +215,15 @@ describe('generating Python from blocks', () => {
     expect(examplesFor('theatre_of_war', [], 20).map((e) => e.name)).toEqual(['Even spread', 'Strong three', 'Copycat'])
     expect(examplesFor('prisoners_dilemma', all, 2)).toEqual([])
     expect(examplesFor('surprise', all, 20)).toEqual([])
+  })
+
+  it('puts blocks after the code, so server line numbers still match strategy.py', () => {
+    const hand = 'def strategy(m, o):\n    return plan(m, o)\n'
+    expect(assemble(hand, [])).toBe(hand)
+    const code = assemble(hand, generateModules([moduleWith({ type: 'ic_chance' }, 'plan')]))
+    expect(code.startsWith(hand)).toBe(true)
+    expect(code).toContain('def plan(my_history, opp_history):')
+    const chance = assemble(hand, generateModules([moduleWith({ type: 'controls_ifelse', inputs: { IF0: { block: { type: 'ic_chance', fields: { PERCENT: 10 } } }, DO0: { block: { type: 'ic_play' } }, ELSE: { block: { type: 'ic_play' } } } }, 'plan')]))
+    expect(chance).toContain('import random')
   })
 })

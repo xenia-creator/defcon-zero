@@ -1,8 +1,8 @@
 /**
  * The three rounds as teams see them. Everything that differs between games lives here.
  *
- * NOT FINAL: the game keys for rounds 2 and 3, and the strategy() shape in their
- * templates, are placeholders until the engine's helper function list and final
+ * NOT FINAL: the strategy() shape in the templates for rounds 2 and 3 is a
+ * placeholder until the engine's helper function list and final
  * rules are in. So are their blocks, in ../blocks/categories.ts.
  */
 export const TOTAL_ROUNDS = 3
@@ -85,6 +85,10 @@ def strategy(my_history, opp_history, role, amount):
 }
 
 export const DEFAULT_GAME = 'prisoners_dilemma'
+
+/** docs/api.md gives each round a number and a name but no game key, so the number picks the game. */
+const GAME_BY_ROUND: Record<number, string> = { 1: 'prisoners_dilemma', 2: 'theatre_of_war', 3: 'foreign_aid' }
+export const gameKeyOf = (round: { number: number }) => GAME_BY_ROUND[round.number] ?? `round_${round.number}`
 
 /** An unknown key still gives a working editor, so a new game on the server can't break the screen. */
 export const gameInfo = (key: string, serverName?: string): GameInfo =>

@@ -1,15 +1,20 @@
 import { useRef, useState } from 'react'
+import { z } from 'zod'
 import { Badge, Button, Empty, LoadFailed, Panel, inputClass } from '../../components/ui'
-import { api, errorMessage, unwrap, type Schemas } from '../../lib/api'
-import { useBots, useSubmissions } from '../../lib/queries'
-import { type Agent, parseAgent } from './drafts'
+import { errorMessage, request } from '../../lib/api'
+import type { SubmissionDetail } from '../../lib/contract'
+import { useBots, useSubmission, useSubmissions } from '../../lib/queries'
+import { assemble, generateModules } from '../blocks/generate'
+import { type Agent, loadVersion } from './drafts'
 import type { GameInfo } from './games'
 
-export const toBody = (agent: Agent) => ({ hand_code: agent.hand_code, modules: agent.modules.map((layout) => ({ layout })) })
+/** What POST /submissions takes: the code as one file, and the block layouts if there are any. */
+export const toSubmission = (agent: Agent, game: string) => ({
+  code: assemble(agent.hand_code, generateModules(agent.modules, game)),
+  blocks: agent.modules.length ? { modules: agent.modules } : null,
+})
 
-export function agentFromDetail(detail: Schemas['SubmissionDetail']): Agent | null {
-  return parseAgent({ hand_code: detail.hand_code, modules: detail.modules.map((m) => m.layout) })
-}
+const PracticeOut = z.object({ score: z.number(), opponent_score: z.number(), my_moves: z.string(), opponent_moves: z.string(), forfeit: z.string().nullable() })
 
 /** tit_for_tat reads as "Tit for tat". */
 const botName = (key: string) => {
@@ -36,7 +41,7 @@ export function Practice({ agent, tooLong, gameKey, game, startNoise }: { agent:
   const opponent = picked === 'self' || bots.some((b) => b.key === picked) ? picked : (bots[0]?.key ?? 'self')
   const [turns, setTurns] = useState(50)
   const [noise, setNoise] = useState(startNoise)
-  const [result, setResult] = useState<Schemas['PracticeOut'] | null>(null)
+  const [result, setResult] = useState<z.infer<typeof PracticeOut> | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const sending = useRef(false)
@@ -47,8 +52,8 @@ export function Practice({ agent, tooLong, gameKey, game, startNoise }: { agent:
     setBusy(true)
     setError(null)
     try {
-      const body = { ...toBody(agent), opponent, game: gameKey, turns: clamp(turns, 1, 500), noise: game.usesNoise ? clamp(noise, 0, 0.5) : 0 }
-      setResult(unwrap(await api.POST('/api/v1/practice/simulate', { body })))
+      const body = { ...toSubmission(agent, gameKey), opponent, game: gameKey, turns: clamp(turns, 1, 500), noise: game.usesNoise ? clamp(noise, 0, 0.5) : 0 }
+      setResult(await request('POST', '/practice/simulate', PracticeOut, body))
     } catch (err) {
       setResult(null)
       setError(errorMessage(err, 'Could not reach the server to run the match.'))
@@ -128,47 +133,62 @@ export function Practice({ agent, tooLong, gameKey, game, startNoise }: { agent:
   )
 }
 
+function TestResults({ tests }: { tests: SubmissionDetail['test_results'] }) {
+  return (
+    <div className="flex flex-col gap-1 text-xs">
+      <span className="label !text-[10px]">Test matches · you – opponent</span>
+      {tests.map((t) => (
+        <p key={t.opponent} className="flex justify-between text-muted">
+          <span>vs {botName(t.opponent)}</span>
+          <span className="tabular-nums">
+            {t.my_score} – {t.opp_score}
+          </span>
+        </p>
+      ))}
+    </div>
+  )
+}
+
 /** What happened to the team's newest version, without having to open the history. */
-export function LatestResult({ submission }: { submission: Schemas['SubmissionOut'] }) {
-  const { version, status, errors, rule_problems: ruleProblems, test_results: tests } = submission
+export function LatestResult({ version, detail }: { version: number; detail: SubmissionDetail | undefined }) {
+  const status = detail?.status ?? 'pending'
+  const errors = detail?.errors ?? []
+  const tests = detail?.test_results ?? []
   return (
     <Panel title={`Latest version · v${version}`} right={<Badge status={status} />}>
       <div data-testid="latest-result" className="flex flex-col gap-2 text-sm">
-        {status === 'checking' && <p className="text-amber">Testing in the sandbox…</p>}
-        {status !== 'checking' && status !== 'accepted' && (
-          <p className="text-alert">This version won't play. {errors.length ? 'Fix this and submit again:' : 'Submit a new version.'}</p>
-        )}
+        {status === 'pending' && <p className="text-amber">Testing against the built-in bots…</p>}
+        {status === 'rejected' && <p className="text-alert">This version won't play. {errors.length ? 'Fix this and submit again:' : 'Submit a new version.'}</p>}
         {errors.map((e, i) => (
           <p key={i} className="break-words text-xs text-alert">
             {e}
           </p>
         ))}
-        {ruleProblems.map((p, i) => (
-          <p key={i} className="text-xs text-amber">
-            Cannot play this round: {p}
-          </p>
-        ))}
-        {tests.length > 0 && (
-          <div className="flex flex-col gap-1 text-xs">
-            <span className="label !text-[10px]">Test matches · you – opponent</span>
-            {tests.map((t) => (
-              <p key={t.opponent} className="flex justify-between text-muted">
-                <span>vs {botName(t.opponent)}</span>
-                <span className="tabular-nums">
-                  {t.score} – {t.opponent_score}
-                </span>
-              </p>
-            ))}
-          </div>
-        )}
+        {tests.length > 0 && <TestResults tests={tests} />}
       </div>
     </Panel>
   )
 }
 
-export function History({ onLoad, opensAt }: { onLoad: (id: string, version: number) => void; opensAt: number | null | undefined }) {
+function VersionDetails({ id }: { id: number }) {
+  const { data, isError, refetch } = useSubmission(id)
+  if (isError) return <LoadFailed what="this version's results" onRetry={() => refetch()} />
+  if (!data) return <p className="mt-2 text-xs text-muted">Loading…</p>
+  return (
+    <div className="mt-2 flex flex-col gap-1 text-xs">
+      {data.errors.map((e, i) => (
+        <p key={i} className="break-words text-alert">
+          {e}
+        </p>
+      ))}
+      {data.test_results.length > 0 && <TestResults tests={data.test_results} />}
+    </div>
+  )
+}
+
+export function History({ teamId, onLoad, opensAt }: { teamId: number; onLoad: (id: number, version: number) => void; opensAt: number | null | undefined }) {
   const { data: submissions = [], isError, refetch } = useSubmissions()
-  const [open, setOpen] = useState<string | null>(null)
+  const [open, setOpen] = useState<number | null>(null)
 
   return (
     <Panel title="Version history" bodyClass="p-0">
@@ -183,39 +203,20 @@ export function History({ onLoad, opensAt }: { onLoad: (id: string, version: num
               <div className="flex items-center justify-between gap-2">
                 <button className="cursor-pointer text-left" aria-expanded={open === s.id} onClick={() => setOpen(open === s.id ? null : s.id)}>
                   <span className="font-bold">v{s.version}</span>
-                  <span className="ml-2 text-xs text-muted">{new Date(s.created_at * 1000).toLocaleTimeString()}</span>
-                  {(opensAt == null || s.created_at < opensAt) && <span className="ml-2 text-xs text-muted">· earlier round</span>}
-                  {s.module_count > 0 && (
-                    <span className="ml-2 text-xs text-muted">
-                      · {s.module_count} module{s.module_count > 1 ? 's' : ''}
-                    </span>
-                  )}
+                  {s.createdAt !== null && <span className="ml-2 text-xs text-muted">{new Date(s.createdAt).toLocaleTimeString()}</span>}
+                  {(opensAt == null || s.createdAt === null || s.createdAt < opensAt) && <span className="ml-2 text-xs text-muted">· earlier round</span>}
                 </button>
                 <span className="flex items-center gap-2">
                   <Badge status={s.status} />
-                  <button className="label cursor-pointer !text-[10px] hover:!text-paper" onClick={() => onLoad(s.id, s.version)}>
-                    Load
-                  </button>
+                  {/* Only what this browser kept a copy of: the server doesn't send the code back */}
+                  {loadVersion(teamId, s.id) && (
+                    <button className="label cursor-pointer !text-[10px] hover:!text-paper" onClick={() => onLoad(s.id, s.version)}>
+                      Load
+                    </button>
+                  )}
                 </span>
               </div>
-              {s.rule_problems.length > 0 && <p className="mt-1 text-xs text-amber">Cannot play this round: {s.rule_problems[0]}</p>}
-              {open === s.id && (
-                <div className="mt-2 flex flex-col gap-1 text-xs">
-                  {s.errors.map((e, i) => (
-                    <p key={i} className="break-words text-alert">
-                      {e}
-                    </p>
-                  ))}
-                  {s.test_results.map((t) => (
-                    <p key={t.opponent} className="flex justify-between text-muted">
-                      <span>vs {botName(t.opponent)}</span>
-                      <span className="tabular-nums">
-                        {t.score} – {t.opponent_score}
-                      </span>
-                    </p>
-                  ))}
-                </div>
-              )}
+              {open === s.id && <VersionDetails id={s.id} />}
             </li>
           ))}
         </ul>

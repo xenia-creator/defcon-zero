@@ -140,3 +140,15 @@ export function generateModules(layouts: Layout[], game = 'prisoners_dilemma'): 
   }
   return generated
 }
+
+/**
+ * The one file the server receives. Blocks go after the team's code, so line
+ * numbers in the server's errors still match strategy.py. Python only needs
+ * them defined by the time strategy() is called.
+ */
+export function assemble(handCode: string, modules: Generated[]): string {
+  if (modules.length === 0) return handCode
+  const usesRandom = modules.some((m) => m.code.includes('random.'))
+  const parts = [handCode.trimEnd(), ...(usesRandom ? ['import random'] : []), ...modules.map((m) => m.code.trimEnd())]
+  return `${parts.join('\n\n')}\n`
+}

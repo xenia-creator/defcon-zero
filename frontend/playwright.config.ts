@@ -13,7 +13,7 @@ export default defineConfig({
     viewport: { width: 1440, height: 900 },
   },
   webServer: [
-    { command: 'node mock/server.mjs', port: 8000, reuseExistingServer: false },
+    { command: 'node mock/server.mjs', port: 8001, reuseExistingServer: false },
     { command: 'npm run build && npx vite preview --port 4173', port: 4173, reuseExistingServer: false, timeout: 120_000 },
   ],
 })

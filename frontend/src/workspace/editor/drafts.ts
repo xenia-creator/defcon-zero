@@ -16,7 +16,7 @@ const AgentShape = z.object({
 const Stored = z.object({ agent: AgentShape, saved_at: z.number() })
 
 /** One draft per game, so a new round never overwrites or inherits another game's code. */
-const key = (teamId: string, game: string) => `draft:${teamId}:${game}`
+const key = (teamId: number, game: string) => `draft:${teamId}:${game}`
 
 /** An Agent from any stored form (current, older plain agent, older plain code), or null. */
 export function parseAgent(value: unknown): Agent | null {
@@ -37,7 +37,7 @@ export function newestDraft(a: unknown, b: unknown): Agent | undefined {
   return parseAgent(first) ?? parseAgent(second) ?? undefined
 }
 
-function readMirror(teamId: string, game: string): unknown {
+function readMirror(teamId: number, game: string): unknown {
   try {
     const raw = localStorage.getItem(key(teamId, game))
     return raw === null ? undefined : JSON.parse(raw)
@@ -46,7 +46,7 @@ function readMirror(teamId: string, game: string): unknown {
   }
 }
 
-export async function loadDraft(teamId: string, game: string): Promise<Agent | undefined> {
+export async function loadDraft(teamId: number, game: string): Promise<Agent | undefined> {
   let stored: unknown
   try {
     stored = await get(key(teamId, game))
@@ -57,7 +57,7 @@ export async function loadDraft(teamId: string, game: string): Promise<Agent | u
 }
 
 /** False when neither store took it, so the screen can warn the team. Runs fully synchronously for the mirror, so it also works while the page is closing. */
-export async function saveDraft(teamId: string, game: string, agent: Agent): Promise<boolean> {
+export async function saveDraft(teamId: number, game: string, agent: Agent): Promise<boolean> {
   const record = { agent, saved_at: Date.now() }
   let saved = false
   try {
@@ -73,6 +73,26 @@ export async function saveDraft(teamId: string, game: string, agent: Agent): Pro
     // the server keeps every submitted version
   }
   return saved
+}
+
+const versionKey = (teamId: number, submissionId: number) => `version:${teamId}:${submissionId}`
+
+/** The server doesn't send a version's code back, so "Load" works from a copy kept in this browser. */
+export function saveVersion(teamId: number, submissionId: number, agent: Agent) {
+  try {
+    localStorage.setItem(versionKey(teamId, submissionId), JSON.stringify(agent))
+  } catch {
+    // only "Load" misses out, and the draft is still saved
+  }
+}
+
+export function loadVersion(teamId: number, submissionId: number): Agent | null {
+  try {
+    const raw = localStorage.getItem(versionKey(teamId, submissionId))
+    return raw === null ? null : parseAgent(JSON.parse(raw))
+  } catch {
+    return null
+  }
 }
 
 export const MAX_CODE_LENGTH = 50_000

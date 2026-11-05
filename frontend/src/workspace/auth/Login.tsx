@@ -1,7 +1,8 @@
 import { useRef, useState, type FormEvent } from 'react'
 import { Button, inputClass } from '../../components/ui'
-import { api, errorMessage, unwrap } from '../../lib/api'
+import { errorMessage, request } from '../../lib/api'
 import { useAuth } from '../../lib/auth'
+import { LoginOut } from '../../lib/contract'
 
 export function Login() {
   const setSession = useAuth((s) => s.setSession)
@@ -19,8 +20,9 @@ export function Login() {
     setBusy(true)
     setError(null)
     try {
-      const pair = unwrap(await api.POST('/api/v1/auth/login', { body: { username: username.trim(), password } }))
-      setSession({ access: pair.access_token, refresh: pair.refresh_token, user: pair.user })
+      const name = username.trim()
+      const answer = await request('POST', '/auth/login', LoginOut, { username: name, password })
+      setSession({ access: answer.access_token, username: name, role: answer.role, team: answer.team })
     } catch (err) {
       setError(errorMessage(err, 'Cannot reach the Command Server. Check your connection and try again.'))
     } finally {

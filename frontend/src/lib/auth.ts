@@ -1,37 +1,25 @@
 import { z } from 'zod'
 import { create } from 'zustand'
-import type { Schemas } from './api'
+import { Team } from './contract'
 
-type Session = { access: string; refresh: string; user: Schemas['UserOut'] }
+const StoredSession = z.object({
+  access: z.string().min(1),
+  username: z.string(),
+  role: z.string(),
+  team: Team.nullable(),
+})
+export type Session = z.infer<typeof StoredSession>
 
 type AuthState = {
   session: Session | null
-  /** The server refused the refresh token, so the login screen says why. */
+  /** The server refused the token, so the login screen says why. */
   expired: boolean
   setSession: (session: Session) => void
-  setUser: (user: Schemas['UserOut']) => void
+  setTeam: (team: Team) => void
   logout: (expired?: boolean) => void
 }
 
 const KEY = 'ic.session'
-
-const StoredSession = z.object({
-  access: z.string().min(1),
-  refresh: z.string().min(1),
-  user: z.object({
-    id: z.string(),
-    username: z.string(),
-    role: z.string(),
-    team: z
-      .object({
-        id: z.string(),
-        name: z.string(),
-        country_code: z.string().nullable(),
-        eliminated_in: z.number().nullable(),
-      })
-      .nullable(),
-  }),
-})
 
 /** Anything else in storage (edited by hand, an old version) just means logging in again. */
 export function parseSession(raw: string | null): Session | null {
@@ -68,10 +56,10 @@ export const useAuth = create<AuthState>((set, get) => ({
     save(session)
     set({ session, expired: false })
   },
-  setUser: (user) => {
+  setTeam: (team) => {
     const current = get().session
     if (!current) return
-    const session = { ...current, user }
+    const session = { ...current, team }
     save(session)
     set({ session })
   },

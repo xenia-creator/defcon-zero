@@ -1,9 +1,9 @@
 import { useEffect, useState, type ButtonHTMLAttributes, type ReactNode } from 'react'
 import { ErrorBoundary } from './ErrorBoundary'
 import { formatDuration, useClock, useServerNow, windowRemaining } from '../lib/clock'
+import type { Round } from '../lib/contract'
 import { useLive } from '../lib/live'
-import { useConnection } from '../lib/realtime'
-import type { Schemas } from '../lib/api'
+import { useCurrentRound } from '../lib/queries'
 
 export function Panel({
   title,
@@ -81,55 +81,51 @@ export function Badge({ status }: { status: string }) {
 }
 
 const WAITING: Record<string, string> = {
-  draft: 'The window has not opened yet',
-  locked: 'Submissions are locked in',
+  waiting: 'The window has not opened yet',
   running: 'Matches are being played',
-  verifying: 'Results are being verified',
   review: 'Results are under review',
   published: 'Results are published',
 }
 
 /** The big timer. Always drawn from server time; the deadline itself is enforced by the server. */
-export function WindowTimer({ round }: { round: Schemas['RoundOut'] | null | undefined }) {
+export function WindowTimer({ round }: { round: Round | null | undefined }) {
   const now = useServerNow()
   const synced = useClock((s) => s.synced)
-  const left = windowRemaining(round, now)
-  if (!left) {
+  const seconds = windowRemaining(round, now)
+  if (seconds === null) {
     return <p className="py-1 text-sm text-muted">{round ? (WAITING[round.status] ?? round.status) : 'No round is active'}</p>
   }
-  const urgent = !left.paused && left.seconds < 60
-  const tone = left.paused ? 'text-muted' : urgent ? 'text-alert' : left.seconds < 300 ? 'text-amber' : 'text-coop'
+  const urgent = seconds < 60
+  const tone = urgent ? 'text-alert' : seconds < 300 ? 'text-amber' : 'text-coop'
   return (
     <div data-testid="timer">
-      <span className="label !text-[11px]">{left.paused ? 'Paused by organisers' : left.seconds > 0 ? 'Window closes in' : 'Window closing'}</span>
-      <p className={`text-4xl font-bold tabular-nums drop-shadow-[0_0_14px_currentColor] ${tone} ${urgent ? 'blink' : ''}`}>{formatDuration(left.seconds)}</p>
+      <span className="label !text-[11px]">{seconds > 0 ? 'Window closes in' : 'Window closing'}</span>
+      <p className={`text-4xl font-bold tabular-nums drop-shadow-[0_0_14px_currentColor] ${tone} ${urgent ? 'blink' : ''}`}>{formatDuration(seconds)}</p>
       {!synced && <p className="mt-1 text-xs text-amber">Syncing with the server clock…</p>}
     </div>
   )
 }
 
-export function Countdown({ round, large = false }: { round: Schemas['RoundOut'] | null | undefined; large?: boolean }) {
+export function Countdown({ round, large = false }: { round: Round | null | undefined; large?: boolean }) {
   const now = useServerNow()
-  const left = windowRemaining(round, now)
-  if (!left) return <span className="label">{round ? `Round ${round.index}: ${round.status}` : 'No round'}</span>
-  const urgent = !left.paused && left.seconds < 60
+  const seconds = windowRemaining(round, now)
+  if (seconds === null) return <span className="label">{round ? `Round ${round.number}: ${round.status}` : 'No round'}</span>
+  const urgent = seconds < 60
   return (
     <span className="flex items-baseline gap-2">
-      <span className="label">{left.paused ? 'Paused' : 'Window closes'}</span>
-      <span
-        className={`font-bold tabular-nums ${large ? 'text-4xl' : 'text-lg'} ${left.paused ? 'text-muted' : urgent ? 'text-alert' : 'text-amber'} ${urgent ? 'blink' : ''}`}
-      >
-        {formatDuration(left.seconds)}
-      </span>
+      <span className="label">Window closes</span>
+      <span className={`font-bold tabular-nums ${large ? 'text-4xl' : 'text-lg'} ${urgent ? 'text-alert blink' : 'text-amber'}`}>{formatDuration(seconds)}</span>
     </span>
   )
 }
 
+/** Whether the last poll reached the server. */
 export function ConnectionStatus() {
-  const status = useConnection((s) => s.status)
-  const tone = status === 'connected' ? 'bg-coop' : status === 'offline' ? 'bg-alert' : 'bg-amber blink'
+  const { isPending, isError } = useCurrentRound()
+  const status = isError ? 'reconnecting' : isPending ? 'connecting' : 'connected'
+  const tone = status === 'connected' ? 'bg-coop' : 'bg-amber blink'
   return (
-    <span className="flex items-center gap-2" title="Live connection to the Command Server">
+    <span className="flex items-center gap-2" title="Connection to the server">
       <span className={`h-2 w-2 rounded-full ${tone}`} />
       <span className="label !text-[10px]">{status}</span>
     </span>
@@ -138,10 +134,10 @@ export function ConnectionStatus() {
 
 const DEFCON_TONE = ['border-alert bg-alert !text-ink', 'text-alert', 'text-[#f0702a]', 'text-amber', 'text-coop', 'text-peace']
 
-/** DEFCON 3, 2, 1 for the three rounds, and ZERO once the final results are out. */
-export function Defcon({ round }: { round: Schemas['RoundOut'] | null | undefined }) {
-  const finished = !!round && (round.index > 3 || (round.index === 3 && round.status === 'published'))
-  const level = finished ? 0 : round ? 4 - round.index : 3
+/** The server's DEFCON level for each round, and ZERO once the final results are out. */
+export function Defcon({ round }: { round: Round | null | undefined }) {
+  const finished = !!round && (round.defcon <= 0 || (round.number === 3 && round.status === 'published'))
+  const level = finished ? 0 : round ? Math.min(round.defcon, 5) : 3
   return (
     <span data-testid="defcon" className={`flex items-center gap-2 border border-steel px-3 py-1 ${level === 0 ? DEFCON_TONE[0] : ''}`} title="The threat level rises each round">
       <span className={`label !text-[10px] ${level === 0 ? '!text-ink' : ''}`}>Defcon</span>

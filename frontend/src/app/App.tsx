@@ -1,48 +1,24 @@
-import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQueryClient } from '@tanstack/react-query'
 import { Suspense, lazy, useEffect } from 'react'
 import { ErrorBoundary } from '../components/ErrorBoundary'
 import { Button, ConnectionStatus, Countdown, Defcon, Empty, Toasts } from '../components/ui'
+import { useAuth } from '../lib/auth'
+import { FEATURES } from '../lib/features'
+import { useCurrentRound, useTeam } from '../lib/queries'
 import { ClaimCountry } from '../workspace/auth/ClaimCountry'
 import { Login } from '../workspace/auth/Login'
 import { FullscreenBanner, useFairplayReporting } from '../workspace/fairplay/fairplay'
-import { api, unwrap } from '../lib/api'
-import { useAuth } from '../lib/auth'
-import { syncClock } from '../lib/clock'
-import { handleEvent } from '../lib/live'
-import { useCurrentRound } from '../lib/queries'
-import { Realtime } from '../lib/realtime'
 
 // Monaco and Blockly are large, so the workspace loads only once a team has its nation
 const Workspace = lazy(() => import('../workspace/editor/Workspace').then((m) => ({ default: m.Workspace })))
 
-const CLOCK_SYNC_MS = 30_000
-
-function useRealtime(active: boolean, teamId: string | null | undefined) {
-  const queries = useQueryClient()
+/** Keeps the stored team (for example when it falls) in sync with the server. */
+function useTeamSync(active: boolean) {
+  const setTeam = useAuth((s) => s.setTeam)
+  const { data } = useTeam(active)
   useEffect(() => {
-    if (!active) return
-    const realtime = new Realtime((message) => handleEvent(message, queries))
-    realtime.start()
-    syncClock().catch(() => {})
-    const clock = setInterval(() => syncClock().catch(() => {}), CLOCK_SYNC_MS)
-    return () => {
-      realtime.stop()
-      clearInterval(clock)
-    }
-  }, [active, teamId, queries])
-}
-
-/** Keeps the stored user (and its team, e.g. when it falls) in sync with the server. */
-function useMe(active: boolean) {
-  const setUser = useAuth((s) => s.setUser)
-  const { data } = useQuery({
-    queryKey: ['teams', 'me'],
-    enabled: active,
-    queryFn: async () => unwrap(await api.GET('/api/v1/me')),
-  })
-  useEffect(() => {
-    if (data) setUser(data)
-  }, [data, setUser])
+    if (data) setTeam(data)
+  }, [data, setTeam])
 }
 
 const STEPS = ['Claim nation', 'Workspace']
@@ -51,12 +27,10 @@ export function App() {
   const session = useAuth((s) => s.session)
   const logout = useAuth((s) => s.logout)
   const queries = useQueryClient()
-  const user = session?.user
-  const team = user?.team
+  const team = session?.team
   const signedIn = !!session
-  useRealtime(signedIn, team?.id)
-  useMe(signedIn)
-  useFairplayReporting(!!team)
+  useTeamSync(!!team)
+  useFairplayReporting(FEATURES.fairPlayReports && !!team)
   const { data: round } = useCurrentRound()
 
   // However the session ended, the next person must not see this team's data
@@ -64,9 +38,9 @@ export function App() {
     if (!signedIn) queries.clear()
   }, [signedIn, queries])
 
-  if (!session || !user) return <Login />
+  if (!session) return <Login />
 
-  const needsCountry = !!team && !team.country_code
+  const needsCountry = !!team && !team.territory_code
   const step = needsCountry ? 0 : 1
 
   return (
@@ -93,22 +67,22 @@ export function App() {
           <ConnectionStatus />
           <Defcon round={round} />
           <span className="text-sm whitespace-nowrap">
-            <span className="text-muted">{team ? team.name : user.role}</span>
+            <span className="text-muted">{team?.nation_name ?? session.username}</span>
             <button onClick={() => logout()} className="label ml-3 cursor-pointer !text-[10px] hover:!text-alert">
               Log out
             </button>
           </span>
         </div>
       </header>
-      {team && <FullscreenBanner />}
+      {FEATURES.fairPlayReports && team && <FullscreenBanner />}
       <main className="min-h-0 flex-1 overflow-y-auto">
         {!team ? (
-          <Empty>This account ({user.role}) has no team. The team workspace is only for competing teams.</Empty>
+          <Empty>This account ({session.role}) has no team. The team workspace is only for competing teams.</Empty>
         ) : needsCountry ? (
-          <ClaimCountry user={user} />
+          <ClaimCountry username={session.username} />
         ) : (
           <ErrorBoundary
-            resetKey={team.id}
+            resetKey={String(team.id)}
             fallback={() => (
               <div className="flex h-full flex-col items-center justify-center gap-4 p-6 text-center">
                 <p className="text-sm text-muted">The workspace could not load. Your draft is saved in this browser.</p>

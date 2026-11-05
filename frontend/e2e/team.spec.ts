@@ -6,7 +6,7 @@
 import { expect, test as base, type Page } from '@playwright/test'
 import { execFileSync } from 'node:child_process'
 
-const mock = (page: Page, path: string, data: unknown = {}) => page.request.post(`http://localhost:8000/__mock/${path}`, { data })
+const mock = (page: Page, path: string, data: unknown = {}) => page.request.post(`http://localhost:8001/__mock/${path}`, { data })
 
 const test = base.extend<{ crashes: string[] }>({
   crashes: [
@@ -28,7 +28,8 @@ async function login(page: Page, user = 'team1') {
   await page.getByRole('button', { name: 'Enter' }).click()
 }
 
-async function claim(page: Page, country = 'India') {
+async function claim(page: Page, country = 'India', nation = 'Red Fox Republic') {
+  await page.getByLabel('Nation name').fill(nation)
   await page.getByRole('button', { name: country }).click()
   await page.getByRole('button', { name: 'Claim this nation' }).click()
   await page.getByRole('button', { name: 'Claim nation' }).click()
@@ -39,7 +40,7 @@ async function readyWorkspace(page: Page) {
   await login(page)
   await claim(page)
   await expect(page.locator('.monaco-editor').first()).toBeVisible()
-  await expect(page.getByTestId('check')).toHaveText('Passes all checks')
+  await expect(page.getByTestId('check')).toHaveText('Ready to submit')
 }
 
 const submitButton = (page: Page) => page.getByRole('button', { name: 'Submit strategy' })
@@ -59,7 +60,8 @@ test('runs on plain HTTP, where crypto.randomUUID does not exist', async ({ page
 test.describe('bad saved data', () => {
   for (const [name, value] of [
     ['not JSON', '{{{'],
-    ['the wrong shape', '{"access":"a","user":{"team":5}}'],
+    ['the wrong shape', '{"access":"a","team":5}'],
+    ['from the old version', '{"access":"a","refresh":"b","user":{"id":"1","username":"x","role":"team","team":null}}'],
     ['null', 'null'],
   ]) {
     test(`a stored session that is ${name} leads to login`, async ({ page }) => {
@@ -73,9 +75,9 @@ test.describe('bad saved data', () => {
   test('a corrupt draft falls back to the template', async ({ page }) => {
     await login(page)
     await claim(page)
-    await page.evaluate(() => localStorage.setItem('draft:team-1:prisoners_dilemma', '{"agent":{"hand_code":5,"modules":"x"},"saved_at":9e15}'))
+    await page.evaluate(() => localStorage.setItem('draft:1:prisoners_dilemma', '{"agent":{"hand_code":5,"modules":"x"},"saved_at":9e15}'))
     await page.reload()
-    await expect(page.getByTestId('check')).toHaveText('Passes all checks')
+    await expect(page.getByTestId('check')).toHaveText('Ready to submit')
     await expect(page.locator('.monaco-editor').first()).toContainText('def strategy')
   })
 
@@ -84,7 +86,7 @@ test.describe('bad saved data', () => {
     await claim(page)
     await page.evaluate(() =>
       localStorage.setItem(
-        'draft:team-1:prisoners_dilemma',
+        'draft:1:prisoners_dilemma',
         JSON.stringify({
           saved_at: Date.now() + 100000,
           agent: { hand_code: 'def strategy(m, o):\n    return "C"\n', modules: [{ blocks: { languageVersion: 0, blocks: [{ type: 'no_such_block', x: 0, y: 0 }] } }] },
@@ -107,7 +109,7 @@ test.describe('login', () => {
     await page.getByLabel('Username').fill('team1')
     await page.getByLabel('Password').fill('wrong')
     await page.getByRole('button', { name: 'Enter' }).click()
-    await expect(page.getByRole('alert')).toHaveText('Wrong username or password')
+    await expect(page.getByRole('alert')).toHaveText('Wrong username or password.')
 
     await mock(page, 'fail', { '/api/v1/auth/login': 502 })
     await page.getByRole('button', { name: 'Enter' }).click()
@@ -136,41 +138,77 @@ test.describe('login', () => {
 })
 
 test.describe('claiming a country', () => {
+  const nation = (page: Page) => page.getByLabel('Nation name')
+  const claimButton = (page: Page) => page.getByRole('button', { name: 'Claim this nation' })
+
   test('search with no match, and the confirm can be cancelled', async ({ page }) => {
     await login(page)
     await page.getByLabel('Search countries').fill('<script>alert(1)</script>')
     await expect(page.getByText('No country matches')).toBeVisible()
     await page.getByLabel('Search countries').fill('')
+    await nation(page).fill('Red Fox Republic')
     await page.getByRole('button', { name: 'Brazil' }).click()
-    await page.getByRole('button', { name: 'Claim this nation' }).click()
+    await claimButton(page).click()
     await page.keyboard.press('Escape')
     await expect(page.getByRole('dialog')).toHaveCount(0)
-    await expect(page.getByRole('button', { name: 'Claim this nation' })).toBeEnabled()
+    await expect(claimButton(page)).toBeEnabled()
+  })
+
+  test('the nation name follows the rules before anything is sent', async ({ page }) => {
+    await login(page)
+    await page.getByRole('button', { name: 'Brazil' }).click()
+    await expect(claimButton(page)).toBeDisabled()
+    await nation(page).fill('ab')
+    await expect(page.getByText('A nation name is 3 to 24 characters.')).toBeVisible()
+    await expect(claimButton(page)).toBeDisabled()
+    await nation(page).fill('Red-Fox')
+    await expect(page.getByText('can only use letters, numbers and spaces')).toBeVisible()
+    await expect(claimButton(page)).toBeDisabled()
+    await nation(page).fill('Red Fox')
+    await expect(claimButton(page)).toBeEnabled()
+  })
+
+  test('a name already taken keeps the country selected, so only the name changes', async ({ page }) => {
+    await login(page, 'team2')
+    await claim(page, 'Japan', 'Frost Union')
+    await page.getByRole('button', { name: 'Log out' }).click()
+    await login(page)
+    await nation(page).fill('FROST UNION')
+    await page.getByRole('button', { name: 'Brazil' }).click()
+    await claimButton(page).click()
+    await page.getByRole('button', { name: 'Claim nation' }).click()
+    await expect(page.getByRole('alert')).toContainText('already used')
+    await expect(page.locator('p', { hasText: 'BRAZIL' })).toBeVisible()
+    await nation(page).fill('Red Fox')
+    await claimButton(page).click()
+    await page.getByRole('button', { name: 'Claim nation' }).click()
+    await expect(page.getByRole('tab', { name: 'strategy.py' })).toBeVisible()
+    await expect(page.locator('header').getByText('Red Fox')).toBeVisible()
   })
 
   test('another team taking the selected country clears it', async ({ page }) => {
     await login(page)
     await page.getByRole('button', { name: 'Brazil' }).click()
     await expect(page.locator('p', { hasText: 'BRAZIL' })).toBeVisible()
-    await expect(page.getByText('connected')).toBeVisible()
-    await mock(page, 'take', { code: '102' })
+    await mock(page, 'take', { code: 'BRA' })
     await expect(page.getByRole('alert')).toContainText('just claimed')
     await expect(page.getByRole('button', { name: 'Brazil' })).toBeDisabled()
   })
 
   test('losing the race at the last moment is explained', async ({ page }) => {
     await login(page)
+    await nation(page).fill('Red Fox')
     await page.getByRole('button', { name: 'Brazil' }).click()
-    await page.getByRole('button', { name: 'Claim this nation' }).click()
-    await page.route('**/teams/me/country', (r) =>
-      r.fulfill({ status: 409, contentType: 'application/json', body: JSON.stringify({ error: { code: 'COUNTRY_TAKEN', message: 'Brazil has already been claimed', details: null } }) }),
+    await claimButton(page).click()
+    await page.route('**/teams/me/claim', (r) =>
+      r.fulfill({ status: 409, contentType: 'application/json', body: JSON.stringify({ error: { code: 'TERRITORY_TAKEN', message: 'This territory is already claimed.' } }) }),
     )
     await page.getByRole('button', { name: 'Claim nation' }).click()
-    await expect(page.getByRole('alert')).toContainText('already been claimed')
+    await expect(page.getByRole('alert')).toContainText('already claimed')
   })
 
   test('a failed country list offers a retry', async ({ page }) => {
-    await mock(page, 'fail', { '/api/v1/countries': 500 })
+    await mock(page, 'fail', { '/api/v1/territories': 500 })
     await login(page)
     await expect(page.getByRole('button', { name: 'Retry' })).toBeVisible()
     await mock(page, 'fail', {})
@@ -192,7 +230,7 @@ test.describe('submitting', () => {
     await login(page)
     await claim(page)
     await page.evaluate(() =>
-      localStorage.setItem('draft:team-1:prisoners_dilemma', JSON.stringify({ saved_at: Date.now() + 100000, agent: { hand_code: 'def strategy(m,o):\n' + '#'.repeat(60000), modules: [] } })),
+      localStorage.setItem('draft:1:prisoners_dilemma', JSON.stringify({ saved_at: Date.now() + 100000, agent: { hand_code: 'def strategy(m,o):\n' + '#'.repeat(60000), modules: [] } })),
     )
     await page.reload()
     await expect(page.getByTestId('check')).toHaveText('Code is too long')
@@ -206,18 +244,6 @@ test.describe('submitting', () => {
     await page.keyboard.type('x = 1')
     await expect(page.getByTestId('check')).toHaveText('1 problem')
     await expect(submitButton(page)).toBeDisabled()
-  })
-
-  test('a failing validator never blocks a team, and never claims a pass', async ({ page }) => {
-    await readyWorkspace(page)
-    await mock(page, 'fail', { '/api/v1/practice/validate': 500 })
-    await page.locator('.monaco-editor').first().click()
-    await page.keyboard.type('# edit\n')
-    await expect(page.getByTestId('check')).toContainText("Can't check right now")
-    await submitButton(page).click()
-    await expect(page.getByText('v1', { exact: true })).toBeVisible()
-    await mock(page, 'fail', {})
-    await expect(page.getByTestId('check')).toHaveText('Passes all checks', { timeout: 10_000 })
   })
 
   test('with the server unreachable the draft survives and a reload restores it', async ({ page }) => {
@@ -250,41 +276,122 @@ test.describe('submitting', () => {
     await readyWorkspace(page)
     await page.route('**/api/v1/submissions', (r) =>
       r.request().method() === 'POST'
-        ? r.fulfill({ status: 409, contentType: 'application/json', body: JSON.stringify({ error: { code: 'WINDOW_CLOSED', message: 'The submission window is closed', details: {} } }) })
+        ? r.fulfill({ status: 403, contentType: 'application/json', body: JSON.stringify({ error: { code: 'WINDOW_CLOSED', message: 'The submission window is closed' } }) })
         : r.continue(),
     )
     await submitButton(page).click()
     await expect(page.getByText('The submission window is closed')).toBeVisible()
+    // A 403 is an answer about this request, not about the login
+    await expect(page.getByLabel('Username')).toHaveCount(0)
   })
 
-  test('loading an old version asks first, and survives a failed fetch', async ({ page }) => {
+  test('sends the code as one file that runs, with blocks after it and the layout alongside', async ({ page }) => {
+    await readyWorkspace(page)
+    await page.getByRole('button', { name: '+ Block module' }).click()
+    await page.getByLabel('Start from an example').selectOption({ index: 1 })
+    await page.getByRole('button', { name: 'Use as my strategy' }).click()
+    await page.getByRole('dialog').getByRole('button', { name: 'Use as my strategy' }).click()
+    await submitButton(page).click()
+    await expect(page.getByTestId('latest-result')).toContainText('vs Tit for tat')
+    const [stored] = await (await mock(page, 'submissions')).json()
+    expect(stored.blocks.modules).toHaveLength(1)
+    expect(stored.code.indexOf('def strategy')).toBeLessThan(stored.code.indexOf('def module1'))
+    const out = execFileSync('python3', ['-c', `def opp_last_move(): return "D"\n${stored.code}\nprint(strategy(["C"], ["D"]), strategy([], []))`]).toString().trim()
+    expect(out).toBe('D C')
+  })
+
+  test('code without blocks sends no layout', async ({ page }) => {
+    await readyWorkspace(page)
+    await submitButton(page).click()
+    await expect(page.getByTestId('latest-result')).toContainText('vs Tit for tat')
+    const [stored] = await (await mock(page, 'submissions')).json()
+    expect(stored.blocks).toBeNull()
+    expect(stored.code).toContain('def strategy')
+  })
+
+  test('the server refusing the code shows its message', async ({ page }) => {
+    await readyWorkspace(page)
+    await page.route('**/api/v1/submissions', (r) =>
+      r.request().method() === 'POST'
+        ? r.fulfill({ status: 422, contentType: 'application/json', body: JSON.stringify({ error: { code: 'INVALID_CODE', message: "Line 3: importing 'os' is not allowed." } }) })
+        : r.continue(),
+    )
+    await submitButton(page).click()
+    await expect(page.getByText("importing 'os' is not allowed")).toBeVisible()
+  })
+
+  test('a rejected version marks its line in the editor', async ({ page }) => {
+    await readyWorkspace(page)
+    await mock(page, 'reject', { message: 'Line 4: something is wrong here' })
+    await submitButton(page).click()
+    await expect(page.getByTestId('latest-result')).toContainText('something is wrong here')
+    await expect(page.locator('.monaco-editor .squiggly-error').first()).toBeAttached()
+  })
+
+  test('loading an old version asks first, and needs this browser to have a copy', async ({ page }) => {
     await readyWorkspace(page)
     await submitButton(page).click()
     await expect(page.getByText('accepted', { exact: true }).first()).toBeVisible()
-    await page.route('**/api/v1/submissions/*', (r) => r.abort())
     await page.getByRole('button', { name: 'Load', exact: true }).click()
-    await page.getByRole('button', { name: 'Load version' }).click()
-    await expect(page.getByText('Could not load version 1')).toBeVisible()
-    await expect(page.locator('.monaco-editor').first()).toContainText('def strategy')
+    await page.getByRole('button', { name: 'Cancel' }).click()
+    await page.evaluate(() => Object.keys(localStorage).filter((k) => k.startsWith('version:')).forEach((k) => localStorage.removeItem(k)))
+    await page.reload()
+    await expect(page.getByText('v1', { exact: true })).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Load', exact: true })).toHaveCount(0)
+  })
+
+  test('opening a version in the history shows its results', async ({ page }) => {
+    await readyWorkspace(page)
+    await submitButton(page).click()
+    await expect(page.getByTestId('latest-result')).toContainText('vs Tit for tat')
+    await page.getByRole('button', { name: /^v1/ }).click()
+    await expect(page.getByRole('listitem').getByText('vs Tit for tat')).toBeVisible()
+  })
+})
+
+test.describe('the session', () => {
+  test('an expired token goes to login with the draft kept', async ({ page }) => {
+    await readyWorkspace(page)
+    await page.locator('.monaco-editor').first().click()
+    await page.keyboard.press('ControlOrMeta+End')
+    await page.keyboard.type('#keepme')
+    await expect(page.getByText('Draft saved in this browser.')).toBeVisible()
+    await mock(page, 'expire')
+    await expect(page.getByText('Your session ended')).toBeVisible({ timeout: 8_000 })
+    await page.getByLabel('Username').fill('team1')
+    await page.getByLabel('Password').fill('demo')
+    await page.getByRole('button', { name: 'Enter' }).click()
+    await expect(page.locator('.monaco-editor').first()).toContainText('#keepme')
+  })
+
+  test('an organiser account gets a message, not a broken team screen', async ({ page }) => {
+    await login(page, 'admin')
+    await expect(page.getByText('This account (organiser) has no team')).toBeVisible()
+    await page.waitForTimeout(2_500)
+    await expect(page.getByLabel('Username')).toHaveCount(0)
+  })
+
+  test('a server answer in the wrong shape shows a message, not a crash', async ({ page }) => {
+    await page.route('**/auth/login', (r) => r.fulfill({ status: 200, contentType: 'application/json', body: '{"token":"x"}' }))
+    await login(page)
+    await expect(page.getByRole('alert')).toContainText('could not read')
   })
 })
 
 test.describe('the timer', () => {
-  test('follows the organisers: pause, resume, close', async ({ page }) => {
+  test('follows the organisers: extend, then close', async ({ page }) => {
     await readyWorkspace(page)
     await expect(page.getByTestId('timer')).toContainText('Window closes in')
     await expect(page.getByTestId('defcon')).toContainText('3')
 
-    await mock(page, 'round', { paused_remaining: 42 })
-    await expect(page.getByTestId('timer')).toContainText('Paused by organisers')
-    await expect(page.getByTestId('timer')).toContainText('00:42')
-    await expect(page.getByRole('button', { name: 'Window paused' })).toBeDisabled()
-
-    await mock(page, 'round', { paused_remaining: null, closes_at: Date.now() / 1000 + 30 })
+    await mock(page, 'round', { closes_in: 30 })
+    await expect(page.getByTestId('timer').locator('p').first()).toHaveText(/^00:[12]\d|00:30$/)
+    await mock(page, 'round', { closes_in: 600 })
+    await expect(page.getByTestId('timer').locator('p').first()).toHaveText(/^(09:\d\d|10:00)$/)
     await expect(submitButton(page)).toBeEnabled()
 
-    await mock(page, 'round', { status: 'locked', closes_at: null })
-    await expect(page.getByText('Submissions are locked in')).toBeVisible()
+    await mock(page, 'round', { status: 'running' })
+    await expect(page.getByText('Matches are being played')).toBeVisible()
     await expect(page.getByRole('button', { name: 'Submissions closed' })).toBeDisabled()
   })
 
@@ -298,11 +405,15 @@ test.describe('the timer', () => {
     await expect(page.getByTestId('timer').locator('p').first()).toHaveText(/^(29:\d\d|30:00)$/)
   })
 
-  test('keeps updating by polling while the live connection is down', async ({ page }) => {
-    await page.routeWebSocket(/\/ws/, (ws) => ws.close())
-    await readyWorkspace(page).catch(() => {})
-    await mock(page, 'round', { status: 'locked', closes_at: null })
-    await expect(page.getByText('Submissions are locked in')).toBeVisible({ timeout: 12_000 })
+  test('shows the connection dropping and coming back', async ({ page }) => {
+    await readyWorkspace(page)
+    await expect(page.getByText('connected', { exact: true })).toBeVisible()
+    await mock(page, 'fail', { '/api/v1/rounds/current': 502 })
+    await expect(page.getByText('reconnecting')).toBeVisible()
+    await expect(page.getByTestId('timer')).toBeVisible()
+    await expect(submitButton(page)).toBeEnabled()
+    await mock(page, 'fail', {})
+    await expect(page.getByText('connected', { exact: true })).toBeVisible()
   })
 })
 
@@ -314,20 +425,6 @@ test('a round that failed to load recovers on its own', async ({ page }) => {
   await expect(page.getByRole('button', { name: 'Submissions closed' })).toBeVisible()
   await mock(page, 'fail', {})
   await expect(submitButton(page)).toBeVisible({ timeout: 8_000 })
-})
-
-test.describe('the live connection', () => {
-  test('junk messages are ignored and it reconnects after dropping', async ({ page }) => {
-    await readyWorkspace(page)
-    await expect(page.getByText('connected')).toBeVisible()
-    for (const text of ['not json', '{}', 'null', '{"seq":99,"type":"window.updated","ts":1,"payload":{"round":"x"}}', '{"seq":100,"type":"submission.result","ts":1,"payload":{}}', '{"seq":101,"type":"penalty.issued","ts":1,"payload":{}}']) {
-      await mock(page, 'raw', { text })
-    }
-    await expect(page.getByTestId('timer')).toBeVisible()
-    await mock(page, 'drop')
-    await expect(page.getByText('reconnecting')).toBeVisible()
-    await expect(page.getByText('connected', { exact: true })).toBeVisible({ timeout: 15_000 })
-  })
 })
 
 test('a server error while restoring still gives the team an editor', async ({ page }) => {
@@ -345,7 +442,7 @@ test('logging out returns to login and the next team sees nothing of the last', 
   await page.keyboard.type('# team one secret')
   await page.getByRole('button', { name: 'Log out' }).click()
   await login(page, 'team2')
-  await claim(page, 'Japan')
+  await claim(page, 'Japan', 'Frost Union')
   await expect(page.locator('.monaco-editor').first()).toBeVisible()
   await expect(page.locator('.monaco-editor').first()).not.toContainText('team one secret')
 })
@@ -392,17 +489,6 @@ test.describe('the three rounds', () => {
     await expect(editor(page)).toContainText('roundonework')
   })
 
-  test('practice plays only the current game', async ({ page }) => {
-    await readyWorkspace(page)
-    await expect(page.getByText(/Chicken|Stag Hunt/)).toHaveCount(0)
-    await round(page, 2)
-    await expect(page.getByText('Plays Theatre of War')).toBeVisible()
-    await expect(page.getByLabel('Random error')).toHaveCount(0)
-    await page.getByRole('button', { name: 'Run practice match' }).click()
-    await expect(page.getByText('You', { exact: true })).toBeVisible()
-    expect(await (await mock(page, 'practice')).json()).toBe('theatre_of_war')
-  })
-
   test('a version from an earlier round is not promised as playing this one', async ({ page }) => {
     await readyWorkspace(page)
     await submitButton(page).click()
@@ -416,7 +502,7 @@ test.describe('the three rounds', () => {
 
   test('a game this client has never heard of still gives a working editor', async ({ page }) => {
     await readyWorkspace(page)
-    await mock(page, 'round', { game: { key: 'surprise', name: 'Surprise Game' } })
+    await mock(page, 'round', { number: 9, name: 'Surprise Game' })
     await expect(page.getByText('Surprise Game').first()).toBeVisible()
     await expect(editor(page)).toContainText('def strategy')
     await expect(submitButton(page)).toBeEnabled()
@@ -424,16 +510,17 @@ test.describe('the three rounds', () => {
   })
 })
 
-test('fair play: leaving the screen is reported, and survives a server failure', async ({ page }) => {
+test('routes the backend does not have yet are never called, and nobody is told they are reported', async ({ page }) => {
+  const called: string[] = []
+  page.on('request', (r) => {
+    if (/\/api\/v1\/(practice|fairplay|ws|clock|config|me)\b/.test(r.url())) called.push(r.url())
+  })
   await readyWorkspace(page)
-  await expect(page.getByText('reported to the invigilators')).toBeVisible()
-  await mock(page, 'fail', { '/api/v1/fairplay/events': 500 })
   await page.evaluate(() => window.dispatchEvent(new Event('blur')))
-  await page.waitForTimeout(6000)
-  await mock(page, 'fail', {})
-  await expect
-    .poll(async () => (await (await mock(page, 'fairplay')).json()).map((e: { kind: string }) => e.kind), { timeout: 12_000 })
-    .toContain('focus_lost')
+  await page.waitForTimeout(5_500)
+  await expect(page.getByText('reported to the invigilators')).toHaveCount(0)
+  await expect(page.getByRole('button', { name: 'Run practice match' })).toHaveCount(0)
+  expect(called).toEqual([])
 })
 
 test('fast typing never loses a keystroke, and loading a version still replaces the text', async ({ page }) => {
@@ -504,7 +591,7 @@ test.describe('blocks', () => {
     const save = (root: unknown) =>
       page.evaluate((b) => {
         const module = { type: 'ic_module', x: 24, y: 24, deletable: false, fields: { NAME: 'punish' }, inputs: b ? { BODY: { block: b } } : {} }
-        localStorage.setItem('draft:team-1:prisoners_dilemma', JSON.stringify({ saved_at: Date.now() + 100000, agent: { hand_code: 'def strategy(m, o):\n    return "C"\n', modules: [{ blocks: { languageVersion: 0, blocks: [module] } }] } }))
+        localStorage.setItem('draft:1:prisoners_dilemma', JSON.stringify({ saved_at: Date.now() + 100000, agent: { hand_code: 'def strategy(m, o):\n    return "C"\n', modules: [{ blocks: { languageVersion: 0, blocks: [module] } }] } }))
       }, root)
     await save(body)
     await page.reload()
@@ -545,7 +632,7 @@ test.describe('blocks for each round', () => {
         const module = { type: 'ic_module', x: 24, y: 24, deletable: false, fields: { NAME: 'plan' }, inputs: { BODY: { block: b } } }
         localStorage.setItem(key as string, JSON.stringify({ saved_at: Date.now() + 100000, agent: { hand_code: 'def strategy(m, o):\n    return "C"\n', modules: [{ blocks: { languageVersion: 0, blocks: [module] } }] } }))
       },
-      [`draft:team-1:${game}`, body],
+      [`draft:1:${game}`, body],
     )
     await page.reload()
     await page.getByRole('tab', { name: /plan/ }).click()
@@ -707,14 +794,12 @@ test.describe('during the window', () => {
     await expect(page.getByTestId('not-sent')).toHaveCount(0)
   })
 
-  test('warnings fire as the deadline passes 5 minutes, not while paused', async ({ page }) => {
+  test('warnings fire as the deadline passes 5 minutes and 1 minute', async ({ page }) => {
     await readyWorkspace(page)
-    const now = Date.now() / 1000
-    await mock(page, 'round', { closes_at: now + 302 })
+    await mock(page, 'round', { closes_in: 303 })
     await expect(page.getByText('5 minutes left')).toBeVisible({ timeout: 8_000 })
-    await mock(page, 'round', { closes_at: Date.now() / 1000 + 62, paused_remaining: 62 })
-    await page.waitForTimeout(3_500)
-    await expect(page.getByText('1 minute left')).toHaveCount(0)
+    await mock(page, 'round', { closes_in: 63 })
+    await expect(page.getByText('1 minute left')).toBeVisible({ timeout: 8_000 })
   })
 
   test('pressing save keeps the draft and reminds about submitting', async ({ page }) => {
@@ -763,7 +848,7 @@ test.describe('layout and wording', () => {
     await page.getByLabel('Start from an example').selectOption({ index: 1 })
     await page.getByRole('button', { name: 'Use as my strategy' }).click()
     await page.getByRole('dialog').getByRole('button', { name: 'Use as my strategy' }).click()
-    await expect(page.getByTestId('check')).toHaveText('Passes all checks')
+    await expect(page.getByTestId('check')).toHaveText('Ready to submit')
   })
 
   test('the header fits a small laptop screen', async ({ page }) => {
@@ -778,7 +863,7 @@ test.describe('layout and wording', () => {
 
   test('a deadline cut past both alerts gives only the closest one', async ({ page }) => {
     await readyWorkspace(page)
-    await mock(page, 'round', { closes_at: Date.now() / 1000 + 45 })
+    await mock(page, 'round', { closes_in: 45 })
     await expect(page.getByText('1 minute left')).toBeVisible()
     await expect(page.getByText('5 minutes left')).toHaveCount(0)
   })
@@ -800,38 +885,18 @@ test.describe('layout and wording', () => {
     await page.locator('.monaco-editor').first().click()
     await page.keyboard.type('#x')
     await expect(page.getByTestId('not-sent')).toBeVisible()
-    await mock(page, 'round', { status: 'locked', closes_at: null })
+    await mock(page, 'round', { status: 'running' })
     await expect(page.getByText('Version 1 is your strategy for this round.')).toBeVisible()
     await expect(page.getByText('will play when the window closes')).toHaveCount(0)
     await expect(page.getByTestId('not-sent')).toHaveCount(0)
   })
 
   test('a fallen team sees why, with no timer or submit', async ({ page }) => {
-    await login(page)
-    await claim(page)
-    await page.route('**/api/v1/me', async (route) => {
-      const response = await route.fetch({ url: 'http://localhost:8000/api/v1/me' })
-      const json = await response.json()
-      json.team.eliminated_in = 1
-      await route.fulfill({ response, json })
-    })
-    await page.reload()
-    await expect(page.getByText('Nation fallen')).toBeVisible()
+    await readyWorkspace(page)
+    await mock(page, 'team', { username: 'team1', change: { status: 'eliminated' } })
+    await expect(page.getByText('Nation fallen')).toBeVisible({ timeout: 8_000 })
     await expect(page.getByText('nothing more can be submitted')).toBeVisible()
     await expect(page.getByTestId('timer')).toHaveCount(0)
     await expect(submitButton(page)).toHaveCount(0)
-    await expect(page.getByRole('button', { name: 'Run practice match' })).toBeVisible()
-  })
-
-  test('plain names replace the jargon', async ({ page }) => {
-    await readyWorkspace(page)
-    await expect(page.getByText('Practice match', { exact: true })).toBeVisible()
-    await expect(page.getByText('Side simulation')).toHaveCount(0)
-    await expect(page.getByLabel('Opponent').locator('option', { hasText: 'Tit for tat' })).toHaveCount(1)
-    await mock(page, 'goto', { index: 3 })
-    await expect(page.getByText('5% random errors')).toBeVisible()
-    await page.getByLabel('Random error').fill('20')
-    await page.getByRole('button', { name: 'Run practice match' }).click()
-    await expect(page.getByText('You', { exact: true })).toBeVisible()
   })
 })

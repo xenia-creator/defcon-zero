@@ -1,191 +1,132 @@
 /**
- * A stand-in for the backend, so the team screens can be run and
- * tested on their own. It speaks the same API (see openapi.json) on the same port.
- * It does not run bots or check Python properly; that needs the real server.
+ * A stand-in for the backend, following docs/api.md, so the team screens can be
+ * run and tested on their own. It does not run bots or check Python properly;
+ * that needs the real server. Not used at the event.
  *
- * Run it with `npm run mock` and log in as team1 / team2 with the password "demo".
- * Tests drive it through the /__mock routes.
+ * Run it with `npm run mock` and log in as team1 / team2 with the password
+ * "demo", or as admin (an organiser). Tests drive it through the /__mock routes.
  */
 import { randomUUID } from 'node:crypto'
 import { createServer } from 'node:http'
-import { WebSocketServer } from 'ws'
 
-const PORT = Number(process.env.MOCK_PORT ?? 8000)
-const ALL = ['logic', 'history', 'chance']
-const COUNTRIES = ['Argentina', 'Australia', 'Brazil', 'Canada', 'Chile', 'Denmark', 'Egypt', 'Finland', 'France', 'Germany', 'India', 'Japan', 'Kenya', 'Mexico', 'Norway', 'Peru', 'Spain', 'Sweden', 'Turkey', 'Vietnam']
-const BOTS = [
-  { key: 'tit_for_tat', description: 'Copies your last move' },
-  { key: 'always_defect', description: 'Always betrays' },
-  { key: 'always_cooperate', description: 'Always trusts' },
-]
-
-const ROUND_SETUP = {
-  1: { name: "The Prisoner's Dilemma", game: { key: 'prisoners_dilemma', name: "The Prisoner's Dilemma" }, turns: 200, noise: 0 },
-  2: { name: 'Theatre of War', game: { key: 'theatre_of_war', name: 'Theatre of War' }, turns: 100, noise: 0 },
-  3: { name: 'Foreign Aid', game: { key: 'foreign_aid', name: 'Foreign Aid' }, turns: 50, noise: 0.05 },
-}
-
-const openRound = (index) => ({
-  id: `round-${index}`, index, ...ROUND_SETUP[index],
-  hide_turns: false, repetitions: 3, keep_fraction: 0.5, keep_count: null,
-  block_rules: { max_modules: 3, max_blocks: 20, categories: ALL },
-  status: 'open', opens_at: Date.now() / 1000, closes_at: Date.now() / 1000 + 1800,
-  paused_remaining: null, window_open: true, matches_total: 0, matches_done: 0,
-})
+const PORT = Number(process.env.MOCK_PORT ?? 8001)
+const TERRITORIES = [['ARG', 'Argentina'], ['AUS', 'Australia'], ['BRA', 'Brazil'], ['CAN', 'Canada'], ['CHL', 'Chile'], ['DNK', 'Denmark'], ['EGY', 'Egypt'], ['FIN', 'Finland'], ['FRA', 'France'], ['DEU', 'Germany'], ['IND', 'India'], ['JPN', 'Japan'], ['KEN', 'Kenya'], ['MEX', 'Mexico'], ['NOR', 'Norway'], ['PER', 'Peru'], ['ESP', 'Spain'], ['SWE', 'Sweden'], ['TUR', 'Turkey'], ['VNM', 'Vietnam']]
+const BOTS = ['tit_for_tat', 'always_defect', 'always_cooperate']
+const ROUND_NAMES = { 1: "The Prisoner's Dilemma", 2: 'Theatre of War', 3: 'Foreign Aid' }
+const NAME_RULE = /^[A-Za-z0-9 ]{3,24}$/
+const WINDOW_SECONDS = 1800
 
 let db
-let seq
-const sockets = new Set()
+
+const openRound = (number) => ({ id: number, number, name: ROUND_NAMES[number], defcon: 4 - number, status: 'open', opensAt: Date.now(), closesAt: Date.now() + WINDOW_SECONDS * 1000 })
 
 function reset() {
-  seq = 0
   db = {
-    teams: {
-      team1: { id: 'team-1', name: 'Team 1', country_code: null, eliminated_in: null },
-      team2: { id: 'team-2', name: 'Team 2', country_code: null, eliminated_in: null },
+    users: {
+      team1: { role: 'team', team: { id: 1, nation_name: null, territory_code: null, status: 'alive' } },
+      team2: { role: 'team', team: { id: 2, nation_name: null, territory_code: null, status: 'alive' } },
+      admin: { role: 'organiser', team: null },
     },
-    countries: COUNTRIES.map((name, i) => ({ code: String(100 + i), name, team_id: null })),
+    territories: TERRITORIES.map(([code, name]) => ({ code, name, claimed: false })),
     submissions: [],
     tokens: new Map(),
     round: openRound(1),
-    fairplay: [],
-    config: { probe_internet: false, probe_url: '' },
     fail: {}, // path -> HTTP status to answer with, for testing failures
+    rejectNext: null,
   }
 }
 reset()
 
-function emit(type, payload) {
-  const text = JSON.stringify({ seq: ++seq, type, ts: Date.now() / 1000, payload })
-  for (const ws of sockets) ws.send(text)
-}
+const iso = (ms) => (ms === null ? null : new Date(ms).toISOString())
+const roundOut = ({ opensAt, closesAt, ...round }) => ({ ...round, opens_at: iso(opensAt), closes_at: iso(closesAt), server_time: iso(Date.now()) })
+const error = (status, code, message) => ({ status, body: { error: { code, message } } })
+const summary = ({ id, version, status, createdAt }) => ({ id, version, status, created_at: iso(createdAt) })
+const detail = ({ id, version, status, errors, test_results }) => ({ id, version, status, errors, test_results })
 
-const error = (status, code, message, details = {}) => ({ status, body: { error: { code, message, details } } })
-
-function userFor(req) {
-  const token = (req.headers.authorization ?? '').replace('Bearer ', '')
-  const username = db.tokens.get(token)
-  return username ? { username, team: db.teams[username] } : null
-}
-
-const userOut = (username) => ({ id: `user-${username}`, username, role: 'team', team: db.teams[username] })
-
-function tokenPair(username) {
-  const access_token = randomUUID()
-  const refresh_token = randomUUID()
-  db.tokens.set(access_token, username)
-  return { access_token, refresh_token, user: userOut(username) }
-}
-
-function validate(body) {
-  const errors = []
-  if (!/def strategy\s*\(/.test(body.hand_code ?? '')) {
-    errors.push({ message: 'Your code must define strategy(my_history, opp_history)', line: 1, module: null, kind: 'code' })
-  }
-  const modules = (body.modules ?? []).map((m, i) => ({ index: i, name: `module_${i}`, code: '# compiled by the real server', block_count: 1 }))
-  return { errors, modules, assembled: body.hand_code ?? '', rules: db.round.block_rules }
-}
-
-const summary = ({ hand_code: _code, modules: _modules, code: _text, ...rest }) => rest
-
-function submit(team, body, key) {
-  if (team.eliminated_in !== null) return error(403, 'TEAM_ELIMINATED', 'Your nation has fallen and can no longer submit')
-  if (!db.round.window_open) return error(409, 'WINDOW_CLOSED', 'The submission window is closed')
-  const check = validate(body)
-  if (check.errors.length) return error(422, 'CODE_INVALID', check.errors[0].message, { errors: check.errors })
-  const mine = db.submissions.filter((s) => s.team_id === team.id)
-  const again = key && mine.find((s) => s.key === key)
-  if (again) return { status: 202, body: summary(again) }
-  const submission = {
-    id: randomUUID(), team_id: team.id, key, version: mine.length + 1, module_count: body.modules?.length ?? 0, rule_problems: [],
-    status: 'checking', errors: [], test_results: [], code_sha256: 'mock', created_at: Date.now() / 1000, checked_at: null,
-    hand_code: body.hand_code, modules: (body.modules ?? []).map((m, i) => ({ index: i, name: `module_${i}`, code: '', layout: m.layout })), code: body.hand_code,
-  }
+function submit(team, body) {
+  if (db.round.status !== 'open') return error(403, 'WINDOW_CLOSED', 'The submission window is closed.')
+  if (!/^\s*def\s+strategy\s*\(/m.test(body.code ?? '')) return error(422, 'INVALID_CODE', 'Your code has no strategy function.')
+  const mine = db.submissions.filter((s) => s.teamId === team.id)
+  const submission = { id: db.submissions.length + 1, teamId: team.id, version: mine.length + 1, status: 'pending', errors: [], test_results: [], createdAt: Date.now(), code: body.code, blocks: body.blocks ?? null }
   db.submissions.unshift(submission)
   setTimeout(() => {
-    submission.checked_at = Date.now() / 1000
     if (db.rejectNext) {
       submission.status = 'rejected'
       submission.errors = [db.rejectNext]
       db.rejectNext = null
-      emit('submission.result', { submission: summary(submission) })
       return
     }
     submission.status = 'accepted'
-    submission.test_results = BOTS.map((b) => ({ opponent: b.key, score: 400, opponent_score: 400 }))
-    emit('submission.result', { submission: summary(submission) })
+    submission.test_results = BOTS.map((opponent) => ({ opponent, my_score: 400, opp_score: 400 }))
   }, 300)
-  return { status: 202, body: summary(submission) }
+  return { status: 202, body: { id: submission.id, version: submission.version, status: submission.status } }
 }
 
-function setWindow(change) {
-  Object.assign(db.round, change)
-  db.round.window_open = db.round.status === 'open' && db.round.paused_remaining === null
-  emit('window.updated', { round: db.round })
+function claim(team, body) {
+  if (team.territory_code) return error(409, 'ALREADY_CLAIMED', 'Your team has already claimed a territory.')
+  const name = String(body.nation_name ?? '')
+  if (!NAME_RULE.test(name)) return error(422, 'INVALID_NAME', 'Nation names are 3 to 24 letters, numbers or spaces.')
+  const taken = Object.values(db.users).some((u) => u.team?.nation_name?.toLowerCase() === name.toLowerCase())
+  if (taken) return error(409, 'NAME_TAKEN', 'That nation name is already used.')
+  const territory = db.territories.find((t) => t.code === body.territory_code)
+  if (!territory) return error(404, 'NOT_FOUND', 'No such territory.')
+  if (territory.claimed) return error(409, 'TERRITORY_TAKEN', 'This territory is already claimed.')
+  territory.claimed = true
+  team.nation_name = name
+  team.territory_code = territory.code
+  const { status: _status, ...out } = team
+  return { status: 200, body: out }
 }
 
 /** Test controls: nothing in the client calls these. */
 function control(path, body) {
   switch (path) {
     case '/__mock/reset': reset(); return {}
-    case '/__mock/round': setWindow(body); return db.round
-    case '/__mock/goto': db.round = openRound(body.index); emit('round.status', { round: db.round }); return db.round
-    case '/__mock/fairplay': return db.fairplay
-    case '/__mock/practice': return db.practiceGame
-    case '/__mock/reject': db.rejectNext = body.message; return {}
-    case '/__mock/take': {
-      const country = db.countries.find((c) => c.code === body.code)
-      country.team_id = 'someone-else'
-      emit('team.updated', {})
-      return {}
+    case '/__mock/goto': db.round = openRound(body.index); return roundOut(db.round)
+    case '/__mock/round': {
+      const { closes_in: closesIn, ...change } = body
+      Object.assign(db.round, change)
+      if (closesIn !== undefined) db.round.closesAt = closesIn === null ? null : Date.now() + closesIn * 1000
+      return roundOut(db.round)
     }
+    case '/__mock/take': db.territories.find((t) => t.code === body.code).claimed = true; return {}
+    case '/__mock/team': Object.assign(db.users[body.username].team, body.change); return {}
     case '/__mock/fail': db.fail = body; return {}
-    case '/__mock/raw': for (const ws of sockets) ws.send(body.text); return {}
-    case '/__mock/submission': db.submissions[0].modules[0].layout = body.layout; return {}
-    case '/__mock/submissions': return db.submissions.map(summary)
-    case '/__mock/drop': for (const ws of sockets) ws.close(1012); return {}
+    case '/__mock/reject': db.rejectNext = body.message; return {}
+    case '/__mock/submissions': return db.submissions
+    case '/__mock/expire': db.tokens.clear(); return {}
     default: return null
   }
 }
 
 function route(req, path, body) {
   if (path === '/api/v1/auth/login') {
-    if (!db.teams[body.username] || body.password !== 'demo') return error(401, 'BAD_CREDENTIALS', 'Wrong username or password')
-    return { status: 200, body: tokenPair(body.username) }
+    const user = db.users[body.username]
+    if (!user || body.password !== 'demo') return error(401, 'INVALID_LOGIN', 'Wrong username or password.')
+    const token = randomUUID()
+    db.tokens.set(token, body.username)
+    const team = user.team && { id: user.team.id, nation_name: user.team.nation_name, territory_code: user.team.territory_code }
+    return { status: 200, body: { access_token: token, role: user.role, team } }
   }
-  if (path === '/api/v1/auth/refresh') return error(401, 'BAD_TOKEN', 'Your session has ended')
-  if (path === '/api/v1/clock') return { status: 200, body: { server_time: Date.now() / 1000 } }
+  if (path === '/api/v1/health') return { status: 200, body: { status: 'ok' } }
 
-  const user = userFor(req)
-  if (!user) return error(401, 'UNAUTHENTICATED', 'Log in first')
-  const { team, username } = user
+  const username = db.tokens.get((req.headers.authorization ?? '').replace('Bearer ', ''))
+  if (!username) return error(401, 'UNAUTHORIZED', 'Log in first.')
+  const { team } = db.users[username]
   const key = `${req.method} ${path}`
+  if (key === 'GET /api/v1/rounds/current') return { status: 200, body: roundOut(db.round) }
+  if (key === 'GET /api/v1/territories') return { status: 200, body: db.territories }
+  if (!team) return error(403, 'FORBIDDEN', 'Only for teams.')
   switch (key) {
-    case 'GET /api/v1/config': return { status: 200, body: db.config }
-    case 'POST /api/v1/fairplay/events': db.fairplay.push(...body.events); return { status: 200, body: { ok: true } }
-    case 'GET /api/v1/me': return { status: 200, body: userOut(username) }
-    case 'GET /api/v1/countries': return { status: 200, body: db.countries }
-    case 'GET /api/v1/rounds/current': return { status: 200, body: db.round }
-    case 'GET /api/v1/practice/bots': return { status: 200, body: BOTS }
-    case 'POST /api/v1/practice/validate': return { status: 200, body: validate(body) }
-    case 'POST /api/v1/practice/simulate': db.practiceGame = body.game; return { status: 200, body: { score: 150, opponent_score: 150, my_moves: 'C'.repeat(body.turns), opponent_moves: 'C'.repeat(body.turns), forfeit: null } }
-    case 'GET /api/v1/submissions': return { status: 200, body: db.submissions.filter((s) => s.team_id === team.id).map(summary) }
-    case 'POST /api/v1/submissions': return submit(team, body, req.headers['idempotency-key'])
-    case 'POST /api/v1/teams/me/country': {
-      if (team.country_code) return error(409, 'ALREADY_CLAIMED', 'Your team already has a country')
-      const country = db.countries.find((c) => c.code === body.code)
-      if (!country) return error(404, 'NOT_FOUND', 'No such country')
-      if (country.team_id) return error(409, 'COUNTRY_TAKEN', `${country.name} has already been claimed`)
-      country.team_id = team.id
-      team.country_code = country.code
-      emit('team.updated', {})
-      return { status: 200, body: team }
-    }
+    case 'GET /api/v1/teams/me': return { status: 200, body: team }
+    case 'POST /api/v1/teams/me/claim': return claim(team, body)
+    case 'GET /api/v1/submissions': return { status: 200, body: db.submissions.filter((s) => s.teamId === team.id).map(summary) }
+    case 'POST /api/v1/submissions': return submit(team, body)
   }
-  const detail = path.match(/^\/api\/v1\/submissions\/(.+)$/)
-  if (detail) {
-    const found = db.submissions.find((s) => s.id === detail[1] && s.team_id === team.id)
-    return found ? { status: 200, body: found } : error(404, 'NOT_FOUND', 'Submission not found')
+  const found = path.match(/^\/api\/v1\/submissions\/(\d+)$/)
+  if (found) {
+    const submission = db.submissions.find((s) => s.id === Number(found[1]) && s.teamId === team.id)
+    return submission ? { status: 200, body: detail(submission) } : error(404, 'NOT_FOUND', 'Submission not found.')
   }
   return error(404, 'NOT_FOUND', `The mock has no ${key}`)
 }
@@ -215,15 +156,4 @@ const server = createServer((req, res) => {
   })
 })
 
-const wss = new WebSocketServer({ noServer: true })
-server.on('upgrade', (req, socket, head) => {
-  const token = new URL(req.url, 'http://mock').searchParams.get('token')
-  wss.handleUpgrade(req, socket, head, (ws) => {
-    if (!db.tokens.has(token)) return ws.close(4401)
-    sockets.add(ws)
-    ws.on('close', () => sockets.delete(ws))
-    ws.send(JSON.stringify({ seq: null, type: 'hello', ts: Date.now() / 1000, payload: { head: seq } }))
-  })
-})
-
-server.listen(PORT, () => console.log(`Mock Command Server on http://localhost:${PORT} (team1 or team2, password: demo)`))
+server.listen(PORT, () => console.log(`Mock backend on http://localhost:${PORT} (team1, team2 or admin, password: demo)`))
