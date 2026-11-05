@@ -1,13 +1,13 @@
 # DEFCON Zero API Contract
 
-Status: draft v2. Changes from v1 are marked **[NEW]** or **[CHANGED]**.
+Status: draft v3. Changes in v3 are marked **[NEW]** or **[CHANGED]**.
 Owner: Sumedh (backend). Engine signatures owned by Shashwat.
 
 ---
 
 ## 1. Conventions
 
-- **Auth:** every route except `POST /auth/login` needs `Authorization: Bearer <token>`.
+- **Auth:** every route except `POST /auth/login` and `GET /health` needs `Authorization: Bearer <token>`. **[CHANGED]**
 - **Timestamps:** ISO 8601, UTC, for example `2026-11-12T10:30:00Z`.
 - **server_time:** every round and submission response includes `server_time`. Timers on the frontend must be computed as `closes_at - server_time`, never from the client clock.
 - **IDs:** integers.
@@ -36,6 +36,7 @@ The frontend should branch on `code`, never on `message`. Messages may change; c
 | 403 | `FORBIDDEN` | Logged in, but role not allowed (team calling an admin route) |
 | 403 | `TEAM_DISQUALIFIED` | Disqualified team tries to submit |
 | 404 | `NOT_FOUND` | Resource does not exist, or belongs to another team |
+| 405 | `METHOD_NOT_ALLOWED` | The route exists, but not with this HTTP method **[NEW]** |
 | 409 | `TERRITORY_TAKEN` | Territory already claimed |
 | 409 | `NAME_TAKEN` | Nation name already claimed |
 | 409 | `ALREADY_CLAIMED` | Team has already claimed a territory |
@@ -68,6 +69,8 @@ Response `200`:
 ```
 
 `role` is `"team"` or `"organiser"`. Organiser accounts are created by the backend team only. Errors: `401 INVALID_CREDENTIALS`.
+
+**[CHANGED]** `team_id` is `null` for organisers.
 
 ### `GET /me`
 
@@ -137,6 +140,7 @@ Response `200`:
 }
 ```
 
+- **[CHANGED] `opens_at`, `closes_at`:** nullable while `status` is `waiting`.
 - **[NEW] `game`:** one of `prisoners_dilemma`, `theatre_of_war`, `foreign_aid`. **The frontend must choose the game, editor and docs from `game`, never from `number`.** `number` is for display only (DEFCON level).
 - **[NEW] `config`:** per-round rules. The editor reads its limits and move blocks from here instead of hardcoding them.
   - `moves`: the valid moves for this game (see section 8).
@@ -288,6 +292,8 @@ Organiser only.
 { "status": "disqualified" }
 ```
 
+**[CHANGED]** Response `200`: same body as `GET /me`.
+
 There is no fair-play report route. Reports go to organisers directly, and organisers disqualify through this route.
 
 ---
@@ -324,3 +330,16 @@ Theatre of War and Foreign Aid move strings are pending confirmation from Shashw
 - Fair-play reports
 - WebSockets (polling for now)
 - Redis job queue (submission checks run in-process for now; the API does not change when this moves to Redis)
+
+---
+
+## 10. Health **[NEW]**
+
+### `GET /health`
+
+Public route: no token needed.
+
+Response `200`:
+```json
+{ "status": "ok" }
+```
