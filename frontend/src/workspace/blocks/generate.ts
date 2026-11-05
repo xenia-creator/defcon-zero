@@ -3,11 +3,10 @@
  * JSON only, so it needs neither Blockly nor the server, and it is safe on any
  * JSON a draft might hold: nothing from a layout reaches the Python unchecked.
  *
- * opp_last_move() and opp_defection_rate() are the engine's helpers, named in
- * the team plan. The rest of the helper list is still to come. Rounds 2 and 3
- * use only what a module receives, and their shape is a placeholder (see games.ts).
+ * The Python uses only what a bot receives, my_history and opp_history, so it
+ * doesn't rely on the engine providing any helper functions.
  */
-import { blockSet } from './categories'
+import { MODULE_ARGS, TOOLBOX, moveLabel } from './categories'
 import { moduleName, topBlocks, type BlockState, type Layout } from './layout'
 
 /** Problems stop a submit. Warnings are about a strategy that would still run but probably isn't what was meant. */
@@ -16,26 +15,22 @@ export type Generated = { name: string; code: string; problems: string[]; warnin
 const MAX_DEPTH = 100
 const NAME = /^[a-z][a-z0-9_]{0,30}$/
 const PYTHON_WORDS = new Set(['and', 'as', 'assert', 'async', 'await', 'break', 'class', 'continue', 'def', 'del', 'elif', 'else', 'except', 'finally', 'for', 'from', 'global', 'if', 'import', 'in', 'is', 'lambda', 'nonlocal', 'not', 'or', 'pass', 'raise', 'return', 'try', 'while', 'with', 'yield'])
-const RESERVED = new Set(['strategy', 'opp_last_move', 'opp_defection_rate', 'random', 'math', 'my_history', 'opp_history', 'role', 'amount'])
-const TROOPS = 100
-const EVEN_SPLIT = '[20, 20, 20, 20, 20]'
+const RESERVED = new Set(['strategy', 'random', 'math', 'my_history', 'opp_history'])
+const ALLOWED = new Set(TOOLBOX.flatMap((group) => group.blocks))
+
+/** Separates a team's code from the Python made from its blocks, so a stored version can be reopened. */
+const BLOCKS_MARKER = '# --- block modules ---'
 
 const percent = (value: unknown) => {
   const n = Number(value)
   return Number.isFinite(n) ? Math.round(Math.min(100, Math.max(0, n))) / 100 : 0
 }
 
-/** A whole number from a field. Anything else becomes the lowest value allowed. */
-const whole = (value: unknown, low: number, high: number) => {
-  const n = Number(value)
-  return Number.isFinite(n) ? Math.round(Math.min(high, Math.max(low, n))) : low
-}
-
 /** True when every path through these blocks ends in a decision. */
 function alwaysDecides(first: BlockState | undefined, depth = 0): boolean {
   let block = first
   while (block && depth <= MAX_DEPTH) {
-    if (block.type === 'ic_play' || block.type === 'ic_send_troops' || block.type === 'ic_copy_split' || block.type === 'ic_send_percent') return true
+    if (block.type === 'ic_play') return true
     if (block.type === 'controls_ifelse' && alwaysDecides(block.inputs?.DO0?.block, depth + 1) && alwaysDecides(block.inputs?.ELSE?.block, depth + 1)) return true
     block = block.next?.block
     depth++
@@ -43,17 +38,21 @@ function alwaysDecides(first: BlockState | undefined, depth = 0): boolean {
   return false
 }
 
-function generateModule(layout: Layout, game: string): Generated {
-  const set = blockSet(game)
-  const allowed = new Set([...set.moves, ...Object.values(set.categories).flatMap((c) => c.blocks)])
+function generateModule(layout: Layout, moves: string[]): Generated {
   const problems: string[] = []
   const note = (problem: string) => {
     if (!problems.includes(problem)) problems.push(problem)
   }
   const usable = (block: BlockState) => {
-    if (allowed.has(String(block.type))) return true
-    note(`The '${String(block.type)}' block can't be used in this round.`)
+    if (ALLOWED.has(String(block.type))) return true
+    note(`The '${String(block.type)}' block can't be used here.`)
     return false
+  }
+  /** A move as Python text. Only this round's moves get through. */
+  const move = (value: unknown) => {
+    if (moves.includes(String(value))) return JSON.stringify(String(value))
+    note(`A block uses a move that isn't in this round. The moves are: ${moves.map(moveLabel).join(', ')}.`)
+    return JSON.stringify(moves[0])
   }
   const name = moduleName(layout)
   const top = topBlocks(layout)
@@ -71,19 +70,13 @@ function generateModule(layout: Layout, game: string): Generated {
     if (!usable(block)) return 'False'
     switch (block.type) {
       case 'ic_opp_last':
-        return `opp_last_move() == ${block.fields?.MOVE === 'C' ? '"C"' : '"D"'}`
+        return `len(opp_history) > 0 and opp_history[-1] == ${move(block.fields?.MOVE)}`
       case 'ic_opp_rate':
-        return `opp_defection_rate() ${block.fields?.OP === 'LT' ? '<' : '>'} ${percent(block.fields?.PERCENT)}`
+        return `opp_history.count(${move(block.fields?.MOVE)}) ${block.fields?.OP === 'LT' ? '<' : '>'} ${percent(block.fields?.PERCENT)} * len(opp_history)`
       case 'ic_first_turn':
         return 'len(my_history) == 0'
       case 'ic_chance':
         return `random.random() < ${percent(block.fields?.PERCENT)}`
-      case 'ic_opp_region':
-        return `len(opp_history) > 0 and opp_history[-1][${whole(block.fields?.REGION, 1, 5) - 1}] > ${whole(block.fields?.TROOPS, 0, TROOPS)}`
-      case 'ic_role':
-        return `role == ${block.fields?.ROLE === 'return' ? '"return"' : '"send"'}`
-      case 'ic_amount':
-        return `amount > ${whole(block.fields?.POINTS, 0, 1_000_000)}`
       default:
         note(`The '${String(block.type)}' block can't be used here.`)
         return 'False'
@@ -102,16 +95,7 @@ function generateModule(layout: Layout, game: string): Generated {
       if (!usable(block)) {
         // reported; the rest of the chain is still read
       } else if (block.type === 'ic_play') {
-        lines.push(`${pad}return ${block.fields?.MOVE === 'D' ? '"D"' : '"C"'}`)
-      } else if (block.type === 'ic_send_troops') {
-        const split = [1, 2, 3, 4, 5].map((n) => whole(block?.fields?.[`R${n}`], 0, TROOPS))
-        const total = split.reduce((a, b) => a + b, 0)
-        if (total !== TROOPS) note(`A send troops block adds up to ${total}. It must add up to ${TROOPS}.`)
-        lines.push(`${pad}return [${split.join(', ')}]`)
-      } else if (block.type === 'ic_copy_split') {
-        lines.push(`${pad}return opp_history[-1] if opp_history else ${EVEN_SPLIT}`)
-      } else if (block.type === 'ic_send_percent') {
-        lines.push(`${pad}return amount * ${whole(block.fields?.PERCENT, 0, 100)} // 100`)
+        lines.push(`${pad}return ${move(block.fields?.MOVE)}`)
       } else if (block.type === 'controls_ifelse') {
         lines.push(`${pad}if ${condition(block.inputs?.IF0?.block)}:`)
         const then = statements(block.inputs?.DO0?.block, indent + 1, depth + 1)
@@ -130,11 +114,11 @@ function generateModule(layout: Layout, game: string): Generated {
   const body = statements(root?.inputs?.BODY?.block, 1, 1)
   const safeName = NAME.test(name) ? name : 'module'
   const warnings = alwaysDecides(root?.inputs?.BODY?.block) ? [] : ['Some situations reach no move, so this module gives back nothing there. Fill every branch.']
-  return { name, problems, warnings, code: [`def ${safeName}(${set.args}):`, ...(body.length ? body : ['    return None'])].join('\n') + '\n' }
+  return { name, problems, warnings, code: [`def ${safeName}(${MODULE_ARGS}):`, ...(body.length ? body : ['    return None'])].join('\n') + '\n' }
 }
 
-export function generateModules(layouts: Layout[], game = 'prisoners_dilemma'): Generated[] {
-  const generated = layouts.map((layout) => generateModule(layout, game))
+export function generateModules(layouts: Layout[], moves: string[]): Generated[] {
+  const generated = layouts.map((layout) => generateModule(layout, moves))
   for (const module of generated) {
     if (generated.filter((m) => m.name === module.name).length > 1) module.problems.push(`Two modules are named '${module.name}'. Rename one.`)
   }
@@ -149,6 +133,12 @@ export function generateModules(layouts: Layout[], game = 'prisoners_dilemma'): 
 export function assemble(handCode: string, modules: Generated[]): string {
   if (modules.length === 0) return handCode
   const usesRandom = modules.some((m) => m.code.includes('random.'))
-  const parts = [handCode.trimEnd(), ...(usesRandom ? ['import random'] : []), ...modules.map((m) => m.code.trimEnd())]
+  const parts = [handCode.trimEnd(), BLOCKS_MARKER, ...(usesRandom ? ['import random'] : []), ...modules.map((m) => m.code.trimEnd())]
   return `${parts.join('\n\n')}\n`
+}
+
+/** The team's own code from a stored version, for reopening it. The blocks come back separately. */
+export function handCodeOf(code: string): string {
+  const at = code.indexOf(`\n${BLOCKS_MARKER}`)
+  return at === -1 ? code : `${code.slice(0, at).trimEnd()}\n`
 }

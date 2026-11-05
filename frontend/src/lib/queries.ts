@@ -1,9 +1,8 @@
 import { useQuery } from '@tanstack/react-query'
-import { z } from 'zod'
 import { ApiError, request } from './api'
 import { useAuth } from './auth'
 import { syncClock } from './clock'
-import { Round, SubmissionDetail, Submissions, Team, Territories } from './contract'
+import { Round, SubmissionDetail, Submissions, Team, Territories, isChecked } from './contract'
 
 // docs/api.md: poll the round every 2 seconds, and every second while a submission is pending
 const ROUND_POLL_MS = 2_000
@@ -40,7 +39,7 @@ export const useTeam = (enabled: boolean) =>
     enabled,
     refetchInterval: TEAM_POLL_MS,
     staleTime: 0,
-    queryFn: () => request('GET', '/teams/me', Team),
+    queryFn: () => request('GET', '/me', Team),
   })
 
 export const useTerritories = () =>
@@ -51,27 +50,22 @@ export const useTerritories = () =>
     queryFn: () => request('GET', '/territories', Territories),
   })
 
-export const useSubmissions = () =>
+/** This round's versions, newest first. */
+export const useSubmissions = (roundId: number | undefined) =>
   useQuery({
-    queryKey: ['submissions'],
-    queryFn: () => request('GET', '/submissions', Submissions),
-    refetchInterval: (query) => (query.state.data?.some((s) => s.status === 'pending') ? PENDING_POLL_MS : SUBMISSIONS_POLL_MS),
+    queryKey: ['submissions', roundId],
+    enabled: roundId !== undefined,
+    queryFn: () => request('GET', `/submissions?round_id=${roundId}`, Submissions),
+    refetchInterval: (query) => (query.state.data?.some((s) => !isChecked(s.status)) ? PENDING_POLL_MS : SUBMISSIONS_POLL_MS),
     staleTime: 0,
   })
 
-/** One version's result. A finished one never changes, so it stops polling. */
+/** One version's result. A checked one never changes, so it stops polling. */
 export const useSubmission = (id: number | undefined) =>
   useQuery({
     queryKey: ['submission', id],
     enabled: id !== undefined,
     queryFn: () => request('GET', `/submissions/${id}`, SubmissionDetail),
-    refetchInterval: (query) => (query.state.data && query.state.data.status !== 'pending' ? false : PENDING_POLL_MS),
-    staleTime: (query) => (query.state.data && query.state.data.status !== 'pending' ? Infinity : 0),
-  })
-
-export const useBots = () =>
-  useQuery({
-    queryKey: ['bots'],
-    queryFn: () => request('GET', '/practice/bots', z.array(z.object({ key: z.string(), description: z.string().default('') }))),
-    staleTime: Infinity,
+    refetchInterval: (query) => (query.state.data && isChecked(query.state.data.status) ? false : PENDING_POLL_MS),
+    staleTime: (query) => (query.state.data && isChecked(query.state.data.status) ? Infinity : 0),
   })

@@ -48,7 +48,7 @@ export function ClaimCountry({ username }: { username: string }) {
     setBusy(true)
     setError(null)
     try {
-      const team = await request('POST', '/teams/me/claim', Team, { territory_code: code, nation_name: name })
+      const team = await request('POST', '/teams/claim', Team, { territory_code: code, nation_name: name })
       setTeam(team)
     } catch (err) {
       setError(errorMessage(err, 'Could not reach the server, so nothing was claimed. Try again.'))

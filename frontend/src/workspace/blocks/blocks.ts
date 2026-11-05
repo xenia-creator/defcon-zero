@@ -1,6 +1,6 @@
 /**
- * Blockly setup: the custom blocks, a toolbox filtered by the round's allowed
- * categories, and a theme matching the app. generate.ts turns layouts into Python.
+ * Blockly setup: the six blocks, the toolbox, and a theme matching the app.
+ * generate.ts turns layouts into Python.
  */
 import * as Blockly from 'blockly/core'
 import 'blockly/blocks'
@@ -11,7 +11,7 @@ Blockly.setLocale(En as unknown as Record<string, string>)
 Blockly.config.snapRadius = 48
 Blockly.config.connectingSnapRadius = 68
 
-import { AMBER, RED, TEAL, blockSet } from './categories'
+import { AMBER, RED, TEAL, TOOLBOX, moveLabel } from './categories'
 
 // Registering twice throws, which would happen on every hot reload in development
 if (!Blockly.Extensions.isRegistered('ic_module_name')) {
@@ -25,7 +25,13 @@ if (!Blockly.Extensions.isRegistered('ic_module_name')) {
   })
 }
 
-const MOVES = [['cooperate', 'C'], ['betray', 'D']]
+/** The current round's moves. The dropdowns read this when a block is created, so call it before Blockly starts. */
+let roundMoves = ['C', 'D']
+export function setBlockMoves(moves: string[]) {
+  roundMoves = moves
+}
+const moveField = { type: 'field_dropdown', name: 'MOVE' }
+const moveOptions = () => roundMoves.map((move) => [moveLabel(move), move])
 
 Blockly.common.defineBlocksWithJsonArray([
   {
@@ -35,83 +41,6 @@ Blockly.common.defineBlocksWithJsonArray([
     colour: RED,
     extensions: ['ic_module_name'],
     tooltip: 'A helper your strategy can call',
-  },
-  {
-    type: 'ic_play',
-    message0: 'play %1',
-    args0: [{ type: 'field_dropdown', name: 'MOVE', options: MOVES }],
-    previousStatement: null,
-    colour: RED,
-    tooltip: 'Give back this move and stop the module',
-  },
-  {
-    type: 'ic_opp_last',
-    message0: "opponent's last move was %1",
-    args0: [{ type: 'field_dropdown', name: 'MOVE', options: [['betray', 'D'], ['cooperate', 'C']] }],
-    output: 'Boolean',
-    colour: AMBER,
-    tooltip: 'What your opponent played last turn',
-  },
-  {
-    type: 'ic_opp_rate',
-    message0: 'opponent betrays %1 %2 %% of the time',
-    args0: [
-      { type: 'field_dropdown', name: 'OP', options: [['more than', 'GT'], ['less than', 'LT']] },
-      { type: 'field_number', name: 'PERCENT', value: 50, min: 0, max: 100, precision: 1 },
-    ],
-    output: 'Boolean',
-    colour: AMBER,
-    tooltip: 'How often your opponent has betrayed so far',
-  },
-  {
-    type: 'ic_send_troops',
-    message0: 'send troops %1 %2 %3 %4 %5',
-    args0: [1, 2, 3, 4, 5].map((n) => ({ type: 'field_number', name: `R${n}`, value: 20, min: 0, max: 100, precision: 1 })),
-    previousStatement: null,
-    colour: RED,
-    tooltip: 'Troops for regions 1 to 5. They must add up to 100',
-  },
-  {
-    type: 'ic_copy_split',
-    message0: "copy opponent's last split",
-    previousStatement: null,
-    colour: RED,
-    tooltip: "Play your opponent's last split. On the first battle this sends 20 to each region",
-  },
-  {
-    type: 'ic_opp_region',
-    message0: 'opponent last sent more than %1 to region %2',
-    args0: [
-      { type: 'field_number', name: 'TROOPS', value: 30, min: 0, max: 100, precision: 1 },
-      { type: 'field_dropdown', name: 'REGION', options: ['1', '2', '3', '4', '5'].map((n) => [n, n]) },
-    ],
-    output: 'Boolean',
-    colour: AMBER,
-    tooltip: "Checks your opponent's last split",
-  },
-  {
-    type: 'ic_send_percent',
-    message0: 'send %1 %% of the amount',
-    args0: [{ type: 'field_number', name: 'PERCENT', value: 50, min: 0, max: 100, precision: 1 }],
-    previousStatement: null,
-    colour: RED,
-    tooltip: 'When sending, the amount is what you can send. When returning, it is what arrived after tripling',
-  },
-  {
-    type: 'ic_role',
-    message0: 'my role is %1',
-    args0: [{ type: 'field_dropdown', name: 'ROLE', options: [['sender', 'send'], ['receiver', 'return']] }],
-    output: 'Boolean',
-    colour: AMBER,
-    tooltip: 'Roles alternate each turn',
-  },
-  {
-    type: 'ic_amount',
-    message0: 'the amount is more than %1',
-    args0: [{ type: 'field_number', name: 'POINTS', value: 50, min: 0, precision: 1 }],
-    output: 'Boolean',
-    colour: AMBER,
-    tooltip: 'How many points you are deciding about this turn',
   },
   { type: 'ic_first_turn', message0: 'first turn?', output: 'Boolean', colour: AMBER, tooltip: 'True on the first turn of a match' },
   {
@@ -124,20 +53,50 @@ Blockly.common.defineBlocksWithJsonArray([
   },
 ])
 
-export function toolbox(categories: string[], game: string): Blockly.utils.toolbox.ToolboxDefinition {
-  const set = blockSet(game)
-  const category = (name: string, colour: string, types: string[]) => ({
-    kind: 'category',
-    name,
-    colour,
-    contents: types.map((type) => ({ kind: 'block', type })),
-  })
+Blockly.Blocks.ic_play = {
+  init(this: Blockly.Block) {
+    this.jsonInit({
+      message0: 'play %1',
+      args0: [{ ...moveField, options: moveOptions() }],
+      previousStatement: null,
+      colour: RED,
+      tooltip: 'Give back this move and stop the module',
+    })
+  },
+}
+
+Blockly.Blocks.ic_opp_last = {
+  init(this: Blockly.Block) {
+    this.jsonInit({
+      message0: "opponent's last move was %1",
+      args0: [{ ...moveField, options: moveOptions() }],
+      output: 'Boolean',
+      colour: AMBER,
+      tooltip: 'What your opponent played last turn. False on the first turn',
+    })
+  },
+}
+
+Blockly.Blocks.ic_opp_rate = {
+  init(this: Blockly.Block) {
+    this.jsonInit({
+      message0: 'opponent chose %1 %2 %3 %% of the time',
+      args0: [
+        { ...moveField, options: moveOptions() },
+        { type: 'field_dropdown', name: 'OP', options: [['more than', 'GT'], ['less than', 'LT']] },
+        { type: 'field_number', name: 'PERCENT', value: 50, min: 0, max: 100, precision: 1 },
+      ],
+      output: 'Boolean',
+      colour: AMBER,
+      tooltip: 'How often your opponent has played this move so far',
+    })
+  },
+}
+
+export function toolbox(): Blockly.utils.toolbox.ToolboxDefinition {
   return {
     kind: 'categoryToolbox',
-    contents: [
-      category('Moves', RED, set.moves),
-      ...categories.filter((c) => set.categories[c]).map((c) => category(set.categories[c].label, set.categories[c].colour, set.categories[c].blocks)),
-    ],
+    contents: TOOLBOX.map(({ label, colour, blocks }) => ({ kind: 'category', name: label, colour, contents: blocks.map((type) => ({ kind: 'block', type })) })),
   }
 }
 

@@ -23,11 +23,12 @@ export class ApiError extends Error {
 /** The text to show for a failed request: the server's own message, or the fallback when it can't be reached. */
 export const errorMessage = (err: unknown, fallback: string) => (err instanceof ApiError ? err.message : fallback)
 
-async function send(method: string, path: string, body?: unknown): Promise<Response> {
+async function send(method: string, path: string, body: unknown, extra: Record<string, string>): Promise<Response> {
   const headers: Record<string, string> = {}
   if (body !== undefined) headers['Content-Type'] = 'application/json'
   const token = useAuth.getState().session?.access
   if (token) headers.Authorization = `Bearer ${token}`
+  Object.assign(headers, extra)
   const abort = new AbortController()
   const timeout = setTimeout(() => abort.abort(), REQUEST_TIMEOUT_MS)
   try {
@@ -50,14 +51,14 @@ async function readJson(response: Response): Promise<unknown> {
  * Send a request and check the answer against its shape. Throws an ApiError
  * carrying the server's error code, or a plain error if it can't be reached.
  */
-export async function request<S extends z.ZodType>(method: string, path: string, shape: S, body?: unknown): Promise<z.output<S>> {
-  const response = await send(method, path, body)
+export async function request<S extends z.ZodType>(method: string, path: string, shape: S, body?: unknown, headers: Record<string, string> = {}): Promise<z.output<S>> {
+  const response = await send(method, path, body, headers)
   const json = await readJson(response)
   if (!response.ok) {
     const e = (json as { error?: { code?: unknown; message?: unknown } } | null)?.error
     const code = typeof e?.code === 'string' ? e.code : 'UNKNOWN'
     // Only an expired or missing token ends the session; a restarting server must not log the whole lab out
-    if (response.status === 401 && code !== 'INVALID_LOGIN' && useAuth.getState().session) useAuth.getState().logout(true)
+    if (response.status === 401 && code !== 'INVALID_CREDENTIALS' && useAuth.getState().session) useAuth.getState().logout(true)
     throw new ApiError(code, typeof e?.message === 'string' ? e.message : 'Could not reach the server. Try again in a moment.', response.status)
   }
   const parsed = shape.safeParse(json)

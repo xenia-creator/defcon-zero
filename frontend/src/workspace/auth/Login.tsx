@@ -2,7 +2,7 @@ import { useRef, useState, type FormEvent } from 'react'
 import { Button, inputClass } from '../../components/ui'
 import { errorMessage, request } from '../../lib/api'
 import { useAuth } from '../../lib/auth'
-import { LoginOut } from '../../lib/contract'
+import { LoginOut, Team } from '../../lib/contract'
 
 export function Login() {
   const setSession = useAuth((s) => s.setSession)
@@ -22,7 +22,9 @@ export function Login() {
     try {
       const name = username.trim()
       const answer = await request('POST', '/auth/login', LoginOut, { username: name, password })
-      setSession({ access: answer.access_token, username: name, role: answer.role, team: answer.team })
+      // Login only gives the team's id, so the rest comes from /me
+      const team = answer.role === 'team' ? await request('GET', '/me', Team, undefined, { Authorization: `Bearer ${answer.access_token}` }) : null
+      setSession({ access: answer.access_token, username: name, role: answer.role, team })
     } catch (err) {
       setError(errorMessage(err, 'Cannot reach the Command Server. Check your connection and try again.'))
     } finally {

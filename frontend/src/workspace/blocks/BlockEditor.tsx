@@ -1,23 +1,21 @@
 import { useEffect, useRef, useState } from 'react'
-import { Blockly, theme, toolbox, type Layout } from './blocks'
+import { Blockly, setBlockMoves, theme, toolbox, type Layout } from './blocks'
 
 /**
  * One Blockly workspace for one module. Remount it (with a key) to switch modules.
- * The round's block limit is applied with Blockly's maxBlocks, so the toolbox
- * greys out once the module is full.
+ * The block limit is applied with Blockly's maxBlocks, so the toolbox greys out
+ * once the limit is reached.
  */
 export function BlockEditor({
   layout,
   onChange,
   maxBlocks,
-  categories,
-  game,
+  moves,
 }: {
   layout: Layout
   onChange: (layout: Layout) => void
   maxBlocks: number
-  categories: string[]
-  game: string
+  moves: string[]
 }) {
   const host = useRef<HTMLDivElement>(null)
   const workspace = useRef<Blockly.WorkspaceSvg | null>(null)
@@ -51,8 +49,9 @@ export function BlockEditor({
   }, [])
 
   function mount() {
+    setBlockMoves(moves)
     const ws = Blockly.inject(host.current!, {
-      toolbox: toolbox(categories, game),
+      toolbox: toolbox(),
       theme,
       renderer: 'zelos',
       maxBlocks,
@@ -86,18 +85,19 @@ export function BlockEditor({
     }
   }
 
-  // Organisers can change the rules mid-window
-  const categoryKey = categories.join(',')
+  // The limit can change as other modules change, or if organisers change the rules mid-window
+  const moveKey = moves.join(',')
   useEffect(() => {
     const ws = workspace.current
     if (!ws) return
     try {
+      setBlockMoves(moveKey.split(','))
       ws.options.maxBlocks = maxBlocks
-      ws.updateToolbox(toolbox(categoryKey ? categoryKey.split(',') : [], game))
+      ws.updateToolbox(toolbox())
     } catch (err) {
       setFailure(err instanceof Error ? err : new Error(String(err)))
     }
-  }, [maxBlocks, categoryKey, game])
+  }, [maxBlocks, moveKey])
 
   return <div ref={host} className="h-full w-full" />
 }

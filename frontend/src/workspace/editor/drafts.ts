@@ -75,24 +75,4 @@ export async function saveDraft(teamId: number, game: string, agent: Agent): Pro
   return saved
 }
 
-const versionKey = (teamId: number, submissionId: number) => `version:${teamId}:${submissionId}`
-
-/** The server doesn't send a version's code back, so "Load" works from a copy kept in this browser. */
-export function saveVersion(teamId: number, submissionId: number, agent: Agent) {
-  try {
-    localStorage.setItem(versionKey(teamId, submissionId), JSON.stringify(agent))
-  } catch {
-    // only "Load" misses out, and the draft is still saved
-  }
-}
-
-export function loadVersion(teamId: number, submissionId: number): Agent | null {
-  try {
-    const raw = localStorage.getItem(versionKey(teamId, submissionId))
-    return raw === null ? null : parseAgent(JSON.parse(raw))
-  } catch {
-    return null
-  }
-}
-
 export const MAX_CODE_LENGTH = 50_000

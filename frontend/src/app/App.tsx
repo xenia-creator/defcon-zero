@@ -3,11 +3,9 @@ import { Suspense, lazy, useEffect } from 'react'
 import { ErrorBoundary } from '../components/ErrorBoundary'
 import { Button, ConnectionStatus, Countdown, Defcon, Empty, Toasts } from '../components/ui'
 import { useAuth } from '../lib/auth'
-import { FEATURES } from '../lib/features'
 import { useCurrentRound, useTeam } from '../lib/queries'
 import { ClaimCountry } from '../workspace/auth/ClaimCountry'
 import { Login } from '../workspace/auth/Login'
-import { FullscreenBanner, useFairplayReporting } from '../workspace/fairplay/fairplay'
 
 // Monaco and Blockly are large, so the workspace loads only once a team has its nation
 const Workspace = lazy(() => import('../workspace/editor/Workspace').then((m) => ({ default: m.Workspace })))
@@ -30,7 +28,6 @@ export function App() {
   const team = session?.team
   const signedIn = !!session
   useTeamSync(!!team)
-  useFairplayReporting(FEATURES.fairPlayReports && !!team)
   const { data: round } = useCurrentRound()
 
   // However the session ended, the next person must not see this team's data
@@ -74,7 +71,6 @@ export function App() {
           </span>
         </div>
       </header>
-      {FEATURES.fairPlayReports && team && <FullscreenBanner />}
       <main className="min-h-0 flex-1 overflow-y-auto">
         {!team ? (
           <Empty>This account ({session.role}) has no team. The team workspace is only for competing teams.</Empty>

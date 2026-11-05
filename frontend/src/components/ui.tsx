@@ -63,7 +63,7 @@ const STATUS_TONE: Record<string, string> = {
   failed: 'text-alert border-alert-dim',
   forfeit: 'text-alert border-alert-dim',
   absent: 'text-muted border-steel-light',
-  checking: 'text-amber border-amber/50',
+  pending: 'text-amber border-amber/50',
   open: 'text-amber border-amber/50',
   running: 'text-amber border-amber/50',
   verifying: 'text-amber border-amber/50',
@@ -134,10 +134,10 @@ export function ConnectionStatus() {
 
 const DEFCON_TONE = ['border-alert bg-alert !text-ink', 'text-alert', 'text-[#f0702a]', 'text-amber', 'text-coop', 'text-peace']
 
-/** The server's DEFCON level for each round, and ZERO once the final results are out. */
+/** DEFCON 3, 2, 1 for the three rounds, and ZERO once the final results are out. */
 export function Defcon({ round }: { round: Round | null | undefined }) {
-  const finished = !!round && (round.defcon <= 0 || (round.number === 3 && round.status === 'published'))
-  const level = finished ? 0 : round ? Math.min(round.defcon, 5) : 3
+  const finished = !!round && round.number >= 3 && round.status === 'published'
+  const level = finished ? 0 : round ? Math.max(1, Math.min(3, 4 - round.number)) : 3
   return (
     <span data-testid="defcon" className={`flex items-center gap-2 border border-steel px-3 py-1 ${level === 0 ? DEFCON_TONE[0] : ''}`} title="The threat level rises each round">
       <span className={`label !text-[10px] ${level === 0 ? '!text-ink' : ''}`}>Defcon</span>

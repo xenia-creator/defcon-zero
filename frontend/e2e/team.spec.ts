@@ -177,7 +177,7 @@ test.describe('claiming a country', () => {
     await page.getByRole('button', { name: 'Brazil' }).click()
     await claimButton(page).click()
     await page.getByRole('button', { name: 'Claim nation' }).click()
-    await expect(page.getByRole('alert')).toContainText('already used')
+    await expect(page.getByRole('alert')).toContainText('already claimed')
     await expect(page.locator('p', { hasText: 'BRAZIL' })).toBeVisible()
     await nation(page).fill('Red Fox')
     await claimButton(page).click()
@@ -190,7 +190,7 @@ test.describe('claiming a country', () => {
     await login(page)
     await page.getByRole('button', { name: 'Brazil' }).click()
     await expect(page.locator('p', { hasText: 'BRAZIL' })).toBeVisible()
-    await mock(page, 'take', { code: 'BRA' })
+    await mock(page, 'take', { code: 'BR' })
     await expect(page.getByRole('alert')).toContainText('just claimed')
     await expect(page.getByRole('button', { name: 'Brazil' })).toBeDisabled()
   })
@@ -200,11 +200,11 @@ test.describe('claiming a country', () => {
     await nation(page).fill('Red Fox')
     await page.getByRole('button', { name: 'Brazil' }).click()
     await claimButton(page).click()
-    await page.route('**/teams/me/claim', (r) =>
-      r.fulfill({ status: 409, contentType: 'application/json', body: JSON.stringify({ error: { code: 'TERRITORY_TAKEN', message: 'This territory is already claimed.' } }) }),
+    await page.route('**/teams/claim', (r) =>
+      r.fulfill({ status: 409, contentType: 'application/json', body: JSON.stringify({ error: { code: 'TERRITORY_TAKEN', message: 'This territory has already been claimed.' } }) }),
     )
     await page.getByRole('button', { name: 'Claim nation' }).click()
-    await expect(page.getByRole('alert')).toContainText('already claimed')
+    await expect(page.getByRole('alert')).toContainText('already been claimed')
   })
 
   test('a failed country list offers a retry', async ({ page }) => {
@@ -276,16 +276,16 @@ test.describe('submitting', () => {
     await readyWorkspace(page)
     await page.route('**/api/v1/submissions', (r) =>
       r.request().method() === 'POST'
-        ? r.fulfill({ status: 403, contentType: 'application/json', body: JSON.stringify({ error: { code: 'WINDOW_CLOSED', message: 'The submission window is closed' } }) })
+        ? r.fulfill({ status: 409, contentType: 'application/json', body: JSON.stringify({ error: { code: 'ROUND_NOT_OPEN', message: 'The submission window is closed' } }) })
         : r.continue(),
     )
     await submitButton(page).click()
     await expect(page.getByText('The submission window is closed')).toBeVisible()
-    // A 403 is an answer about this request, not about the login
+    // An answer about this request, not about the login
     await expect(page.getByLabel('Username')).toHaveCount(0)
   })
 
-  test('sends the code as one file that runs, with blocks after it and the layout alongside', async ({ page }) => {
+  test('sends the code as one file that runs on its own, with the round and the layout', async ({ page }) => {
     await readyWorkspace(page)
     await page.getByRole('button', { name: '+ Block module' }).click()
     await page.getByLabel('Start from an example').selectOption({ index: 1 })
@@ -294,10 +294,36 @@ test.describe('submitting', () => {
     await submitButton(page).click()
     await expect(page.getByTestId('latest-result')).toContainText('vs Tit for tat')
     const [stored] = await (await mock(page, 'submissions')).json()
+    expect(stored.roundId).toBe(1)
     expect(stored.blocks.modules).toHaveLength(1)
     expect(stored.code.indexOf('def strategy')).toBeLessThan(stored.code.indexOf('def module1'))
-    const out = execFileSync('python3', ['-c', `def opp_last_move(): return "D"\n${stored.code}\nprint(strategy(["C"], ["D"]), strategy([], []))`]).toString().trim()
+    // No helper functions defined: the code must work from the histories alone
+    const out = execFileSync('python3', ['-c', `${stored.code}\nprint(strategy(["C"], ["D"]), strategy([], []))`]).toString().trim()
     expect(out).toBe('D C')
+  })
+
+  test('a retry reuses the same key and stores one version; a new click gets a new key', async ({ page }) => {
+    await readyWorkspace(page)
+    const keys: string[] = []
+    let first = true
+    await page.route('**/api/v1/submissions', (r) => {
+      if (r.request().method() !== 'POST') return r.continue()
+      keys.push(r.request().headers()['idempotency-key'])
+      if (first) {
+        first = false
+        return r.abort()
+      }
+      return r.continue()
+    })
+    await submitButton(page).click()
+    await expect(page.getByTestId('latest-result')).toContainText('vs Tit for tat', { timeout: 10_000 })
+    expect(keys).toHaveLength(2)
+    expect(keys[0]).toBeTruthy()
+    expect(keys[1]).toBe(keys[0])
+    expect(await (await mock(page, 'submissions')).json()).toHaveLength(1)
+    await submitButton(page).click()
+    await expect(page.getByText('v2', { exact: true })).toBeVisible()
+    expect(keys[2]).not.toBe(keys[0])
   })
 
   test('code without blocks sends no layout', async ({ page }) => {
@@ -328,16 +354,60 @@ test.describe('submitting', () => {
     await expect(page.locator('.monaco-editor .squiggly-error').first()).toBeAttached()
   })
 
-  test('loading an old version asks first, and needs this browser to have a copy', async ({ page }) => {
+  test('loading an old version asks first, comes back with its blocks, and survives a failed fetch', async ({ page }) => {
     await readyWorkspace(page)
+    const editor = page.locator('.monaco-editor').first()
+    await page.getByRole('button', { name: '+ Block module' }).click()
+    await page.getByLabel('Start from an example').selectOption({ index: 1 })
+    await page.getByRole('button', { name: 'Use as my strategy' }).click()
+    await page.getByRole('dialog').getByRole('button', { name: 'Use as my strategy' }).click()
     await submitButton(page).click()
-    await expect(page.getByText('accepted', { exact: true }).first()).toBeVisible()
+    await expect(page.getByTestId('latest-result')).toContainText('vs Tit for tat')
+    await editor.click()
+    await page.keyboard.press('ControlOrMeta+End')
+    await page.keyboard.type('#laterwork')
+    await expect(editor).toContainText('#laterwork')
+
+    await page.route('**/api/v1/submissions/*', (r) => r.abort())
     await page.getByRole('button', { name: 'Load', exact: true }).click()
-    await page.getByRole('button', { name: 'Cancel' }).click()
-    await page.evaluate(() => Object.keys(localStorage).filter((k) => k.startsWith('version:')).forEach((k) => localStorage.removeItem(k)))
+    await page.getByRole('dialog').getByRole('button', { name: 'Load version' }).click()
+    await expect(page.getByText('Could not load version 1')).toBeVisible()
+    await expect(editor).toContainText('#laterwork')
+
+    await page.unroute('**/api/v1/submissions/*')
+    await page.getByRole('button', { name: 'Load', exact: true }).click()
+    await page.getByRole('dialog').getByRole('button', { name: 'Load version' }).click()
+    await expect(editor).not.toContainText('#laterwork')
+    // Only the team's own code in the editor, and the module back as blocks, not as Python
+    await expect(editor).not.toContainText('block modules')
+    await expect(editor).toContainText('return module1')
+    await page.getByRole('tab', { name: /module1/ }).click()
+    await expect(page.getByTestId('generated')).toContainText('def module1')
+  })
+
+  test('a new computer gets the latest version from the server', async ({ page }) => {
+    await readyWorkspace(page)
+    const editor = page.locator('.monaco-editor').first()
+    await editor.click()
+    await page.keyboard.press('ControlOrMeta+End')
+    await page.keyboard.type('#onserver')
+    await submitButton(page).click()
+    await expect(page.getByTestId('latest-result')).toContainText('vs Tit for tat')
+    // A new computer has no saved draft
+    await page.evaluate(async () => {
+      Object.keys(localStorage).filter((k) => k.startsWith('draft:') || k.startsWith('sent:')).forEach((k) => localStorage.removeItem(k))
+      await new Promise((done) => {
+        const del = indexedDB.deleteDatabase('keyval-store')
+        del.onsuccess = del.onerror = del.onblocked = done
+      })
+    })
+    await page.addInitScript(() => {
+      const open = indexedDB.open.bind(indexedDB)
+      indexedDB.open = (name: string, ...rest: [number?]) => open(`${name}-new-computer`, ...rest)
+    })
     await page.reload()
-    await expect(page.getByText('v1', { exact: true })).toBeVisible()
-    await expect(page.getByRole('button', { name: 'Load', exact: true })).toHaveCount(0)
+    await expect(editor).toContainText('#onserver')
+    await expect(page.getByTestId('not-sent')).toHaveCount(0)
   })
 
   test('opening a version in the history shows its results', async ({ page }) => {
@@ -475,17 +545,15 @@ test.describe('the three rounds', () => {
 
     await round(page, 2)
     await expect(page.getByText('Round 2 of 3')).toBeVisible()
-    await expect(page.getByText('100 troops')).toBeVisible()
-    await expect(editor(page)).toContainText('[20, 20, 20, 20, 20]')
+    await expect(page.getByText('attack, defend or expand')).toBeVisible()
+    await expect(editor(page)).toContainText('ATTACK')
     await expect(page.getByRole('button', { name: '+ Block module' })).toBeEnabled()
 
     await round(page, 3)
-    await expect(page.getByText('triples on arrival')).toBeVisible()
-    await expect(editor(page)).toContainText('role')
+    await expect(page.getByText('aid or withhold')).toBeVisible()
+    await expect(editor(page)).toContainText('WITHHOLD')
 
-    // Rounds only move forward at an event, so going back needs a fresh load
     await round(page, 1)
-    await page.reload()
     await expect(editor(page)).toContainText('roundonework')
   })
 
@@ -495,25 +563,25 @@ test.describe('the three rounds', () => {
     await expect(page.getByText('Version 1 is your latest accepted strategy')).toBeVisible()
     await round(page, 2)
     await expect(page.getByText('You have no accepted strategy yet.')).toBeVisible()
-    await expect(page.getByText('earlier round')).toBeVisible()
+    await expect(page.getByText('No submissions yet.')).toBeVisible()
     await page.reload()
-    await expect(editor(page)).toContainText('[20, 20, 20, 20, 20]')
+    await expect(editor(page)).toContainText('ATTACK')
   })
 
   test('a game this client has never heard of still gives a working editor', async ({ page }) => {
     await readyWorkspace(page)
-    await mock(page, 'round', { number: 9, name: 'Surprise Game' })
-    await expect(page.getByText('Surprise Game').first()).toBeVisible()
+    await mock(page, 'round', { game: 'surprise' })
+    await expect(page.getByText('surprise').first()).toBeVisible()
     await expect(editor(page)).toContainText('def strategy')
     await expect(submitButton(page)).toBeEnabled()
     await expect(page.getByRole('button', { name: '+ Block module' })).toBeDisabled()
   })
 })
 
-test('routes the backend does not have yet are never called, and nobody is told they are reported', async ({ page }) => {
+test('routes outside the contract are never called, and nobody is told they are being reported', async ({ page }) => {
   const called: string[] = []
   page.on('request', (r) => {
-    if (/\/api\/v1\/(practice|fairplay|ws|clock|config|me)\b/.test(r.url())) called.push(r.url())
+    if (/\/api\/v1\/(practice|fairplay|ws|clock|config)\b/.test(r.url())) called.push(r.url())
   })
   await readyWorkspace(page)
   await page.evaluate(() => window.dispatchEvent(new Event('blur')))
@@ -586,7 +654,7 @@ test.describe('blocks', () => {
     const body = ifElse(
       { type: 'ic_first_turn' },
       play('C'),
-      ifElse({ type: 'ic_opp_rate', fields: { OP: 'GT', PERCENT: 50 } }, play('D'), ifElse({ type: 'ic_opp_last', fields: { MOVE: 'D' } }, play('D'), play('C'))),
+      ifElse({ type: 'ic_opp_rate', fields: { MOVE: 'D', OP: 'GT', PERCENT: 50 } }, play('D'), ifElse({ type: 'ic_opp_last', fields: { MOVE: 'D' } }, play('D'), play('C'))),
     )
     const save = (root: unknown) =>
       page.evaluate((b) => {
@@ -596,18 +664,13 @@ test.describe('blocks', () => {
     await save(body)
     await page.reload()
     await page.getByRole('tab', { name: /punish/ }).click()
-    await expect(page.getByTestId('generated')).toContainText('opp_defection_rate() > 0.5')
+    await expect(page.getByTestId('generated')).toContainText('opp_history.count("D") > 0.5 * len(opp_history)')
     await expect(submitButton(page)).toBeEnabled()
 
     const code = await page.getByTestId('generated').innerText()
-    // Stand-ins for the engine's helpers, driven by the history
-    const program = `import random
-history = []
-def opp_last_move(): return history[-1] if history else None
-def opp_defection_rate(): return history.count("D") / len(history) if history else 0
-${code}
+    // Nothing but the module: it must work from the histories alone
+    const program = `${code}
 for h in (["C", "C", "C"], ["D", "D", "C"], ["C", "C", "D"], []):
-    history = h
     print(punish(["C"] * len(h), h))`
     expect(execFileSync('python3', ['-c', program]).toString().trim().split(/\s+/)).toEqual(['C', 'D', 'D', 'C'])
 
@@ -621,6 +684,7 @@ for h in (["C", "C", "C"], ["D", "D", "C"], ["C", "C", "D"], []):
 test.describe('blocks for each round', () => {
   const run = (program: string) => execFileSync('python3', ['-c', program]).toString().trim().split(/\s+/)
   const ifElse = (condition: unknown, then: unknown, otherwise: unknown) => ({ type: 'controls_ifelse', inputs: { IF0: { block: condition }, DO0: { block: then }, ELSE: { block: otherwise } } })
+  const play = (MOVE: string) => ({ type: 'ic_play', fields: { MOVE } })
   const flyout = (page: Page) => page.locator('.blocklyFlyout .blocklyWorkspace > .blocklyBlockCanvas > .blocklyDraggable')
 
   async function open(page: Page, index: number, game: string, body: unknown) {
@@ -630,7 +694,7 @@ test.describe('blocks for each round', () => {
     await page.evaluate(
       ([key, b]) => {
         const module = { type: 'ic_module', x: 24, y: 24, deletable: false, fields: { NAME: 'plan' }, inputs: { BODY: { block: b } } }
-        localStorage.setItem(key as string, JSON.stringify({ saved_at: Date.now() + 100000, agent: { hand_code: 'def strategy(m, o):\n    return "C"\n', modules: [{ blocks: { languageVersion: 0, blocks: [module] } }] } }))
+        localStorage.setItem(key as string, JSON.stringify({ saved_at: Date.now() + 100000, agent: { hand_code: 'def strategy(m, o):\n    return plan(m, o)\n', modules: [{ blocks: { languageVersion: 0, blocks: [module] } }] } }))
       },
       [`draft:1:${game}`, body],
     )
@@ -639,9 +703,9 @@ test.describe('blocks for each round', () => {
     await expect(page.locator('.blocklySvg').first()).toBeVisible()
   }
 
-  const toolboxTotal = async (page: Page, names: string[]) => {
+  const toolboxTotal = async (page: Page) => {
     let total = 0
-    for (const name of names) {
+    for (const name of ['Moves', 'Logic', 'Opponent', 'Chance']) {
       await page.getByRole('treeitem', { name }).click()
       await expect(flyout(page).first()).toBeVisible()
       total += await flyout(page).count()
@@ -649,60 +713,55 @@ test.describe('blocks for each round', () => {
     return total
   }
 
-  test('round 2 splits troops, checks the total, and its Python plays', async ({ page }) => {
-    const send = (a: number, b: number, c: number, d: number, e: number) => ({ type: 'ic_send_troops', fields: { R1: a, R2: b, R3: c, R4: d, R5: e } })
-    await open(page, 2, 'theatre_of_war', ifElse({ type: 'ic_first_turn' }, send(40, 30, 10, 10, 10), ifElse({ type: 'ic_opp_region', fields: { TROOPS: 30, REGION: '2' } }, send(0, 50, 50, 0, 0), { type: 'ic_copy_split' })))
-    expect(await toolboxTotal(page, ['Moves', 'Logic', 'Opponent', 'Chance'])).toBe(6)
-    await expect(page.getByTestId('generated')).toContainText('return [40, 30, 10, 10, 10]')
-    await expect(submitButton(page)).toBeEnabled()
-    const code = await page.getByTestId('generated').innerText()
-    const out = run(`${code}
-late = [[20, 40, 20, 10, 10]]
-calm = [[25, 10, 25, 20, 20]]
-print(sum(plan([], [])), plan([1], late)[1], plan([1], calm)[0])`)
-    expect(out).toEqual(['100', '50', '25'])
-  })
-
-  test('round 2 refuses a split that does not add up to 100', async ({ page }) => {
-    await open(page, 2, 'theatre_of_war', { type: 'ic_send_troops', fields: { R1: 90, R2: 30, R3: 0, R4: 0, R5: 0 } })
-    await expect(page.getByText('adds up to 120')).toBeVisible()
-    await expect(submitButton(page)).toBeDisabled()
-  })
-
-  test('round 3 sends a share of the points, and its Python plays', async ({ page }) => {
-    const send = (PERCENT: number) => ({ type: 'ic_send_percent', fields: { PERCENT } })
-    await open(page, 3, 'foreign_aid', ifElse({ type: 'ic_role', fields: { ROLE: 'send' } }, ifElse({ type: 'ic_amount', fields: { POINTS: 50 } }, send(25), send(50)), send(40)))
-    expect(await toolboxTotal(page, ['Moves', 'Logic', 'Situation', 'Chance'])).toBe(6)
-    await expect(page.getByTestId('generated')).toContainText('def plan(my_history, opp_history, role, amount):')
+  test('round 2 offers its own moves, and its Python plays', async ({ page }) => {
+    await open(page, 2, 'theatre_of_war', ifElse({ type: 'ic_first_turn' }, play('EXPAND'), ifElse({ type: 'ic_opp_rate', fields: { MOVE: 'ATTACK', OP: 'GT', PERCENT: 50 } }, play('ATTACK'), ifElse({ type: 'ic_opp_last', fields: { MOVE: 'ATTACK' } }, play('DEFEND'), play('EXPAND')))))
+    expect(await toolboxTotal(page)).toBe(6)
+    await page.getByRole('treeitem', { name: 'Moves' }).click()
+    await expect(flyout(page).first()).toContainText('attack')
     await expect(submitButton(page)).toBeEnabled()
     const code = await page.getByTestId('generated').innerText()
     expect(run(`${code}
-print(plan([], [], "send", 100), plan([], [], "send", 40), plan([], [], "return", 30))`)).toEqual(['25', '20', '12'])
+print(plan([], []), plan([1, 1], ["ATTACK", "ATTACK"]), plan([1, 1, 1], ["EXPAND", "EXPAND", "ATTACK"]), plan([1], ["DEFEND"]))`)).toEqual(['EXPAND', 'ATTACK', 'DEFEND', 'EXPAND'])
   })
 
-  test("a block from another round's game is reported, not sent", async ({ page }) => {
-    await open(page, 2, 'theatre_of_war', { type: 'ic_play', fields: { MOVE: 'D' } })
-    await expect(page.getByText("can't be used in this round")).toBeVisible()
+  test('round 3 offers its own moves, and its Python plays', async ({ page }) => {
+    await open(page, 3, 'foreign_aid', ifElse({ type: 'ic_first_turn' }, play('AID'), ifElse({ type: 'ic_opp_last', fields: { MOVE: 'WITHHOLD' } }, play('WITHHOLD'), play('AID'))))
+    expect(await toolboxTotal(page)).toBe(6)
+    await page.getByRole('treeitem', { name: 'Moves' }).click()
+    await expect(flyout(page).first()).toContainText('aid')
+    await expect(submitButton(page)).toBeEnabled()
+    const code = await page.getByTestId('generated').innerText()
+    expect(run(`${code}
+print(plan([], []), plan([1], ["WITHHOLD"]), plan([1], ["AID"]))`)).toEqual(['AID', 'WITHHOLD', 'AID'])
+  })
+
+  test("a move from another round is reported, not sent", async ({ page }) => {
+    await open(page, 2, 'theatre_of_war', play('D'))
+    await expect(page.getByText("uses a move that isn't in this round")).toBeVisible()
     await expect(submitButton(page)).toBeDisabled()
+  })
+
+  test('limits come from the round: blocks in total and number of modules', async ({ page }) => {
+    await open(page, 2, 'theatre_of_war', ifElse({ type: 'ic_first_turn' }, play('EXPAND'), play('DEFEND')))
+    await expect(page.getByText('of 40 blocks in total')).toBeVisible()
+    await mock(page, 'round', { config: { block_limit: 3 } })
+    await expect(page.getByText('This round allows 3 blocks in total')).toBeVisible()
+    await expect(submitButton(page)).toBeDisabled()
+    await mock(page, 'round', { config: { block_limit: 40, max_modules: 1 } })
+    await expect(submitButton(page)).toBeEnabled()
+    await expect(page.getByRole('button', { name: '+ Block module' })).toBeDisabled()
   })
 })
 
 test.describe('building a strategy with blocks only', () => {
   const picker = (page: Page) => page.getByLabel('Start from an example')
-  const stubs = `import random
-history = []
-def opp_last_move(): return history[-1] if history else None
-def opp_defection_rate(): return history.count("D") / len(history) if history else 0
-`
   const checks: Record<number, string> = {
     1: `for h in ([], ["C"], ["D"], ["D", "D", "C"]):
-    history = h
     assert module1(["C"] * len(h), h) in ("C", "D")`,
-    2: `for h in ([], [[40, 30, 10, 10, 10]], [[10, 10, 20, 30, 30]]):
-    split = module1([1] * len(h), h)
-    assert len(split) == 5 and sum(split) == 100`,
-    3: `for role, amount in (("send", 100), ("send", 20), ("return", 30), ("return", 0)):
-    assert 0 <= module1([], [], role, amount) <= amount`,
+    2: `for h in ([], ["ATTACK"], ["EXPAND"], ["DEFEND"], ["ATTACK", "ATTACK", "EXPAND"]):
+    assert module1(["DEFEND"] * len(h), h) in ("ATTACK", "DEFEND", "EXPAND")`,
+    3: `for h in ([], ["AID"], ["WITHHOLD"], ["WITHHOLD", "AID", "WITHHOLD"]):
+    assert module1(["AID"] * len(h), h) in ("AID", "WITHHOLD")`,
   }
 
   for (const index of [1, 2, 3]) {
@@ -720,7 +779,7 @@ def opp_defection_rate(): return history.count("D") / len(history) if history el
         await expect(page.getByTestId('generated')).not.toContainText('return None')
         await expect(page.getByText('Some situations reach no move')).toHaveCount(0)
         const code = await page.getByTestId('generated').innerText()
-        execFileSync('python3', ['-c', `${stubs}${code}\n${checks[index]}`])
+        execFileSync('python3', ['-c', `import random\n${code}\n${checks[index]}`])
       }
     })
   }
@@ -748,10 +807,10 @@ def opp_defection_rate(): return history.count("D") / len(history) if history el
     await readyWorkspace(page)
     await page.getByRole('button', { name: '+ Block module' }).click()
     await picker(page).selectOption({ index: 1 })
-    await expect(page.getByTestId('generated')).toContainText('opp_last_move')
+    await expect(page.getByTestId('generated')).toContainText('len(opp_history) > 0')
     await picker(page).selectOption({ index: 2 })
     await page.getByRole('button', { name: 'Cancel' }).click()
-    await expect(page.getByTestId('generated')).toContainText('opp_last_move')
+    await expect(page.getByTestId('generated')).toContainText('len(opp_history) > 0')
   })
 })
 

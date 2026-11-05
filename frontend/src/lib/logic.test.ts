@@ -1,12 +1,12 @@
 import { describe, expect, it } from 'vitest'
 import { EXAMPLES, exampleLayout, examplesFor } from '../workspace/blocks/examples'
-import { assemble, generateModules } from '../workspace/blocks/generate'
+import { assemble, generateModules, handCodeOf } from '../workspace/blocks/generate'
 import { countBlocks, moduleName } from '../workspace/blocks/layout'
 import { nationNameProblem } from '../workspace/auth/ClaimCountry'
 import { newestDraft, parseAgent } from '../workspace/editor/drafts'
-import { gameInfo, gameKeyOf } from '../workspace/editor/games'
+import { gameInfo } from '../workspace/editor/games'
 import { parseSession } from './auth'
-import { Round, SubmissionDetail, Team } from './contract'
+import { Round, SubmissionDetail, Team, Territories, isChecked, territoryName } from './contract'
 import { formatDuration, offsetFrom, windowRemaining } from './clock'
 import { newId } from './ids'
 
@@ -53,12 +53,17 @@ describe('stored session', () => {
 })
 
 describe('reading the contract', () => {
-  const round = { id: 2, number: 2, name: 'Theatre of War', defcon: 2, status: 'open', opens_at: '2026-11-20T10:00:00Z', closes_at: '2026-11-20T10:45:00Z', server_time: '2026-11-20T10:12:31Z' }
+  const round = {
+    id: 1, number: 1, game: 'prisoners_dilemma', status: 'open', opens_at: '2026-11-12T10:00:00Z', closes_at: '2026-11-12T10:45:00Z',
+    config: { moves: ['C', 'D'], max_modules: 3, block_limit: 40, rounds_per_match: 200, repetitions: 5 },
+    server_time: '2026-11-12T10:12:03Z',
+  }
 
   it('reads the example round from docs/api.md, with dates as times', () => {
     const parsed = Round.parse(round)
-    expect(parsed.number).toBe(2)
-    expect((parsed.closesAt! - parsed.serverTime!) / 1000).toBe(32 * 60 + 29)
+    expect(parsed.game).toBe('prisoners_dilemma')
+    expect(parsed.config.block_limit).toBe(40)
+    expect((parsed.closesAt! - parsed.serverTime!) / 1000).toBe(32 * 60 + 57)
   })
 
   it('treats a missing or unreadable date as no date, instead of a broken timer', () => {
@@ -66,15 +71,35 @@ describe('reading the contract', () => {
     expect(Round.parse({ ...round, opens_at: null }).opensAt).toBeNull()
   })
 
-  it('reads the example team and submission, and refuses a wrong shape', () => {
-    expect(Team.parse({ id: 7, nation_name: 'Red Fox Republic', territory_code: 'BRA' }).status).toBe('alive')
-    expect(SubmissionDetail.parse({ id: 41, version: 3, status: 'accepted', errors: [], test_results: [{ opponent: 'tit_for_tat', my_score: 600, opp_score: 600 }] }).test_results[0].my_score).toBe(600)
-    expect(Round.safeParse({ ...round, number: 'two' }).success).toBe(false)
+  it('refuses a round with no game, no moves or a wrong shape', () => {
+    expect(Round.safeParse({ ...round, number: 'one' }).success).toBe(false)
+    expect(Round.safeParse({ ...round, config: { ...round.config, moves: [] } }).success).toBe(false)
+    expect(Round.safeParse({ ...round, game: undefined }).success).toBe(false)
   })
 
-  it('picks a game from the round number, and survives an unknown one', () => {
-    expect([1, 2, 3].map((number) => gameKeyOf({ number }))).toEqual(['prisoners_dilemma', 'theatre_of_war', 'foreign_aid'])
-    expect(gameInfo(gameKeyOf({ number: 9 }), 'Surprise').blocks).toBe(false)
+  it('reads a team, defaulting to active', () => {
+    expect(Team.parse({ id: 7, username: 'x', role: 'team', nation_name: 'Red Dawn', territory_code: 'RU' }).status).toBe('active')
+  })
+
+  it('reads a pending submission with no check, and a finished one', () => {
+    const pending = SubmissionDetail.parse({ id: 42, version: 4, status: 'pending', code: 'x', blocks: null, check: null })
+    expect([pending.error, pending.tests, isChecked(pending.status)]).toEqual([null, [], false])
+    const done = SubmissionDetail.parse({ id: 42, version: 4, status: 'accepted', code: 'x', blocks: { modules: [{}] }, check: { error: null, test_results: [{ opponent: 'fortress', my_score: 600, opp_score: 0 }] } })
+    expect(done.tests[0].my_score).toBe(600)
+    expect(isChecked('running')).toBe(false)
+    expect(isChecked('rejected')).toBe(true)
+  })
+
+  it('names territories from the code, whichever code style the server uses', () => {
+    expect(territoryName('BR')).toBe('Brazil')
+    expect(territoryName('BR', 'Federative Brazil')).toBe('Federative Brazil')
+    expect(territoryName('not a code')).toBe('not a code')
+    expect(Territories.parse({ territories: [{ territory_code: 'RU', claimed: true, nation_name: 'Red Dawn' }, { territory_code: 'BR', claimed: false, nation_name: null }] }).map((t) => t.name)).toEqual(['Brazil', 'Russia'])
+  })
+
+  it('an unknown game gets a working editor with no blocks', () => {
+    expect(gameInfo('surprise').blocks).toBe(false)
+    expect(gameInfo('surprise').template).toContain('def strategy')
   })
 })
 
@@ -133,24 +158,36 @@ describe('layouts', () => {
 })
 
 describe('generating Python from blocks', () => {
+  const PD = ['C', 'D']
   const moduleWith = (body: unknown, name = 'punish', extra: unknown[] = []) => ({
     blocks: { languageVersion: 0, blocks: [{ type: 'ic_module', fields: { NAME: name }, inputs: body ? { BODY: { block: body } } : {} }, ...extra] },
   })
-  const one = (layout: Record<string, unknown>) => generateModules([layout])[0]
+  const one = (layout: Record<string, unknown>, moves = PD) => generateModules([layout], moves)[0]
 
-  it('writes an if/else using the helpers', () => {
+  it('writes an if/else from the histories alone, with no engine helpers', () => {
     const result = one(
       moduleWith({
         type: 'controls_ifelse',
         inputs: {
-          IF0: { block: { type: 'ic_opp_rate', fields: { OP: 'GT', PERCENT: 60 } } },
+          IF0: { block: { type: 'ic_opp_rate', fields: { MOVE: 'D', OP: 'GT', PERCENT: 60 } } },
           DO0: { block: { type: 'ic_play', fields: { MOVE: 'D' } } },
           ELSE: { block: { type: 'ic_play', fields: { MOVE: 'C' } } },
         },
       }),
     )
     expect(result.problems).toEqual([])
-    expect(result.code).toBe('def punish(my_history, opp_history):\n    if opp_defection_rate() > 0.6:\n        return "D"\n    else:\n        return "C"\n')
+    expect(result.code).toBe('def punish(my_history, opp_history):\n    if opp_history.count("D") > 0.6 * len(opp_history):\n        return "D"\n    else:\n        return "C"\n')
+  })
+
+  it('uses whichever moves the round has', () => {
+    expect(one(moduleWith({ type: 'ic_play', fields: { MOVE: 'EXPAND' } }), ['ATTACK', 'DEFEND', 'EXPAND']).code).toContain('return "EXPAND"')
+    expect(one(moduleWith({ type: 'ic_play', fields: { MOVE: 'WITHHOLD' } }), ['AID', 'WITHHOLD']).problems).toEqual([])
+  })
+
+  it("refuses a move that isn't in this round", () => {
+    const result = one(moduleWith({ type: 'ic_play', fields: { MOVE: 'ATTACK' } }))
+    expect(result.problems[0]).toContain('cooperate, betray')
+    expect(result.code).not.toContain('ATTACK')
   })
 
   it('an empty module is still valid Python', () => {
@@ -159,7 +196,7 @@ describe('generating Python from blocks', () => {
 
   it('reports an if with no condition and loose blocks', () => {
     expect(one(moduleWith({ type: 'controls_ifelse' })).problems).toEqual(['An if block has no condition. Attach one.'])
-    expect(one(moduleWith(null, 'punish', [{ type: 'ic_play' }])).problems[0]).toMatch('not attached')
+    expect(one(moduleWith(null, 'punish', [{ type: 'ic_play', fields: { MOVE: 'C' } }])).problems[0]).toMatch('not attached')
   })
 
   it('never lets layout text reach the Python', () => {
@@ -169,61 +206,48 @@ describe('generating Python from blocks', () => {
     expect(result.problems.length).toBeGreaterThan(0)
   })
 
-  it('rejects reserved, Python and repeated names', () => {
+  it('rejects unknown blocks, and reserved, Python and repeated names', () => {
+    expect(one(moduleWith({ type: 'ic_send_troops' })).problems[0]).toMatch("can't be used here")
     expect(one(moduleWith(null, 'strategy')).problems[0]).toMatch('reserved')
     expect(one(moduleWith(null, 'class')).problems[0]).toMatch('Python word')
-    expect(generateModules([moduleWith(null), moduleWith(null)])[0].problems[0]).toMatch('Two modules')
+    expect(generateModules([moduleWith(null), moduleWith(null)], PD)[0].problems[0]).toMatch('Two modules')
   })
 
   it('survives any JSON and very deep nesting', () => {
-    for (const junk of [{}, { blocks: 5 }, { blocks: { blocks: 'x' } }, { blocks: { blocks: [null, 3, { type: 7 }] } }]) expect(() => generateModules([junk])).not.toThrow()
-    let deep: Record<string, unknown> = { type: 'ic_play' }
+    for (const junk of [{}, { blocks: 5 }, { blocks: { blocks: 'x' } }, { blocks: { blocks: [null, 3, { type: 7 }] } }]) expect(() => generateModules([junk], PD)).not.toThrow()
+    let deep: Record<string, unknown> = { type: 'ic_play', fields: { MOVE: 'C' } }
     for (let i = 0; i < 20000; i++) deep = { type: 'controls_ifelse', inputs: { DO0: { block: deep } } }
     expect(one(moduleWith(deep)).problems).toContain('Blocks are nested too deeply.')
   })
 
-  it('keeps bad numbers out of the round 2 and 3 Python', () => {
-    const evil = '1]; import os #'
-    const troops = generateModules([moduleWith({ type: 'ic_send_troops', fields: { R1: evil, R2: 500, R3: -9 } })], 'theatre_of_war')[0]
-    expect(troops.code).not.toContain('import os')
-    expect(troops.code).toContain('return [0, 100, 0, 0, 0]')
-    expect(troops.problems).toEqual([])
-    const share = generateModules([moduleWith({ type: 'ic_send_percent', fields: { PERCENT: evil } })], 'foreign_aid')[0]
-    expect(share.code).toContain('return amount * 0 // 100')
-  })
-
-  it('a game with no blocks refuses them all', () => {
-    expect(generateModules([moduleWith({ type: 'ic_play' })], 'surprise')[0].problems[0]).toMatch('this round')
-  })
-
   it('warns when a path reaches no move, and not when every path does', () => {
     expect(one(moduleWith(null)).warnings.length).toBe(1)
-    expect(one(moduleWith({ type: 'controls_ifelse', inputs: { IF0: { block: { type: 'ic_first_turn' } }, DO0: { block: { type: 'ic_play' } } } })).warnings.length).toBe(1)
-    expect(one(moduleWith({ type: 'ic_play' })).warnings).toEqual([])
+    expect(one(moduleWith({ type: 'controls_ifelse', inputs: { IF0: { block: { type: 'ic_first_turn' } }, DO0: { block: { type: 'ic_play', fields: { MOVE: 'C' } } } } })).warnings.length).toBe(1)
+    expect(one(moduleWith({ type: 'ic_play', fields: { MOVE: 'C' } })).warnings).toEqual([])
   })
 
-  it('every example is clean in its own game, and limits hide what they should', () => {
+  it('every example is clean in its own game, and the limit hides what no longer fits', () => {
     for (const [game, examples] of Object.entries(EXAMPLES)) {
       expect(examples.length).toBeGreaterThan(0)
       for (const example of examples) {
-        const result = generateModules([exampleLayout(example, 'plan')], game)[0]
+        const result = one(exampleLayout(example, 'plan'), gameInfo(game).moves)
         expect([example.name, result.problems, result.warnings]).toEqual([example.name, [], []])
       }
     }
-    const all = ['logic', 'history', 'chance']
-    expect(examplesFor('theatre_of_war', all, 20).length).toBe(EXAMPLES.theatre_of_war.length)
-    expect(examplesFor('theatre_of_war', [], 20).map((e) => e.name)).toEqual(['Even spread', 'Strong three', 'Copycat'])
-    expect(examplesFor('prisoners_dilemma', all, 2)).toEqual([])
-    expect(examplesFor('surprise', all, 20)).toEqual([])
+    expect(examplesFor('theatre_of_war', 40).length).toBe(EXAMPLES.theatre_of_war.length)
+    expect(examplesFor('prisoners_dilemma', 2)).toEqual([])
+    expect(examplesFor('surprise', 40)).toEqual([])
   })
 
-  it('puts blocks after the code, so server line numbers still match strategy.py', () => {
+  it('puts blocks after the code, so server line numbers still match strategy.py, and can split them again', () => {
     const hand = 'def strategy(m, o):\n    return plan(m, o)\n'
     expect(assemble(hand, [])).toBe(hand)
-    const code = assemble(hand, generateModules([moduleWith({ type: 'ic_chance' }, 'plan')]))
+    expect(handCodeOf(hand)).toBe(hand)
+    const modules = generateModules([moduleWith({ type: 'controls_ifelse', inputs: { IF0: { block: { type: 'ic_chance', fields: { PERCENT: 10 } } }, DO0: { block: { type: 'ic_play', fields: { MOVE: 'C' } } }, ELSE: { block: { type: 'ic_play', fields: { MOVE: 'D' } } } } }, 'plan')], PD)
+    const code = assemble(hand, modules)
     expect(code.startsWith(hand)).toBe(true)
+    expect(code).toContain('import random')
     expect(code).toContain('def plan(my_history, opp_history):')
-    const chance = assemble(hand, generateModules([moduleWith({ type: 'controls_ifelse', inputs: { IF0: { block: { type: 'ic_chance', fields: { PERCENT: 10 } } }, DO0: { block: { type: 'ic_play' } }, ELSE: { block: { type: 'ic_play' } } } }, 'plan')]))
-    expect(chance).toContain('import random')
+    expect(handCodeOf(code)).toBe(hand)
   })
 })

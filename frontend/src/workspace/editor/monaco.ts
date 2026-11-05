@@ -3,6 +3,7 @@
  * internet cut. Only the Python tokenizer and the base editor worker are loaded.
  */
 import { loader } from '@monaco-editor/react'
+import { MODULE_ARGS, moveLabel } from '../blocks/categories'
 import * as monaco from 'monaco-editor/editor/editor.api'
 import 'monaco-editor/languages/definitions/python/register'
 import EditorWorker from 'monaco-editor/editor/editor.worker?worker'
@@ -28,15 +29,11 @@ monaco.editor.defineTheme('iron', {
 })
 
 let moduleNames: string[] = []
-let moves = true
-let signature = 'def strategy(my_history, opp_history):'
-let moduleArgs = 'my_history, opp_history'
+let moves = ['C', 'D']
 
-/** The round's game decides which suggestions make sense. */
-export function setGameHints(game: { moves: boolean; template: string }, args: string) {
-  moves = game.moves
-  moduleArgs = args
-  signature = game.template.match(/^def strategy\(.*\):$/m)?.[0] ?? signature
+/** The round's moves, offered as completions. */
+export function setMoveHints(roundMoves: string[]) {
+  moves = roundMoves
 }
 
 /** Block modules the team has built, offered as completions in strategy.py. */
@@ -69,27 +66,20 @@ monaco.languages.registerCompletionItemProvider('python', {
           label: name,
           kind: Kind.Function,
           documentation: 'Your block module',
-          insertText: `${name}(${moduleArgs})`,
+          insertText: `${name}(${MODULE_ARGS})`,
           range,
         })),
         {
           label: 'strategy',
           kind: Kind.Snippet,
           documentation: 'The function the engine calls',
-          insertText: `${signature}\n\t\${1:pass}`,
+          insertText: `def strategy(${MODULE_ARGS}):\n\t\${1:pass}`,
           insertTextRules: 4,
           range,
         },
         { label: 'my_history', kind: Kind.Variable, insertText: 'my_history', documentation: 'Your moves so far', range },
         { label: 'opp_history', kind: Kind.Variable, insertText: 'opp_history', documentation: "Your opponent's moves so far", range },
-        ...(moves
-          ? [
-              { label: '"C"', kind: Kind.Constant, insertText: '"C"', documentation: 'Cooperate', range },
-              { label: '"D"', kind: Kind.Constant, insertText: '"D"', documentation: 'Betray', range },
-              { label: 'opp_last_move', kind: Kind.Function, insertText: 'opp_last_move()', documentation: "Your opponent's last move", range },
-              { label: 'opp_defection_rate', kind: Kind.Function, insertText: 'opp_defection_rate()', documentation: 'How often your opponent has betrayed so far, 0 to 1', range },
-            ]
-          : []),
+        ...moves.map((move) => ({ label: JSON.stringify(move), kind: Kind.Constant, insertText: JSON.stringify(move), documentation: moveLabel(move), range })),
         { label: 'import random', kind: Kind.Module, insertText: 'import random', range },
         { label: 'import math', kind: Kind.Module, insertText: 'import math', range },
       ],
