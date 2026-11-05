@@ -21,4 +21,4 @@ I own this backend and review every line. I need to understand and explain all o
 - Every error uses the shape {"error": {"code": "...", "message": "..."}}.
 
 ## Stack
-Python 3.14, FastAPI, Pydantic v2, pydantic-settings, SQLAlchemy 2.0 async with asyncpg, Alembic, PostgreSQL 16, PyJWT, pwdlib with Argon2, pytest with httpx.
+Python 3.14, FastAPI, Pydantic v2, pydantic-settings, SQLAlchemy 2.0 async with asyncpg, Alembic, PostgreSQL 18, PyJWT, pwdlib with Argon2, pytest with httpx.
