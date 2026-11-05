@@ -11,7 +11,6 @@ Values are copied from the examples in docs/api.md where it has them.
 from datetime import UTC, datetime, timedelta
 
 from app.schemas.auth import LoginResponse
-from app.schemas.health import HealthResponse
 from app.schemas.rounds import Round, RoundConfig, RoundsResponse
 from app.schemas.standings import NationStanding, StandingsResponse
 from app.schemas.submissions import (
@@ -28,8 +27,6 @@ from app.schemas.teams import TeamProfile, TerritoriesResponse, Territory
 # show a constant 24m 45s until real data arrives. It falls after the fake
 # submission's created_at and before the fake round's closes_at.
 FAKE_SERVER_TIME = datetime(2026, 11, 12, 10, 20, 15, tzinfo=UTC)
-
-FAKE_HEALTH = HealthResponse(status="ok")
 
 FAKE_LOGIN = LoginResponse(
     access_token="fake.stub.token",

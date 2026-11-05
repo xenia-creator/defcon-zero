@@ -1,8 +1,15 @@
 # Python dependencies for the backend. Only what the code imports today is
-# listed; each later step adds its own (SQLAlchemy, PyJWT, and so on).
+# listed; each later step adds its own (PyJWT, and so on).
 # Versions are pinned so every teammate and the deploy run identical code.
 
+alembic==1.20.1
+# The Postgres driver SQLAlchemy uses for async connections.
+asyncpg==0.32.0
 fastapi==0.162.0
 pydantic==2.14.3
+# Loads DATABASE_URL and JWT_SECRET from backend/.env.
+pydantic-settings==2.16.2
+# The [asyncio] extra installs greenlet, which SQLAlchemy's async mode needs.
+sqlalchemy[asyncio]==2.0.57
 # ASGI server: the program that listens on a port and hands requests to FastAPI.
 uvicorn==0.54.0
