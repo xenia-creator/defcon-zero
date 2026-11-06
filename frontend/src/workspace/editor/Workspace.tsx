@@ -16,7 +16,10 @@ import { generateModules } from '../blocks/generate'
 import { countBlocks, moduleName, newModule, type Layout } from '../blocks/layout'
 import { History, LatestResult, agentFromDetail, toSubmission } from './SidePanels'
 import { MAX_CODE_LENGTH, loadDraft, saveDraft, type Agent } from './drafts'
-import { DEFAULT_GAME, TOTAL_ROUNDS, gameInfo } from './games'
+import { DEFAULT_GAME, TOTAL_ROUNDS, UNTIL_ROUND_ARRIVES, gameInfo } from './games'
+import { TroopPlacement } from './TroopPlacement'
+import { allocationCode, allocationProblems, parseAllocation, regionNames } from './troops'
+import { moveOption } from '../../lib/rounds'
 import { monaco, setModuleNames, setMoveHints } from './monaco'
 
 const AUTOSAVE_MS = 2000
@@ -154,7 +157,9 @@ export function Workspace({ team }: { team: Team }) {
 function RoundWorkspace({ team, gameKey }: { team: Team; gameKey: string }) {
   const { data: round, isError: roundFailed } = useCurrentRound()
   const { data: submissions, isError: submissionsFailed } = useSubmissions(round?.id)
-  const game = gameInfo(gameKey)
+  // Rounds 2 and 3 read their limits (troops, regions, endowment, multiplier) from the round's config
+  const roundConfig = round?.config
+  const game = useMemo(() => gameInfo(gameKey, roundConfig), [gameKey, roundConfig])
   const serverMoves = round?.config.moves
   const moves = useMemo(() => serverMoves ?? game.moves, [serverMoves, game.moves])
   useEffect(() => setMoveHints(moves), [moves])
@@ -165,7 +170,7 @@ function RoundWorkspace({ team, gameKey }: { team: Team; gameKey: string }) {
   const queries = useQueryClient()
   useDeadlineWarnings(round)
   // What was last sent, to tell a team when their editor no longer matches it. Lost if storage is blocked, which only over-warns
-  const sentKey = `sent:${team.id}:${gameKey}`
+  const sentKey = `sent:${team.team_id}:${gameKey}`
   const [lastSent, setLastSent] = useState<string | null>(() => {
     try {
       return localStorage.getItem(sentKey)
@@ -187,6 +192,57 @@ function RoundWorkspace({ team, gameKey }: { team: Team; gameKey: string }) {
   )
   const [agent, setAgent] = useState<Agent | null>(null)
   const [tab, setTab] = useState<Tab>('code')
+
+  // Round 2 (Theatre of War) is played on the map by default: the troop split becomes a fixed strategy.
+  // The code editor stays one click away for an adaptive strategy. Whichever is open is what gets submitted.
+  const placesTroops = gameKey === 'theatre_of_war'
+  const troops = round?.config.troops ?? UNTIL_ROUND_ARRIVES.troops
+  const regions = round?.config.regions ?? UNTIL_ROUND_ARRIVES.regions
+  const modeKey = `play:${team.team_id}:${gameKey}`
+  const troopsKey = `troops:${team.team_id}:${gameKey}`
+  const [playMode, setPlayModeState] = useState<'map' | 'code'>(() => {
+    try {
+      return localStorage.getItem(modeKey) === 'code' ? 'code' : 'map'
+    } catch {
+      return 'map'
+    }
+  })
+  const setPlayMode = useCallback(
+    (mode: 'map' | 'code') => {
+      setPlayModeState(mode)
+      try {
+        localStorage.setItem(modeKey, mode)
+      } catch {
+        // only remembers the choice across reloads
+      }
+    },
+    [modeKey],
+  )
+  const [allocation, setAllocationState] = useState<number[]>(() => {
+    try {
+      const stored = JSON.parse(localStorage.getItem(troopsKey) ?? 'null')
+      if (Array.isArray(stored) && stored.every(Number.isInteger)) return stored
+    } catch {
+      // a fresh map
+    }
+    return []
+  })
+  // A placement made for a different number of regions starts again
+  const placement = useMemo(() => (allocation.length === regions ? allocation : Array.from({ length: regions }, () => 0)), [allocation, regions])
+  const setAllocation = useCallback(
+    (next: number[]) => {
+      setAllocationState(next)
+      try {
+        localStorage.setItem(troopsKey, JSON.stringify(next))
+      } catch {
+        // only remembers the placement across reloads
+      }
+    },
+    [troopsKey],
+  )
+  const mapMode = placesTroops && playMode === 'map'
+  const placementProblems = useMemo(() => allocationProblems(placement, troops, regions), [placement, troops, regions])
+  const mapAgent = useMemo<Agent>(() => ({ hand_code: allocationCode(placement, regionNames(regions)), modules: [] }), [placement, regions])
   const [moduleKeys, setModuleKeys] = useState<string[]>([])
   const [loadCount, setLoadCount] = useState(0)
   const [editor, setEditor] = useState<Editor | null>(null)
@@ -225,24 +281,26 @@ function RoundWorkspace({ team, gameKey }: { team: Team; gameKey: string }) {
   const hasBlocks = game.blocks
   const load = useCallback((loaded: Agent) => {
     const next = hasBlocks ? loaded : { ...loaded, modules: [] } // another game's modules can't play here
+    const placed = placesTroops ? parseAllocation(next.hand_code, regions) : null
+    if (placed) setAllocation(placed)
     saved.current = next // no need to save what just came from storage or the server
     setAgent(next)
     setLoadCount((n) => n + 1) // a fresh editor shows what was loaded
     setModuleKeys(next.modules.map(() => newId()))
     setTab('code')
     return next
-  }, [hasBlocks])
+  }, [hasBlocks, placesTroops, regions, setAllocation])
 
   // Restore: the autosaved draft, else the latest version on the server, else the template.
   // If the server can't be reached the team still gets an editor and can load a version later.
   const [stored, setStored] = useState<Agent | null | undefined>(undefined)
   useEffect(() => {
     let current = true
-    loadDraft(team.id, gameKey).then((draft) => current && setStored(draft ?? null))
+    loadDraft(team.team_id, gameKey).then((draft) => current && setStored(draft ?? null))
     return () => {
       current = false
     }
-  }, [team.id, gameKey])
+  }, [team.team_id, gameKey])
 
   const serverAnswered = roundFailed || round === null || submissions !== undefined || submissionsFailed
   useEffect(() => {
@@ -271,8 +329,8 @@ function RoundWorkspace({ team, gameKey }: { team: Team; gameKey: string }) {
     const current = latest.current
     if (current === null || current === saved.current) return
     saved.current = current
-    saveDraft(team.id, gameKey, current).then((ok) => setDraftState(ok ? 'saved' : 'failed'))
-  }, [team.id, gameKey])
+    saveDraft(team.team_id, gameKey, current).then((ok) => setDraftState(ok ? 'saved' : 'failed'))
+  }, [team.team_id, gameKey])
 
   useEffect(() => {
     const id = setInterval(flush, AUTOSAVE_MS)
@@ -347,7 +405,7 @@ function RoundWorkspace({ team, gameKey }: { team: Team; gameKey: string }) {
       run: () => {
         if (!agent) return
         const hand_code = `import random\n\n\ndef strategy(${MODULE_ARGS}):\n    return ${names[index]}(${MODULE_ARGS})\n`
-        saveDraft(team.id, gameKey, load({ ...agent, hand_code }))
+        saveDraft(team.team_id, gameKey, load({ ...agent, hand_code }))
       },
     })
   }
@@ -361,7 +419,8 @@ function RoundWorkspace({ team, gameKey }: { team: Team; gameKey: string }) {
         try {
           const next = agentFromDetail(await request('GET', `/submissions/${id}`, SubmissionDetail))
           if (!next) throw new Error('unreadable version')
-          saveDraft(team.id, gameKey, load(next))
+          if (placesTroops) setPlayMode(parseAllocation(next.hand_code, regions) ? 'map' : 'code')
+          saveDraft(team.team_id, gameKey, load(next))
         } catch (err) {
           toast('bad', errorMessage(err, `Could not load version ${version}. Try again.`))
         }
@@ -375,16 +434,22 @@ function RoundWorkspace({ team, gameKey }: { team: Team; gameKey: string }) {
   const fallen = team.status !== 'active'
   const windowOpen = round?.status === 'open'
   const problems = blockProblems + (noStrategy ? 1 : 0)
-  const canSubmit = windowOpen && !fallen && !busy && agent !== null && problems === 0 && !tooLong
+  // In map mode the troop placement is what gets sent; otherwise the editor's code, as before
+  const outgoing = mapMode ? mapAgent : agent
+  const canSubmit = mapMode
+    ? windowOpen && !fallen && !busy && placementProblems.length === 0
+    : windowOpen && !fallen && !busy && agent !== null && problems === 0 && !tooLong
 
   async function submit() {
-    if (agent === null || !round || sending.current) return
+    const sent = outgoing
+    if (sent === null || !round || sending.current) return
+    if (mapMode && placementProblems.length > 0) return
     sending.current = true
     setBusy(true)
     flush()
     try {
-      const s = await submitAgent(agent, moves, round.id)
-      markSent(agent)
+      const s = await submitAgent(sent, moves, round.id)
+      markSent(sent)
       toast('info', `Version ${s.version} received. Testing against the bots…`)
       queries.invalidateQueries({ queryKey: ['submissions'] })
     } catch (err) {
@@ -399,7 +464,7 @@ function RoundWorkspace({ team, gameKey }: { team: Team; gameKey: string }) {
   }
 
   const accepted = submissions?.find((s) => s.status === 'accepted')
-  const notSent = !!newest && agent !== null && JSON.stringify(agent) !== lastSent
+  const notSent = !!newest && outgoing !== null && JSON.stringify(outgoing) !== lastSent
   const activeModule = typeof tab === 'number' && agent && tab < agent.modules.length ? tab : null
   const submitLabel = busy ? 'Transmitting…' : windowOpen ? 'Submit strategy' : 'Submissions closed'
 
@@ -447,14 +512,17 @@ function RoundWorkspace({ team, gameKey }: { team: Team; gameKey: string }) {
           </button>
         )
       })}
-      <button
-        onClick={addModule}
-        disabled={!agent || agent.modules.length >= maxModules}
-        title={maxModules ? `This round allows ${maxModules} block module(s)` : 'This round is code only'}
-        className="cursor-pointer px-4 py-2 text-xs font-bold tracking-widest whitespace-nowrap text-amber uppercase hover:text-paper disabled:cursor-not-allowed disabled:text-steel-light"
-      >
-        + Block module
-      </button>
+      {/* Rounds that play numbers have no blocks yet, so they don't offer a block module at all */}
+      {maxModules > 0 && (
+        <button
+          onClick={addModule}
+          disabled={!agent || agent.modules.length >= maxModules}
+          title={`This round allows ${maxModules} block module(s)`}
+          className="cursor-pointer px-4 py-2 text-xs font-bold tracking-widest whitespace-nowrap text-amber uppercase hover:text-paper disabled:cursor-not-allowed disabled:text-steel-light"
+        >
+          + Block module
+        </button>
+      )}
       <span data-testid="check" className="ml-auto flex items-center px-4 text-[11px] whitespace-nowrap text-muted">
         {status}
       </span>
@@ -464,6 +532,31 @@ function RoundWorkspace({ team, gameKey }: { team: Team; gameKey: string }) {
   return (
     <div className="grid min-h-full grid-cols-1 gap-3 p-3 lg:h-full lg:grid-cols-[1fr_380px]">
       <section className="flex min-h-[70vh] flex-col border border-steel bg-panel/90 lg:min-h-0">
+        {placesTroops && (
+          <div className="flex flex-wrap items-stretch gap-px border-b border-steel bg-steel/40" role="tablist" aria-label="How to play this round">
+            {(
+              [
+                ['map', '◈ Place troops on the map'],
+                ['code', '</> Write code'],
+              ] as const
+            ).map(([mode, label]) => (
+              <button
+                key={mode}
+                role="tab"
+                aria-selected={playMode === mode}
+                onClick={() => setPlayMode(mode)}
+                className={`cursor-pointer px-4 py-2.5 text-xs font-bold tracking-widest uppercase transition-colors ${playMode === mode ? 'bg-panel text-amber shadow-[inset_0_2px_0_var(--color-amber)]' : 'text-muted hover:text-paper'}`}
+              >
+                {label}
+              </button>
+            ))}
+            <span className="ml-auto flex items-center px-4 text-[11px] text-muted">Whichever is open is what you submit</span>
+          </div>
+        )}
+        {mapMode ? (
+          <TroopPlacement troops={troops} regions={regions} allocation={placement} onChange={setAllocation} problems={placementProblems} disabled={fallen} />
+        ) : (
+        <>
         {tabs}
         {noStrategy && <p className="border-b border-alert-dim bg-alert/10 px-4 py-1.5 text-xs text-alert">strategy.py must define a strategy function.</p>}
         {tooLong && (
@@ -554,12 +647,21 @@ function RoundWorkspace({ team, gameKey }: { team: Team; gameKey: string }) {
             </>
           )}
         </div>
+        </>
+        )}
       </section>
       <div className="flex min-h-0 flex-col gap-3 overflow-y-auto">
         <Guard name="Command">
           {/* Stays in view, so Submit and the timer are always reachable while reading results below */}
           <Panel className="z-10 shrink-0 !bg-panel lg:sticky lg:top-0" title={round ? `Round ${round.number} of ${TOTAL_ROUNDS}` : 'Command'} right={round && <span className="label !text-amber">{game.name}</span>}>
             <div className="flex flex-col gap-3">
+              {/* Only this team's own score, from /me. Teams never see other teams' scores or the standings */}
+              <div data-testid="own-score" className="flex items-baseline justify-between border border-steel bg-ink/60 px-3 py-2">
+                <span className="label">Your score</span>
+                <span className="text-xl font-bold tabular-nums text-paper">
+                  {typeof team.score === 'number' ? team.score.toLocaleString() : <span className="text-sm font-normal text-muted">Not scored yet</span>}
+                </span>
+              </div>
               {fallen ? (
                 <>
                   <p className="stamp self-start text-alert">{team.status === 'disqualified' ? 'Disqualified' : 'Nation fallen'}</p>
@@ -571,6 +673,11 @@ function RoundWorkspace({ team, gameKey }: { team: Team; gameKey: string }) {
                   <Button variant="primary" onClick={submit} disabled={!canSubmit}>
                     {submitLabel}
                   </Button>
+                  {placesTroops && (
+                    <p data-testid="submitting" className="text-xs text-muted">
+                      Submitting: <span className="text-paper">{mapMode ? 'your troop placement on the map' : 'your code'}</span>
+                    </p>
+                  )}
                   {round?.status !== 'waiting' && (
                     <p className="text-xs text-muted">
                       {round?.status === 'open'
@@ -609,9 +716,20 @@ function RoundWorkspace({ team, gameKey }: { team: Team; gameKey: string }) {
             <details open className="shrink-0 border border-steel bg-panel/90">
               <summary className="label cursor-pointer bg-steel/40 px-4 py-2 !text-paper">Round rules</summary>
               <div className="flex flex-col gap-2 p-4 text-xs">
+                {game.also && <p className="label !text-amber">{game.also}</p>}
                 {game.brief && <p>{game.brief}</p>}
                 {game.question && <p className="text-muted italic">{game.question}</p>}
-                <p className="text-muted">Moves: {moves.map(moveLabel).join(', ')}</p>
+                {moves.length > 0 ? (
+                  <p className="text-muted">Moves: {moves.map((m) => moveOption(m, moveLabel(m))).join(' · ')}</p>
+                ) : (
+                  <p className="text-muted">No named moves this round: your bot returns numbers.</p>
+                )}
+                {game.limits && <p className="text-muted">{game.limits}</p>}
+                {placesTroops && (
+                  <p className="text-muted">
+                    Region order in the list: {regionNames(regions).map((name, i) => `${i + 1}. ${name}`).join(' · ')}
+                  </p>
+                )}
                 {round.config.rounds_per_match !== undefined && (
                   <p className="text-muted">
                     {round.config.rounds_per_match} turns per match{round.config.repetitions !== undefined ? ` · ${round.config.repetitions} repetitions` : ''}

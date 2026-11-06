@@ -37,28 +37,36 @@ You need Node 20 or later, and Google Chrome for the browser tests.
 ```bash
 cd frontend
 npm install
-npm run mock    # a stand-in for the backend, on port 8002
-npm run dev     # in a second terminal, then open http://localhost:5173
+npm run mock       # a stand-in for the backend, on port 8012
+npm run dev:mock   # in a second terminal, then open http://localhost:5173
 ```
 
 Log in as `team1` or `team2` with the password `demo`, or `admin` for an organiser. These work on the mock only.
 
-To change round on the mock: `curl -X POST localhost:8000/__mock/goto -d '{"index":2}'`
+`dev:mock` points the app at the mock on port 8012 and turns on the demo controls that only the mock understands: the R1 / R2 / R3 round switcher in the top bar and Reset Event in the Command Console. Plain `npm run dev` and production builds point at the real backend on port 8002, and never show those controls or call `/__mock/*`.
+
+To change round on the mock from a terminal: `curl -X POST localhost:8012/__mock/goto -d '{"index":2}'`
 
 ## Tests
 
 ```bash
 npm test            # logic: clock, saved data, Python from blocks
-npm run test:e2e    # real browser: tries to break the screens
+npm run test:e2e    # real browser: tries to break the screens (starts its own mock on port 8022)
 ```
 
 ## Following the API
 
 The screens follow `docs/api.md` v2, and `src/lib/contract.ts` checks every server answer against it. If the contract changes, change that file and `mock/server.mjs`.
 
-The backend address is one value, in `src/lib/config.ts`. By default it is port 8002 on the machine serving the page. To use another: `VITE_API_URL=http://192.168.1.10:8002 npm run dev`.
+The backend address is one value, in `src/lib/config.ts`. Ports on the machine serving the page:
 
-To use Sumedh's backend instead of the mock, run it on port 8002 (see `backend/README.md`) and start only `npm run dev`. The mock uses the same port, so run one or the other.
+| Port | What | Used by |
+| --- | --- | --- |
+| 8002 | Sumedh's real backend (see `backend/README.md`) | `npm run dev` and production builds |
+| 8012 | The mock, `npm run mock` | `npm run dev:mock` |
+| 8022 | A mock the browser tests start for themselves | `npm run test:e2e` |
+
+To use the real backend, run it on port 8002 and start only `npm run dev`. To point anywhere else: `VITE_API_URL=http://192.168.1.10:8002 npm run dev`.
 
 ## How blocks work
 

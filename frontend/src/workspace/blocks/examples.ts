@@ -21,16 +21,7 @@ export const EXAMPLES: Record<string, Example[]> = {
     { name: 'Grudge', about: 'Cooperate until the opponent betrays too often', body: ifElse(oppOften('D', 25), play('D'), play('C')) },
     { name: 'Forgiving', about: 'Hit back after a betrayal, but sometimes let it go', body: ifElse(oppLast('D'), ifElse(chance(20), play('C'), play('D')), play('C')) },
   ],
-  theatre_of_war: [
-    { name: 'Builder', about: 'Expand, and defend right after being attacked', body: ifElse(oppLast('ATTACK'), play('DEFEND'), play('EXPAND')) },
-    { name: 'Counter', about: "Play whatever beats the opponent's last move", body: ifElse(oppLast('EXPAND'), play('ATTACK'), ifElse(oppLast('ATTACK'), play('DEFEND'), play('EXPAND'))) },
-    { name: 'Fortress', about: 'Defend, and attack back if attacked too often', body: ifElse(oppOften('ATTACK', 50), play('ATTACK'), play('DEFEND')) },
-  ],
-  foreign_aid: [
-    { name: 'Reciprocate', about: 'Aid first, then copy what the opponent just did', body: ifElse(firstTurn, play('AID'), ifElse(oppLast('WITHHOLD'), play('WITHHOLD'), play('AID'))) },
-    { name: 'Grudge', about: 'Aid until the opponent withholds too often', body: ifElse(oppOften('WITHHOLD', 25), play('WITHHOLD'), play('AID')) },
-    { name: 'Forgiving', about: 'Withhold after being refused, but sometimes aid anyway', body: ifElse(oppLast('WITHHOLD'), ifElse(chance(20), play('AID'), play('WITHHOLD')), play('AID')) },
-  ],
+  // Rounds 2 and 3 play numbers and have no blocks yet, so no examples until they do.
 }
 
 export function exampleLayout(example: Example, name: string): Layout {

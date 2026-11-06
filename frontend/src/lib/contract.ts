@@ -21,12 +21,20 @@ export const LoginOut = z.object({
   team_id: z.number().nullable().optional(),
 })
 
-/** GET /me and POST /teams/claim. */
+/**
+ * GET /me and POST /teams/claim. The answer's `id` is the user's id, not the team's,
+ * so it is left out here; the team is always `team_id`.
+ */
 export const Team = z.object({
-  id: z.number(),
+  team_id: z.number(),
   nation_name: z.string().nullable(),
   territory_code: z.string().nullable(),
   status: z.string().default('active'),
+  /**
+   * This team's own score, if the server sends it. Only ever the team's own: teams never
+   * load the standings, so other teams' scores never reach a team's browser.
+   */
+  score: z.number().nullable().optional(),
 })
 export type Team = z.infer<typeof Team>
 
@@ -57,11 +65,18 @@ export const Round = z
     opens_at: moment,
     closes_at: moment,
     config: z.object({
-      moves: z.array(z.string()).min(1),
+      /** Named moves. Only round 1 has them (["C", "D"]); rounds 2 and 3 play numbers and send []. */
+      moves: z.array(z.string()),
       max_modules: z.number(),
       block_limit: z.number(),
       rounds_per_match: z.number().optional(),
       repetitions: z.number().optional(),
+      /** Round 2, Theatre of War: troops to split across this many regions. */
+      troops: z.number().int().positive().optional(),
+      regions: z.number().int().positive().optional(),
+      /** Round 3, Foreign Aid: the most a sender can send, and how much it grows on arrival. */
+      endowment: z.number().int().nonnegative().optional(),
+      multiplier: z.number().int().positive().optional(),
     }),
     server_time: moment,
   })

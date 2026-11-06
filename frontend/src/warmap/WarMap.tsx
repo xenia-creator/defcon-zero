@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { COUNTRIES, LAT_BOTTOM, LAT_TOP, MAP_HEIGHT, MAP_WIDTH, projectX, projectY } from './worldPaths'
+import { defconLevel, gameName, roundByGame } from '../lib/rounds'
 import { AmbientBackground } from './AmbientBackground'
 import { TroopLayer } from './TroopLayer'
 import type { Round, StandingsNation, StandingsResponse, TeamStatus, TerritoriesResponse, TroopMovement } from './types'
@@ -35,12 +36,6 @@ const FALLBACK_COLOURS = [
   '#E5253C', // red
 ]
 
-const GAME_LABELS: Record<Round['game'], string> = {
-  prisoners_dilemma: "Prisoner's Dilemma",
-  theatre_of_war: 'Theatre of War',
-  foreign_aid: 'Foreign Aid',
-}
-
 const STATUS_LABELS: Record<TeamStatus, string> = {
   active: 'Active',
   eliminated: 'Eliminated',
@@ -62,11 +57,13 @@ interface WarMapProps {
   standings: StandingsResponse
   // Provisional troop data; see TroopMovement in types.ts.
   movements?: TroopMovement[]
+  // The leaderboard (every team's score and rank) is organiser-only; the public big board leaves it out.
+  showStandings?: boolean
 }
 
 const NO_MOVES: TroopMovement[] = []
 
-export function WarMap({ round, territories, standings, movements = NO_MOVES }: WarMapProps) {
+export function WarMap({ round, territories, standings, movements = NO_MOVES, showStandings = true }: WarMapProps) {
   const colourByTeam = useMemo(() => {
     const nations = [...standings.nations].sort((a, b) => a.team_id - b.team_id)
     const pinned = new Set(nations.map((n) => NATION_COLOUR_BY_NAME[n.nation_name]).filter(Boolean))
@@ -110,13 +107,14 @@ export function WarMap({ round, territories, standings, movements = NO_MOVES }: 
       <header className="warmap__header">
         <div className="warmap__defcon">
           <span className="warmap__defcon-label">DEFCON</span>
-          {/* Rounds count up but DEFCON counts down: round 1 is DEFCON 3, round 3 is DEFCON 1 */}
-          <span className="warmap__defcon-level">{Math.max(1, Math.min(3, 4 - round.number))}</span>
+          {/* Rounds count up but DEFCON counts down: round 1 is DEFCON 3, round 3 is DEFCON 1 (lib/rounds.ts) */}
+          <span className="warmap__defcon-level">{defconLevel(round) || 'ZERO'}</span>
         </div>
         <div className="warmap__round">
-          <div className="warmap__game">{GAME_LABELS[round.game]}</div>
+          <div className="warmap__game">{gameName(round.game)}</div>
           <div className="warmap__meta">
             <span>Round {round.number}</span>
+            {roundByGame(round.game) && <span>{roundByGame(round.game)!.also}</span>}
             <span className={`warmap__pill is-${standings.round_status}`}>{standings.round_status}</span>
             <span>
               <strong>{activeCount}</strong> / {standings.nations.length} nations standing
@@ -131,7 +129,7 @@ export function WarMap({ round, territories, standings, movements = NO_MOVES }: 
         </div>
       </header>
 
-      <main className="warmap__body">
+      <main className={`warmap__body ${showStandings ? '' : 'is-map-only'}`}>
         <section className="warmap__map" aria-label="World map">
           <div className="warmap__frame" style={{ ['--map-ratio' as string]: MAP_WIDTH / MAP_HEIGHT }}>
             <svg
@@ -211,19 +209,21 @@ export function WarMap({ round, territories, standings, movements = NO_MOVES }: 
           </ol>
         </section>
 
-        <aside className="warmap__board" aria-label="Leaderboard">
-          <h2 className="warmap__board-title">Standings</h2>
-          <ol className="warmap__rows" style={{ height: rows.length * ROW_HEIGHT }}>
-            {rows.map((n) => (
-              <LeaderRow
-                key={n.team_id}
-                nation={n}
-                colour={colourByTeam.get(n.team_id) ?? '#5A6472'}
-                share={n.score / topScore}
-              />
-            ))}
-          </ol>
-        </aside>
+        {showStandings && (
+          <aside className="warmap__board" aria-label="Leaderboard">
+            <h2 className="warmap__board-title">Standings</h2>
+            <ol className="warmap__rows" style={{ height: rows.length * ROW_HEIGHT }}>
+              {rows.map((n) => (
+                <LeaderRow
+                  key={n.team_id}
+                  nation={n}
+                  colour={colourByTeam.get(n.team_id) ?? '#5A6472'}
+                  share={n.score / topScore}
+                />
+              ))}
+            </ol>
+          </aside>
+        )}
       </main>
     </div>
   )

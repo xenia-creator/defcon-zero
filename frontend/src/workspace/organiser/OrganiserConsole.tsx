@@ -2,15 +2,10 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
 import { Badge, Button, Panel, WindowTimer, useConfirm } from '../../components/ui'
 import { useAuth } from '../../lib/auth'
-import { API_URL } from '../../lib/config'
+import { API_URL, USE_MOCK_API } from '../../lib/config'
 import { useLive } from '../../lib/live'
 import { useCurrentRound } from '../../lib/queries'
-
-const GAME_TITLES: Record<string, string> = {
-  prisoners_dilemma: "Prisoner's Dilemma",
-  theatre_of_war: 'Theatre of War',
-  foreign_aid: 'Foreign Aid',
-}
+import { ROUNDS, gameName, roundByGame } from '../../lib/rounds'
 
 interface AdminTeamRow {
   team_id: number
@@ -113,12 +108,34 @@ export function OrganiserConsole() {
             <div className="flex items-center justify-between border border-steel bg-ink/80 p-4">
               <div>
                 <p className="label">Active Theatre</p>
-                <p className="mt-1 text-lg font-bold tracking-wider uppercase">
-                  {GAME_TITLES[gameKey] ?? gameKey}
-                </p>
+                <p className="mt-1 text-lg font-bold tracking-wider uppercase">{gameName(gameKey)}</p>
+                {roundByGame(gameKey) && <p className="label !text-amber">{roundByGame(gameKey)!.also}</p>}
               </div>
               <WindowTimer round={round} />
             </div>
+
+            {/* Demo only: /__mock/goto exists only on the local mock server, never on the real backend */}
+            {USE_MOCK_API && (
+              <div className="flex items-center justify-between gap-3 border border-dashed border-steel px-3 py-2">
+                <p className="label !text-[10px]">Mock demo · jump to round</p>
+                <div className="flex gap-1">
+                  {ROUNDS.map((r) => (
+                    <button
+                      key={r.number}
+                      type="button"
+                      disabled={!!busy}
+                      title={`Round ${r.number}: ${r.name} (DEFCON ${r.defcon})`}
+                      onClick={() => void runAction(`Jumped to Round ${r.number}: ${r.name}`, '/__mock/goto', 'POST', { index: r.number })}
+                      className={`cursor-pointer px-2 py-0.5 font-mono text-[10px] font-bold tracking-widest transition-colors disabled:cursor-not-allowed ${
+                        roundNumber === r.number ? 'bg-alert text-white' : 'text-muted hover:text-paper'
+                      }`}
+                    >
+                      R{r.number}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
 
             <div>
               <p className="label mb-2">Submission Window Adjustments</p>
@@ -184,22 +201,25 @@ export function OrganiserConsole() {
                 >
                   Publish Results
                 </Button>
-                <Button
-                  variant="danger"
-                  disabled={!!busy}
-                  onClick={() =>
-                    ask({
-                      title: 'Reset entire event state?',
-                      body: 'All claimed territories, submissions, and round timers will be restored to initial state.',
-                      confirmLabel: 'Reset event',
-                      run: () => {
-                        void runAction('Event state reset', '/__mock/reset')
-                      },
-                    })
-                  }
-                >
-                  Reset Event
-                </Button>
+                {/* Mock-only: /__mock/reset exists only on the local mock server */}
+                {USE_MOCK_API && (
+                  <Button
+                    variant="danger"
+                    disabled={!!busy}
+                    onClick={() =>
+                      ask({
+                        title: 'Reset entire event state?',
+                        body: 'All claimed territories, submissions, and round timers will be restored to initial state.',
+                        confirmLabel: 'Reset event',
+                        run: () => {
+                          void runAction('Event state reset', '/__mock/reset')
+                        },
+                      })
+                    }
+                  >
+                    Reset Event
+                  </Button>
+                )}
               </div>
             </div>
           </div>

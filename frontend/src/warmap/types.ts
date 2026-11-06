@@ -36,11 +36,15 @@ export interface TerritoriesResponse {
 
 // GET /rounds/current
 export interface RoundConfig {
-  moves: string[]
+  moves: string[] // [] in rounds 2 and 3, which play numbers
   max_modules: number
   block_limit: number
   rounds_per_match: number
   repetitions: number
+  troops?: number // round 2
+  regions?: number // round 2
+  endowment?: number // round 3
+  multiplier?: number // round 3
 }
 
 export interface Round {

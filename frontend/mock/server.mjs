@@ -9,17 +9,19 @@
 import { randomUUID } from 'node:crypto'
 import { createServer } from 'node:http'
 
-const PORT = Number(process.env.MOCK_PORT ?? 8002)
+const PORT = Number(process.env.MOCK_PORT ?? 8012)
 const TERRITORIES = ['AR', 'AU', 'BR', 'CA', 'CL', 'DK', 'EG', 'FI', 'FR', 'DE', 'IN', 'JP', 'KE', 'MX', 'NO', 'PE', 'ES', 'SE', 'TR', 'VN']
 const BOTS = {
   prisoners_dilemma: ['tit_for_tat', 'always_defect', 'always_cooperate'],
   theatre_of_war: ['aggressive', 'defensive', 'fortress'],
   foreign_aid: ['always_aid', 'never_aid', 'tit_for_tat_aid'],
 }
+// Like the backend: only round 1 has named moves. Rounds 2 and 3 play numbers,
+// with their limits in the round's config.
 const ROUNDS = {
-  1: { game: 'prisoners_dilemma', moves: ['C', 'D'] },
-  2: { game: 'theatre_of_war', moves: ['ATTACK', 'DEFEND', 'EXPAND'] },
-  3: { game: 'foreign_aid', moves: ['AID', 'WITHHOLD'] },
+  1: { game: 'prisoners_dilemma', moves: ['C', 'D'], limits: {} },
+  2: { game: 'theatre_of_war', moves: [], limits: { troops: 100, regions: 5 } },
+  3: { game: 'foreign_aid', moves: [], limits: { endowment: 10, multiplier: 3 } },
 }
 const NAME_RULE = /^[A-Za-z0-9 ]{3,24}$/
 const WINDOW_SECONDS = 1800
@@ -28,15 +30,16 @@ let db
 
 const openRound = (number) => ({
   id: number, number, game: ROUNDS[number].game, status: 'open', opensAt: Date.now(), closesAt: Date.now() + WINDOW_SECONDS * 1000,
-  config: { moves: ROUNDS[number].moves, max_modules: 3, block_limit: 40, rounds_per_match: 200, repetitions: 5 },
+  config: { moves: ROUNDS[number].moves, max_modules: 3, block_limit: 40, rounds_per_match: 200, repetitions: 5, ...ROUNDS[number].limits },
 })
 
 function reset() {
   db = {
     users: {
-      team1: { role: 'team', team: { id: 1, nation_name: null, territory_code: null, status: 'active' } },
-      team2: { role: 'team', team: { id: 2, nation_name: null, territory_code: null, status: 'active' } },
-      admin: { role: 'organiser', team: null },
+      // User ids differ from team ids on purpose, so mixing them up shows in the mock too
+      team1: { id: 101, role: 'team', team: { id: 1, nation_name: null, territory_code: null, status: 'active' } },
+      team2: { id: 102, role: 'team', team: { id: 2, nation_name: null, territory_code: null, status: 'active' } },
+      admin: { id: 100, role: 'organiser', team: null },
     },
     territories: TERRITORIES.map((territory_code) => ({ territory_code, claimed: false, nation_name: null })),
     submissions: [],
@@ -53,7 +56,18 @@ const roundOut = ({ opensAt, closesAt, ...round }) => ({ ...round, opens_at: iso
 const error = (status, code, message) => ({ status, body: { error: { code, message } } })
 const summary = ({ id, version, status, createdAt }) => ({ id, version, status, created_at: iso(createdAt) })
 const detail = ({ id, roundId, version, status, createdAt, code, blocks, check }) => ({ id, round_id: roundId, version, status, created_at: iso(createdAt), code, blocks, check, server_time: iso(Date.now()) })
-const me = (username, { team }) => ({ username, role: 'team', ...team })
+// Like the backend: id is the user's id, team_id is the team's
+const me = (username, { id, team }) => ({
+  id,
+  team_id: team.id,
+  username,
+  role: 'team',
+  nation_name: team.nation_name,
+  territory_code: team.territory_code,
+  status: team.status,
+  // Only this team's own score. The mock doesn't play matches, so it stays 0 unless a test sets it.
+  score: team.score ?? 0,
+})
 
 function submit(team, body, key) {
   if (team.status === 'disqualified') return error(403, 'TEAM_DISQUALIFIED', 'Your team has been disqualified.')

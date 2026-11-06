@@ -6,7 +6,7 @@
 import { expect, test as base, type Page } from '@playwright/test'
 import { execFileSync } from 'node:child_process'
 
-const mock = (page: Page, path: string, data: unknown = {}) => page.request.post(`http://localhost:8012/__mock/${path}`, { data })
+const mock = (page: Page, path: string, data: unknown = {}) => page.request.post(`http://localhost:8022/__mock/${path}`, { data })
 
 const test = base.extend<{ crashes: string[] }>({
   crashes: [
@@ -266,7 +266,7 @@ test.describe('submitting', () => {
     await page.keyboard.press('ControlOrMeta+End')
     await page.keyboard.type('# typed before the crash')
     await expect(page.getByText('Draft saved in this browser.')).toBeVisible()
-    await page.route('http://lab.test:8012/**', (r) => r.fulfill({ status: 502, contentType: 'text/html', body: '<html>Bad gateway</html>' }))
+    await page.route('http://lab.test:8022/**', (r) => r.fulfill({ status: 502, contentType: 'text/html', body: '<html>Bad gateway</html>' }))
     await page.reload()
     await expect(page.locator('.monaco-editor').first()).toContainText('typed before the crash', { timeout: 20_000 })
     await expect(page.getByLabel('Username')).toHaveCount(0)
@@ -581,7 +581,7 @@ test.describe('the three rounds', () => {
 test('routes outside the contract are never called, and nobody is told they are being reported', async ({ page }) => {
   const called: string[] = []
   page.on('request', (r) => {
-    if (/:8012\/(practice|fairplay|ws|clock|config|api)\b/.test(r.url())) called.push(r.url())
+    if (/:8022\/(practice|fairplay|ws|clock|config|api)\b/.test(r.url())) called.push(r.url())
   })
   await readyWorkspace(page)
   await page.evaluate(() => window.dispatchEvent(new Event('blur')))

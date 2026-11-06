@@ -2,6 +2,7 @@ import { useEffect, useState, type ButtonHTMLAttributes, type ReactNode } from '
 import { ErrorBoundary } from './ErrorBoundary'
 import { formatDuration, useClock, useServerNow, windowRemaining } from '../lib/clock'
 import type { Round } from '../lib/contract'
+import { defconLevel } from '../lib/rounds'
 import { useLive } from '../lib/live'
 import { useCurrentRound } from '../lib/queries'
 
@@ -142,19 +143,18 @@ const DEFCON_CONFIG: Record<number, { label: string; color: string; glowClass: s
   0: { label: 'DEFCON', color: 'text-ink font-black', glowClass: 'defcon-glow-0', border: 'border-white' },
 }
 
-/** DEFCON 3, 2, 1 for the three rounds, and ZERO once the final results are out. */
-export function Defcon({ round }: { round: Round | null | undefined }) {
-  const finished = !!round && round.number >= 3 && round.status === 'published'
-  const level = finished ? 0 : round ? Math.max(1, Math.min(3, 4 - round.number)) : 3
+/** DEFCON 3, 2, 1 for the three rounds, and ZERO once the final results are out (levels from lib/rounds.ts). */
+export function Defcon({ round, compact = false }: { round: Round | null | undefined; compact?: boolean }) {
+  const level = defconLevel(round)
   const cfg = DEFCON_CONFIG[level] ?? DEFCON_CONFIG[3]
   return (
     <span
       data-testid="defcon"
-      className={`flex items-center gap-2 border px-3 py-1 transition-all duration-700 ${cfg.border} ${cfg.glowClass}`}
+      className={`flex items-center gap-2 border transition-all duration-700 ${compact ? 'px-2 py-0.5' : 'px-3 py-1'} ${cfg.border} ${cfg.glowClass}`}
       title="The threat level rises each round"
     >
       <span className={`label !text-[10px] ${level === 0 ? '!text-ink' : ''}`}>{cfg.label}</span>
-      <span className={`text-xl font-bold ${cfg.color}`}>{level === 0 ? 'ZERO' : level}</span>
+      <span className={`${compact ? 'text-base' : 'text-xl'} font-bold ${cfg.color}`}>{level === 0 ? 'ZERO' : level}</span>
     </span>
   )
 }

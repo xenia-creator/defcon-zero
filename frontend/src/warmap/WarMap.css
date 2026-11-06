@@ -175,6 +175,11 @@
   grid-template-rows: minmax(0, 1fr);
 }
 
+/* Big board without the leaderboard: the map takes the full width */
+.warmap__body.is-map-only {
+  grid-template-columns: 1fr;
+}
+
 /* Map: the frame is sized to the map's own aspect ratio and letterboxed
    inside the available space, so the projection is never stretched. */
 .warmap__map {

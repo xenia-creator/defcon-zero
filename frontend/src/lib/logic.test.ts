@@ -9,6 +9,10 @@ import { parseSession } from './auth'
 import { Round, SubmissionDetail, Team, Territories, isChecked, territoryName } from './contract'
 import { formatDuration, offsetFrom, windowRemaining } from './clock'
 import { newId } from './ids'
+import { ROUNDS, defconLevel, gameName, moveOption, roundByGame } from './rounds'
+import { seesStandings, viewsFor } from '../app/views'
+import { moveLabel } from '../workspace/blocks/categories'
+import { COUNTRY_FRONT, FRONTS, allocationCode, allocationProblems, evenAllocation, parseAllocation, regionNames } from '../workspace/editor/troops'
 
 describe('clock sync', () => {
   it('uses the midpoint of the round trip', () => {
@@ -46,8 +50,8 @@ describe('stored session', () => {
   )
 
   it('accepts a real one', () => {
-    const team = { id: 7, nation_name: null, territory_code: null, status: 'alive' }
-    expect(parseSession(JSON.stringify({ access: 'a', username: 'team07', role: 'team', team }))?.team?.id).toBe(7)
+    const team = { team_id: 7, nation_name: null, territory_code: null, status: 'alive' }
+    expect(parseSession(JSON.stringify({ access: 'a', username: 'team07', role: 'team', team }))?.team?.team_id).toBe(7)
     expect(parseSession(JSON.stringify({ access: 'a', username: 'admin', role: 'organiser', team: null }))?.team).toBeNull()
   })
 })
@@ -71,14 +75,30 @@ describe('reading the contract', () => {
     expect(Round.parse({ ...round, opens_at: null }).opensAt).toBeNull()
   })
 
-  it('refuses a round with no game, no moves or a wrong shape', () => {
+  it('refuses a round with no game, no moves list or a wrong shape', () => {
     expect(Round.safeParse({ ...round, number: 'one' }).success).toBe(false)
-    expect(Round.safeParse({ ...round, config: { ...round.config, moves: [] } }).success).toBe(false)
+    expect(Round.safeParse({ ...round, config: { ...round.config, moves: undefined } }).success).toBe(false)
     expect(Round.safeParse({ ...round, game: undefined }).success).toBe(false)
   })
 
+  it('reads rounds 2 and 3, which have no moves and their own limits', () => {
+    const war = Round.parse({ ...round, number: 2, game: 'theatre_of_war', config: { ...round.config, moves: [], troops: 100, regions: 5 } })
+    expect(war.config.moves).toEqual([])
+    expect([war.config.troops, war.config.regions]).toEqual([100, 5])
+    const aid = Round.parse({ ...round, number: 3, game: 'foreign_aid', config: { ...round.config, moves: [], endowment: 10, multiplier: 3 } })
+    expect([aid.config.endowment, aid.config.multiplier]).toEqual([10, 3])
+    expect(Round.parse(round).config.troops).toBeUndefined()
+  })
+
   it('reads a team, defaulting to active', () => {
-    expect(Team.parse({ id: 7, username: 'x', role: 'team', nation_name: 'Red Dawn', territory_code: 'RU' }).status).toBe('active')
+    expect(Team.parse({ id: 101, team_id: 7, username: 'x', role: 'team', nation_name: 'Red Dawn', territory_code: 'RU' }).status).toBe('active')
+  })
+
+  it('takes the team from team_id, never from the user id', () => {
+    const team = Team.parse({ id: 101, team_id: 7, username: 'x', role: 'team', nation_name: null, territory_code: null })
+    expect(team.team_id).toBe(7)
+    expect('id' in team).toBe(false)
+    expect(Team.safeParse({ id: 7, nation_name: null, territory_code: null }).success).toBe(false)
   })
 
   it('reads a pending submission with no check, and a finished one', () => {
@@ -234,8 +254,9 @@ describe('generating Python from blocks', () => {
         expect([example.name, result.problems, result.warnings]).toEqual([example.name, [], []])
       }
     }
-    expect(examplesFor('theatre_of_war', 40).length).toBe(EXAMPLES.theatre_of_war.length)
+    expect(examplesFor('prisoners_dilemma', 40).length).toBe(EXAMPLES.prisoners_dilemma.length)
     expect(examplesFor('prisoners_dilemma', 2)).toEqual([])
+    expect(examplesFor('theatre_of_war', 40)).toEqual([])
     expect(examplesFor('surprise', 40)).toEqual([])
   })
 
@@ -249,5 +270,126 @@ describe('generating Python from blocks', () => {
     expect(code).toContain('import random')
     expect(code).toContain('def plan(my_history, opp_history):')
     expect(handCodeOf(code)).toBe(hand)
+  })
+})
+
+describe('rounds 2 and 3 in the editor', () => {
+  const config = { moves: [], max_modules: 3, block_limit: 40 }
+
+  it('take their limits from the round config, not from fixed numbers', () => {
+    const war = gameInfo('theatre_of_war', { ...config, troops: 60, regions: 3 })
+    expect(war.blocks).toBe(false)
+    expect(war.template).toContain('return [20, 20, 20]')
+    expect(war.template).toContain('add up to 60')
+    expect(war.limits).toBe('Return 3 whole numbers, none negative, adding up to 60.')
+
+    const aid = gameInfo('foreign_aid', { ...config, endowment: 20, multiplier: 4 })
+    expect(aid.blocks).toBe(false)
+    expect(aid.template).toContain('from 0 to 20')
+    expect(aid.template).toContain('received = 4 * opp_history[-1]')
+    expect(aid.template).toContain('return 10')
+  })
+
+  it('match the event before the round arrives: 100 troops over 5 regions, 10 points tripled', () => {
+    expect(gameInfo('theatre_of_war').template).toContain('return [20, 20, 20, 20, 20]')
+    expect(gameInfo('foreign_aid').template).toContain('received = 3 * opp_history[-1]')
+  })
+
+  it('split troops that do not divide evenly without losing any', () => {
+    expect(gameInfo('theatre_of_war', { ...config, troops: 101, regions: 5 }).template).toContain('return [21, 20, 20, 20, 20]')
+  })
+})
+
+describe('who sees what', () => {
+  const team = { team_id: 7, nation_name: 'Red Dawn', territory_code: 'RU', status: 'active' }
+
+  it('a team gets only its own workspace: no war map, no standings, no Command Console', () => {
+    expect(viewsFor({ role: 'team', team })).toEqual(['workspace'])
+    expect(seesStandings({ role: 'team' })).toBe(false)
+    // A team account not yet linked to a team gets nothing, not the map
+    expect(viewsFor({ role: 'team', team: null })).toEqual([])
+  })
+
+  it('only the organiser gets the Command Console and the standings', () => {
+    expect(viewsFor({ role: 'organiser', team: null })).toEqual(['warmap', 'command'])
+    expect(seesStandings({ role: 'organiser' })).toBe(true)
+    for (const role of ['spectator', 'admin', 'team', '']) {
+      expect(viewsFor({ role, team: null })).not.toContain('command')
+      expect(seesStandings({ role })).toBe(false)
+    }
+  })
+
+  it('a spectator gets the war map only', () => {
+    expect(viewsFor({ role: 'spectator', team: null })).toEqual(['warmap'])
+  })
+
+  it("reads a team's own score from /me, and copes without one", () => {
+    expect(Team.parse({ id: 101, team_id: 7, nation_name: 'Red Dawn', territory_code: 'RU', score: 860 }).score).toBe(860)
+    expect(Team.parse({ id: 101, team_id: 7, nation_name: 'Red Dawn', territory_code: 'RU' }).score).toBeUndefined()
+  })
+})
+
+describe('the round table', () => {
+  it('pairs each round with its game, name and DEFCON level', () => {
+    expect(ROUNDS.map((r) => [r.number, r.defcon, r.game, r.name])).toEqual([
+      [1, 3, 'prisoners_dilemma', "The Prisoner's Dilemma"],
+      [2, 2, 'theatre_of_war', 'Theatre of War'],
+      [3, 1, 'foreign_aid', 'Foreign Aid'],
+    ])
+    expect(roundByGame('theatre_of_war')?.also).toBe('Colonel Blotto')
+    expect(roundByGame('foreign_aid')?.also).toBe('The Trust Game')
+  })
+
+  it('names each game the same way in the editor', () => {
+    for (const r of ROUNDS) expect(gameInfo(r.game).name).toBe(r.name)
+    expect(gameName('surprise')).toBe('surprise')
+  })
+
+  it('counts DEFCON down, reaching ZERO only when round 3 is published', () => {
+    expect([1, 2, 3].map((number) => defconLevel({ number, status: 'open' }))).toEqual([3, 2, 1])
+    expect(defconLevel({ number: 3, status: 'published' })).toBe(0)
+    expect(defconLevel({ number: 2, status: 'published' })).toBe(2)
+    expect(defconLevel(null)).toBe(3)
+  })
+
+  it('shows round 1 options as Cooperate (C) and Betray (D)', () => {
+    expect(['C', 'D'].map((m) => moveOption(m, moveLabel(m)))).toEqual(['Cooperate (C)', 'Betray (D)'])
+  })
+})
+
+describe('round 2 on the map', () => {
+  it('has five named fronts, and every country on the map belongs to one', () => {
+    expect(FRONTS.map((f) => f.name)).toEqual(['Americas', 'Europe', 'Africa & Middle East', 'Asia', 'Oceania'])
+    expect(regionNames(5)).toEqual(FRONTS.map((f) => f.name))
+    expect(regionNames(3)).toEqual(['Region 1', 'Region 2', 'Region 3'])
+    const of = (code: string) => FRONTS[COUNTRY_FRONT.get(code)!].name
+    expect(['US', 'BR', 'CA'].map(of)).toEqual(['Americas', 'Americas', 'Americas'])
+    expect(['FR', 'DE', 'TR'].map(of)).toEqual(['Europe', 'Europe', 'Europe'])
+    expect(['NG', 'EG', 'SA'].map(of)).toEqual(['Africa & Middle East', 'Africa & Middle East', 'Africa & Middle East'])
+    expect(['CN', 'IN', 'JP', 'RU'].map(of)).toEqual(['Asia', 'Asia', 'Asia', 'Asia'])
+    expect(['AU', 'NZ'].map(of)).toEqual(['Oceania', 'Oceania'])
+    for (const i of new Set(COUNTRY_FRONT.values())) expect(i).toBeLessThan(FRONTS.length)
+  })
+
+  it('only accepts exactly 100 whole, non-negative troops', () => {
+    expect(allocationProblems([20, 20, 20, 20, 20], 100, 5)).toEqual([])
+    expect(allocationProblems([0, 0, 0, 0, 100], 100, 5)).toEqual([])
+    expect(allocationProblems([20, 20, 20, 20, 19], 100, 5)[0]).toContain('Place 1 more')
+    expect(allocationProblems([30, 20, 20, 20, 20], 100, 5)[0]).toContain('Remove 10')
+    expect(allocationProblems([-5, 30, 25, 25, 25], 100, 5)).toContain('No region can have fewer than 0 troops.')
+    expect(allocationProblems([20.5, 19.5, 20, 20, 20], 100, 5)).toContain('Troops must be whole numbers.')
+    expect(allocationProblems([25, 25, 25, 25], 100, 5)[0]).toContain('exactly 5 regions')
+  })
+
+  it('turns a placement into a fixed strategy, and reads it back', () => {
+    const code = allocationCode([35, 10, 25, 20, 10], regionNames(5))
+    expect(code).toContain('def strategy(my_history, opp_history):\n    return [35, 10, 25, 20, 10]\n')
+    expect(code).toContain('#   1. Americas: 35')
+    expect(parseAllocation(code, 5)).toEqual([35, 10, 25, 20, 10])
+    // Hand-written or adaptive code opens in the editor instead
+    expect(parseAllocation(gameInfo('theatre_of_war').template, 5)).toBeNull()
+    expect(parseAllocation('def strategy(my_history, opp_history):\n    return [50, 50]\n', 5)).toBeNull()
+    expect(evenAllocation(100, 5)).toEqual([20, 20, 20, 20, 20])
+    expect(evenAllocation(101, 5)).toEqual([21, 20, 20, 20, 20])
   })
 })

@@ -9,6 +9,7 @@
     "typecheck": "tsc -b",
     "test": "vitest run",
     "mock": "node mock/server.mjs",
+    "dev:mock": "vite --mode mock",
     "test:e2e": "playwright test"
   },
   "dependencies": {

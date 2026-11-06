@@ -3,20 +3,15 @@ import { useState } from 'react'
 import { useAuth } from '../lib/auth'
 import { API_URL } from '../lib/config'
 import { useCurrentRound } from '../lib/queries'
-import type { GameKey, Round, StandingsResponse, TerritoriesResponse, TroopMovement } from './types'
+import { roundByGame, roundByNumber } from '../lib/rounds'
+import type { Round, StandingsResponse, TerritoriesResponse, TroopMovement } from './types'
 import { useMockFeed } from './useMockFeed'
 import { WarMap } from './WarMap'
-
-const GAME_BY_ROUND: Record<number, GameKey> = {
-  1: 'prisoners_dilemma',
-  2: 'theatre_of_war',
-  3: 'foreign_aid',
-}
 
 type LiveStandingsPayload = StandingsResponse & { movements?: TroopMovement[] }
 
 // WarMap driven by live server /standings + /territories (with toggle for scripted showcase loop).
-export function WarMapPreview({ roundOverride }: { roundOverride?: 1 | 2 | 3 }) {
+export function WarMapPreview({ roundOverride, showStandings = true }: { roundOverride?: 1 | 2 | 3; showStandings?: boolean }) {
   const [mode, setMode] = useState<'live' | 'showcase'>('live')
   const token = useAuth((s) => s.session?.access)
   const { round: mockRound, territories: mockTerritories, standings: mockStandings, movements: mockMovements } = useMockFeed()
@@ -49,7 +44,9 @@ export function WarMapPreview({ roundOverride }: { roundOverride?: 1 | 2 | 3 }) 
   })
 
   const number = roundOverride ?? liveRound?.number ?? mockRound.number
-  const game = GAME_BY_ROUND[number] ?? mockRound.game
+  // The server's game wins for the live round; otherwise the shared round table (lib/rounds.ts) names it
+  const liveGame = roundOverride === undefined || roundOverride === liveRound?.number ? roundByGame(liveRound?.game)?.game : undefined
+  const game = liveGame ?? roundByNumber(number)?.game ?? mockRound.game
 
   const useLive = mode === 'live' && !!liveStandings && liveStandings.nations.length > 0
 
@@ -70,7 +67,7 @@ export function WarMapPreview({ roundOverride }: { roundOverride?: 1 | 2 | 3 }) 
 
   return (
     <div className="relative h-full w-full">
-      <WarMap round={round} territories={territories} standings={standings} movements={movements} />
+      <WarMap round={round} territories={territories} standings={standings} movements={movements} showStandings={showStandings} />
       <div className="pointer-events-auto absolute bottom-3 left-5 z-30 flex items-center gap-1 border border-steel bg-ink/90 p-1 text-[10px] font-mono tracking-widest uppercase shadow-lg">
         <button
           type="button"
