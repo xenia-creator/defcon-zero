@@ -162,7 +162,7 @@ function buildMovements(index: number): TroopMovement[] {
     troops: m.troops,
     launched_at: new Date(pollStart + Math.round(((i + rand()) / moves.length) * 1800))
       .toISOString()
-      .replace(/.d{3}Z$/, 'Z'),
+      .replace(/\.\d{3}Z$/, 'Z'),
   }))
 }
 

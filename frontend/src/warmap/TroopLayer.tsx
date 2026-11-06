@@ -131,14 +131,36 @@ function TroopArc({ flight, onLand }: { flight: Flight; onLand: (f: Flight) => v
 
   useEffect(() => {
     const duration = reducedMotion() ? 1 : Math.min(2200, 900 + dist * 2.2)
+    const point = (s: number): [number, number] => {
+      const u = 1 - s
+      return [u * u * x0 + 2 * u * s * cx + s * s * x1, u * u * y0 + 2 * u * s * cy + s * s * y1]
+    }
+    // The trail is revealed by distance along the path (pathLength=1), but the Bezier
+    // parameter does not advance at constant speed. Map distance -> parameter with a
+    // cumulative arc-length table so the head sits exactly on the trail's tip.
+    const SAMPLES = 64
+    const lengths = [0]
+    let prev = point(0)
+    for (let i = 1; i <= SAMPLES; i++) {
+      const p = point(i / SAMPLES)
+      lengths.push(lengths[i - 1] + Math.hypot(p[0] - prev[0], p[1] - prev[1]))
+      prev = p
+    }
+    const total = lengths[SAMPLES] || 1
+    const paramAt = (fraction: number) => {
+      const target = fraction * total
+      let i = 1
+      while (i < SAMPLES && lengths[i] < target) i++
+      const span = lengths[i] - lengths[i - 1] || 1
+      return (i - 1 + (target - lengths[i - 1]) / span) / SAMPLES
+    }
+
     const start = performance.now()
     let frame = 0
     const step = (now: number) => {
       const t = Math.min(1, (now - start) / duration)
       const e = t < 0.5 ? 2 * t * t : 1 - (-2 * t + 2) ** 2 / 2
-      const u = 1 - e
-      const x = u * u * x0 + 2 * u * e * cx + e * e * x1
-      const y = u * u * y0 + 2 * u * e * cy + e * e * y1
+      const [x, y] = point(paramAt(e))
       head.current?.setAttribute('transform', `translate(${x} ${y})`)
       trail.current?.setAttribute('stroke-dashoffset', String(1 - e))
       if (t < 1) frame = requestAnimationFrame(step)
