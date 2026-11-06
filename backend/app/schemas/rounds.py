@@ -9,13 +9,29 @@ RoundStatus = Literal["waiting", "open", "running", "review", "published"]
 
 
 class RoundConfig(BaseModel):
-    """Per-round rules. The editor reads its limits from here, not from constants."""
+    """Per-round rules. The editor reads its limits from here, not from constants.
 
+    This is the whole config for prisoners_dilemma. The two games with extra
+    settings extend it below.
+    """
+
+    # ["C", "D"] for prisoners_dilemma. Empty for the other games, because their
+    # moves are numbers checked by rule, not a fixed list of choices.
     moves: list[str]
     max_modules: int
     block_limit: int
     rounds_per_match: int
     repetitions: int
+
+
+class TheatreOfWarConfig(RoundConfig):
+    troops: int
+    regions: int
+
+
+class ForeignAidConfig(RoundConfig):
+    endowment: int
+    multiplier: int
 
 
 class Round(BaseModel):
@@ -29,7 +45,11 @@ class Round(BaseModel):
     # Both are nullable because a waiting round may not have its times yet.
     opens_at: AwareDatetime | None
     closes_at: AwareDatetime | None
-    config: RoundConfig
+    # A union rather than one class with optional fields, so a game's response
+    # leaves out the other games' keys instead of sending them as null. Pydantic
+    # picks the member that matches the most keys, so a dict with troops becomes
+    # TheatreOfWarConfig even though it would also fit plain RoundConfig.
+    config: TheatreOfWarConfig | ForeignAidConfig | RoundConfig
     # Clients compute timers as closes_at - server_time, so a wrong client
     # clock cannot change how long a team thinks it has left.
     server_time: AwareDatetime
@@ -40,11 +60,17 @@ class RoundsResponse(BaseModel):
     server_time: AwareDatetime
 
 
+# Outside this range fails as a 400 VALIDATION_ERROR before any later code has
+# to think about it. The upper limit stops a typo setting a deadline days away.
+MIN_WINDOW_MINUTES = 1
+MAX_WINDOW_MINUTES = 240
+
+
 class OpenRoundRequest(BaseModel):
-    closes_at: AwareDatetime
+    # Minutes rather than a time, so the deadline comes from the server's clock
+    # and a wrong clock on the organiser's laptop cannot change it.
+    minutes: int = Field(ge=MIN_WINDOW_MINUTES, le=MAX_WINDOW_MINUTES)
 
 
 class ExtendRoundRequest(BaseModel):
-    # gt=0: zero or negative minutes would not be an extension. It fails here
-    # as a 400 VALIDATION_ERROR before any later code has to think about it.
-    minutes: int = Field(gt=0)
+    minutes: int = Field(ge=MIN_WINDOW_MINUTES, le=MAX_WINDOW_MINUTES)

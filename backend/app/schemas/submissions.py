@@ -4,6 +4,8 @@ from typing import Any, Literal
 
 from pydantic import AwareDatetime, BaseModel, Field
 
+from app.schemas.ids import MAX_DATABASE_ID
+
 SubmissionStatus = Literal["pending", "running", "accepted", "rejected"]
 
 
@@ -11,18 +13,18 @@ class Blocks(BaseModel):
     """Blockly workspace JSON, stored because Python cannot be turned back into blocks."""
 
     # dict[str, Any]: Blockly owns this format, so the server keeps it opaque.
-    # max_length=3 gives the contract's 400 for "more than 3 modules". The real
-    # limit is per round (config.max_modules), which a schema cannot read, so
-    # the service layer must check that once rounds live in the database.
-    modules: list[dict[str, Any]] = Field(max_length=3)
+    # The limit on modules is per round (config.max_modules). A schema cannot
+    # read the database, so services/submissions.py checks it.
+    modules: list[dict[str, Any]]
 
 
 class SampleBotResult(BaseModel):
     """One test match against a sample bot. `opponent` is its engine identifier."""
 
     opponent: str
-    my_score: int
-    opp_score: int
+    # Floats because Theatre of War gives half points.
+    my_score: float
+    opp_score: float
 
 
 class SubmissionCheck(BaseModel):
@@ -44,7 +46,7 @@ class Submission(BaseModel):
 
 
 class SubmissionCreate(BaseModel):
-    round_id: int
+    round_id: int = Field(ge=1, le=MAX_DATABASE_ID)
     code: str
     blocks: Blocks
 
