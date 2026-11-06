@@ -1,0 +1,24 @@
+# Python dependencies for the backend. Only what the code imports today is
+# listed; each later step adds its own (PyJWT, and so on).
+# Versions are pinned so every teammate and the deploy run identical code.
+
+alembic==1.20.1
+# The Postgres driver SQLAlchemy uses for async connections.
+asyncpg==0.32.0
+fastapi==0.162.0
+# The tests call the app through this HTTP client, without starting a server.
+httpx==0.28.1
+# Password hashing. The [argon2] extra installs the Argon2 implementation.
+pwdlib[argon2]==0.3.1
+pydantic==2.14.3
+# Loads DATABASE_URL and JWT_SECRET from backend/.env.
+pydantic-settings==2.16.2
+# Creates and checks the login tokens (JWTs).
+PyJWT==2.15.1
+# The test runner, and the plugin that lets tests be `async def`.
+pytest==9.2.0
+pytest-asyncio==1.4.1.post1
+# The [asyncio] extra installs greenlet, which SQLAlchemy's async mode needs.
+sqlalchemy[asyncio]==2.0.57
+# ASGI server: the program that listens on a port and hands requests to FastAPI.
+uvicorn==0.54.0
