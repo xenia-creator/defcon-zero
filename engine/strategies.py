@@ -1,4 +1,4 @@
-"""Built-in bots. Each takes (my_history, opp_history) and returns "C" or "D"."""
+"""Prisoner's Dilemma bots using the C/D action contract."""
 
 import random
 
@@ -14,7 +14,7 @@ def always_defect(my_history, opp_history):
 
 
 def random_bot(my_history, opp_history):
-    """Cooperates or defects with equal probability."""
+    """Aids or withholds with equal probability."""
     return random.choice(["C", "D"])
 
 
@@ -34,12 +34,12 @@ def tit_for_two_tats(my_history, opp_history):
 
 
 def alternator(my_history, opp_history):
-    """Alternates C, D, C, D, ... starting with C."""
+    """Alternates C, D, ... starting with C."""
     return "C" if len(my_history) % 2 == 0 else "D"
 
 
 def suspicious_tit_for_tat(my_history, opp_history):
-    """Defects first, then copies the opponent's last move."""
+    """Betrays first, then copies the opponent's last move."""
     return opp_history[-1] if opp_history else "D"
 
 
@@ -52,6 +52,14 @@ def win_stay_lose_shift(my_history, opp_history):
     return "D" if my_history[-1] == "C" else "C"
 
 
+def adaptive_aid(my_history, opp_history):
+    """Cooperates when at least half of the opponent's last five moves were C."""
+    if not opp_history:
+        return "C"
+    recent = opp_history[-5:]
+    return "C" if recent.count("C") * 2 >= len(recent) else "D"
+
+
 BUILT_IN_BOTS = {
     "always_cooperate": always_cooperate,
     "always_defect": always_defect,
@@ -62,4 +70,5 @@ BUILT_IN_BOTS = {
     "alternator": alternator,
     "suspicious_tit_for_tat": suspicious_tit_for_tat,
     "win_stay_lose_shift": win_stay_lose_shift,
+    "adaptive_aid": adaptive_aid,
 }

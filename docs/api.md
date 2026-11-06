@@ -1,9 +1,10 @@
 # DEFCON Zero API Contract
 
-Status: draft v5. Changes in v5 are marked **[v5]**. Older **[v4]** markers are from v4, and **[NEW]** and **[CHANGED]** markers are from v3.
+Status: draft v5.1. Changes in v5.1 are marked **[v5.1]**, and changes in v5 are marked **[v5]**. Older **[v4]** markers are from v4, and **[NEW]** and **[CHANGED]** markers are from v3.
 Owner: Sumedh (backend). Engine signatures owned by Shashwat.
 
 Changelog:
+- v5.1: The engine now supports all three games, so `not available yet` is gone. `check.test_results` has one entry per sample bot, and a bot that fails during a match is `rejected` with its `test_results` still included. Example `opponent` values corrected.
 - v5: Final rules for all three games in section 8. `config.moves` is empty for `theatre_of_war` and `foreign_aid`. `config` gains `troops` and `regions` for `theatre_of_war`, and `endowment` and `multiplier` for `foreign_aid`. Scoring for Theatre of War and Foreign Aid added. All scores are floats. `POST /admin/rounds/{id}/open` takes `minutes` instead of `closes_at`, `minutes` must be 1 to 240, and rounds must open in order. `POST /submissions` limits `code`, `blocks` and `Idempotency-Key` sizes and lists more errors. The server checks `max_modules` but not `block_limit`. `check.test_results` stays empty until the new engine version lands.
 - v4: `GET /territories` returns a `name` for each territory. Nation name rules added to `POST /teams/claim`. `team_id` is also `null` for teams that have not claimed yet. `GET /me` gains `team_id`, and its `id` is confirmed as the user id. Usernames are case-insensitive.
 
@@ -225,8 +226,8 @@ All return the updated Round object. Invalid transitions return `409 INVALID_ROU
 - **[NEW] `blocks`:** the Blockly workspace JSON, stored alongside the generated Python so old versions can be reopened in the editor. Python cannot be converted back into blocks, so both are stored. `modules` holds at most `config.max_modules` items (3), validated on the server.
 - `status`: `pending` → `running` → `accepted` or `rejected`.
 - `check.error`: set when `rejected` (syntax error, timeout, invalid move).
-- `check.test_results`: results of test matches against sample bots. This replaces separate practice routes for now. **[v5]** It stays empty until the new engine version lands.
-- **[NEW]** `check.test_results[].opponent` is the engine identifier of the sample bot, for example `tit_for_tat`, `grudger_aid`, `fortress`.
+- `check.test_results`: results of test matches against sample bots. This replaces separate practice routes for now. **[v5.1]** It has one entry per sample bot for the round's game. It is empty when the code never ran, for example a syntax error. A bot that fails during a match is `rejected`, and its `test_results` are still included.
+- **[NEW]** `check.test_results[].opponent` is the engine identifier of the sample bot, for example `tit_for_tat`, `even_split`, `always_send_0_return_0`. **[v5.1]**
 - Submissions are **never overwritten**; every submit creates a new version.
 - **The latest `accepted` submission created before `closes_at` is the one that plays.**
 
@@ -337,14 +338,14 @@ There is no fair-play report route. Reports go to organisers directly, and organ
 | Game | `game` key | A move is | `config.moves` | Status |
 |---|---|---|---|---|
 | Prisoner's Dilemma | `prisoners_dilemma` | `"C"` or `"D"` | `["C", "D"]` | Confirmed against engine |
-| Theatre of War | `theatre_of_war` | A list of 5 whole numbers, none negative, summing to 100 | `[]` | Rules final, not in engine yet |
-| Foreign Aid | `foreign_aid` | A whole number, with a range set by the bot's role | `[]` | Rules final, not in engine yet |
+| Theatre of War | `theatre_of_war` | A list of 5 whole numbers, none negative, summing to 100 | `[]` | Confirmed against engine **[v5.1]** |
+| Foreign Aid | `foreign_aid` | A whole number, with a range set by the bot's role | `[]` | Confirmed against engine **[v5.1]** |
 
 `my_history` and `opp_history` are lists of previous moves, oldest first. Both are empty on the first turn, except for the receiving bot in Foreign Aid (see below). Returning anything that breaks the game's rules is an invalid move.
 
 **[v5] Scores:** all scores are floats in every game, since Theatre of War gives half points. This covers `my_score` and `opp_score` in `check.test_results` (section 5) and `score` in `GET /standings` (section 6).
 
-**[v5]** Theatre of War and Foreign Aid are not in the engine yet. Until they are, submissions for those rounds are rejected with `check.error` set to `not available yet`.
+**[v5.1]** All three games are in the engine, so a submission is checked for whichever game its round uses.
 
 ### Prisoner's Dilemma
 
