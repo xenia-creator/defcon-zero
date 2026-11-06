@@ -57,7 +57,10 @@ export async function request<S extends z.ZodType>(method: string, path: string,
     const e = (json as { error?: { code?: unknown; message?: unknown } } | null)?.error
     const code = typeof e?.code === 'string' ? e.code : 'UNKNOWN'
     // Only an expired or missing token ends the session; a restarting server must not log the whole lab out
-    if (response.status === 401 && code !== 'INVALID_CREDENTIALS' && useAuth.getState().session) useAuth.getState().logout(true)
+    const currentSession = useAuth.getState().session
+    if (response.status === 401 && code !== 'INVALID_CREDENTIALS' && currentSession && currentSession.role !== 'spectator') {
+      useAuth.getState().logout(true)
+    }
     throw new ApiError(code, typeof e?.message === 'string' ? e.message : 'Could not reach the server. Try again in a moment.', response.status)
   }
   const parsed = shape.safeParse(json)

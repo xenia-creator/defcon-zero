@@ -14,14 +14,14 @@ import type {
 
 // GET /rounds/current
 export const mockCurrentRound: Round = {
-  id: 2,
-  number: 2,
-  game: 'theatre_of_war',
+  id: 1,
+  number: 1,
+  game: 'prisoners_dilemma',
   status: 'running',
   opens_at: '2026-11-12T10:00:00Z',
   closes_at: '2026-11-12T10:45:00Z',
   config: {
-    moves: ['ATTACK', 'DEFEND', 'EXPAND'],
+    moves: ['C', 'D'],
     max_modules: 3,
     block_limit: 40,
     rounds_per_match: 200,

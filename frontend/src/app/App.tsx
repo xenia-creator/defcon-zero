@@ -3,6 +3,7 @@ import { Suspense, lazy, useEffect, useState } from 'react'
 import { ErrorBoundary } from '../components/ErrorBoundary'
 import { Button, ConnectionStatus, Countdown, Defcon, Empty, Toasts } from '../components/ui'
 import { useAuth } from '../lib/auth'
+import { API_URL } from '../lib/config'
 import { useCurrentRound, useTeam } from '../lib/queries'
 import { WarMapPreview } from '../warmap/WarMapPreview'
 import { ClaimCountry } from '../workspace/auth/ClaimCountry'
@@ -41,6 +42,21 @@ export function App() {
   const { data: round } = useCurrentRound()
 
   const [activeTab, setActiveTab] = useState<'workspace' | 'warmap'>(team ? 'workspace' : 'warmap')
+  const [selectedRound, setSelectedRound] = useState<1 | 2 | 3>(1)
+
+  async function switchRound(index: 1 | 2 | 3) {
+    setSelectedRound(index)
+    try {
+      await fetch(`${API_URL}/__mock/goto`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ index }),
+      })
+      queries.invalidateQueries({ queryKey: ['round'] })
+    } catch {
+      // mock endpoint only available in local demo
+    }
+  }
 
   // However the session ended, the next person must not see this team's data
   useEffect(() => {
@@ -51,6 +67,7 @@ export function App() {
 
   const needsCountry = !!team && !team.territory_code
   const isMapActive = activeTab === 'warmap' || !team
+  const activeRoundNumber = (round?.number as 1 | 2 | 3 | undefined) ?? selectedRound
 
   return (
     <div className="flex h-screen flex-col">
@@ -84,7 +101,20 @@ export function App() {
             </button>
           </nav>
         </div>
-        <div className="flex shrink-0 items-center gap-5">
+        <div className="flex shrink-0 items-center gap-4">
+          <div className="flex items-center border border-steel bg-panel/80 p-0.5" title="Switch demo round">
+            {([1, 2, 3] as const).map((r) => (
+              <button
+                key={r}
+                onClick={() => switchRound(r)}
+                className={`cursor-pointer px-2 py-1 font-mono text-[10px] font-bold tracking-widest uppercase transition-colors ${
+                  activeRoundNumber === r ? 'bg-alert text-white' : 'text-muted hover:text-paper'
+                }`}
+              >
+                R{r}
+              </button>
+            ))}
+          </div>
           <Countdown round={round} />
           <ConnectionStatus />
           <Defcon round={round} />
@@ -99,7 +129,7 @@ export function App() {
 
       <main className={`min-h-0 flex-1 flex flex-col ${isMapActive ? 'overflow-hidden h-full' : 'overflow-y-auto'}`}>
         {isMapActive ? (
-          <WarMapPreview />
+          <WarMapPreview roundOverride={activeRoundNumber} />
         ) : needsCountry ? (
           <ClaimCountry username={session.username} />
         ) : (

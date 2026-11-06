@@ -211,7 +211,15 @@ export function Login() {
               <Button
                 type="button"
                 variant="ghost"
-                onClick={() => setSession({ access: 'spectator_token', username: 'spectator', role: 'spectator', team: null })}
+                disabled={busy}
+                onClick={async () => {
+                  try {
+                    const answer = await request('POST', '/auth/login', LoginOut, { username: 'admin', password: 'demo' })
+                    setSession({ access: answer.access_token, username: 'admin', role: answer.role, team: null })
+                  } catch {
+                    setSession({ access: 'spectator_token', username: 'spectator', role: 'spectator', team: null })
+                  }
+                }}
                 className="tracking-[0.2em] border-steel text-muted hover:!text-amber hover:border-amber"
               >
                 👁️ View Big Board · War Map
