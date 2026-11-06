@@ -110,7 +110,8 @@ export function WarMap({ round, territories, standings, movements = NO_MOVES }: 
       <header className="warmap__header">
         <div className="warmap__defcon">
           <span className="warmap__defcon-label">DEFCON</span>
-          <span className="warmap__defcon-level">{round.number}</span>
+          {/* Rounds count up but DEFCON counts down: round 1 is DEFCON 3, round 3 is DEFCON 1 */}
+          <span className="warmap__defcon-level">{Math.max(1, Math.min(3, 4 - round.number))}</span>
         </div>
         <div className="warmap__round">
           <div className="warmap__game">{GAME_LABELS[round.game]}</div>

@@ -114,3 +114,167 @@ textarea {
   font-family: var(--font-mono);
   font-size: 13px;
 }
+
+/* ---- 3D depth panels ---- */
+.panel-3d {
+  box-shadow:
+    0 0 0 1px #000,
+    0 2px 0 0 var(--color-steel),
+    0 4px 0 0 rgba(0,0,0,0.6),
+    0 8px 24px -4px rgba(0,0,0,0.9),
+    inset 0 1px 0 0 rgba(255,255,255,0.04);
+}
+
+/* Vignette overlay — applied as an extra child div absolutely inside a container */
+.vign-red {
+  pointer-events: none;
+  position: absolute;
+  inset: 0;
+  box-shadow: inset 0 0 60px 8px rgba(229,36,59,0.55);
+  z-index: 1;
+}
+.vign-amber {
+  pointer-events: none;
+  position: absolute;
+  inset: 0;
+  box-shadow: inset 0 0 50px 6px rgba(245,165,36,0.35);
+  z-index: 1;
+}
+
+/* telemetry decoration corners */
+.telem::before {
+  content: attr(data-telem);
+  position: absolute;
+  bottom: 6px;
+  left: 8px;
+  font: 600 9px/1 var(--font-mono);
+  letter-spacing: 0.18em;
+  color: var(--color-steel-light);
+  pointer-events: none;
+  text-transform: uppercase;
+}
+.telem::after {
+  content: attr(data-telem2);
+  position: absolute;
+  bottom: 6px;
+  right: 8px;
+  font: 600 9px/1 var(--font-mono);
+  letter-spacing: 0.18em;
+  color: var(--color-steel-light);
+  pointer-events: none;
+  text-transform: uppercase;
+}
+
+/* Boot terminal typing animation */
+@keyframes typing {
+  from { width: 0 }
+  to { width: 100% }
+}
+@keyframes cursor-blink {
+  0%, 100% { border-right-color: transparent }
+  50% { border-right-color: var(--color-coop) }
+}
+.boot-line {
+  overflow: hidden;
+  white-space: nowrap;
+  color: var(--color-coop);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  border-right: 2px solid transparent;
+}
+.boot-line-1 { animation: typing 0.6s steps(40) 0.2s both, cursor-blink 0.5s 0.8s 3; }
+.boot-line-2 { animation: typing 0.6s steps(40) 0.9s both, cursor-blink 0.5s 1.5s 3; }
+.boot-line-3 { animation: typing 0.6s steps(40) 1.6s both, cursor-blink 0.5s 2.2s 3; }
+.boot-line-4 { animation: typing 0.6s steps(40) 2.3s both, cursor-blink 0.5s 1s infinite; }
+
+/* Transmit progress bar pulse */
+@keyframes transmit-fill {
+  0% { width: 0% }
+  100% { width: 100% }
+}
+.transmit-bar {
+  animation: transmit-fill 1.2s ease-out forwards;
+  height: 100%;
+  background: var(--color-alert);
+}
+
+/* stamp land animation */
+@keyframes stamp-land {
+  0% { transform: rotate(-8deg) scale(1.4); opacity: 0 }
+  60% { transform: rotate(-8deg) scale(0.95) }
+  100% { transform: rotate(-8deg) scale(1); opacity: 1 }
+}
+.stamp-land {
+  animation: stamp-land 0.35s cubic-bezier(0.22,1,0.36,1) forwards;
+}
+
+/* Zone closing edge glow — applied as fixed overlay div */
+.zone-closing {
+  pointer-events: none;
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  box-shadow: inset 0 0 60px 8px rgba(245,165,36,0.5);
+  animation: zone-pulse 1.4s ease-in-out infinite;
+}
+.zone-critical {
+  pointer-events: none;
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  box-shadow: inset 0 0 80px 16px rgba(229,36,59,0.7);
+  animation: zone-pulse 0.7s ease-in-out infinite;
+}
+@keyframes zone-pulse {
+  0%, 100% { opacity: 1 }
+  50% { opacity: 0.4 }
+}
+
+/* Grid pattern background (subtle tactical overlay) */
+.tactical-grid {
+  background-image: 
+    linear-gradient(rgba(38,44,51,0.4) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(38,44,51,0.4) 1px, transparent 1px);
+  background-size: 24px 24px;
+}
+
+/* DEFCON badge glow by level */
+.defcon-glow-3 { box-shadow: 0 0 12px -2px var(--color-amber), inset 0 0 8px rgba(245,165,36,0.1); }
+.defcon-glow-2 { box-shadow: 0 0 12px -2px #f0702a, inset 0 0 8px rgba(240,112,42,0.1); }
+.defcon-glow-1 { box-shadow: 0 0 16px -2px var(--color-alert), inset 0 0 8px rgba(229,36,59,0.1); }
+.defcon-glow-0 { box-shadow: 0 0 24px -2px #fff6f2, inset 0 0 12px rgba(255,246,242,0.2); background: #fff6f2; color: var(--color-alert) !important; }
+
+/* Logo pulse */
+@keyframes logo-flicker {
+  0%, 100% { opacity: 1 }
+  92% { opacity: 1 }
+  93% { opacity: 0.7 }
+  94% { opacity: 1 }
+}
+.logo-flicker {
+  animation: logo-flicker 4s ease-in-out infinite;
+}
+
+/* Leaderboard cut line */
+.cut-line {
+  border-top: 2px dashed var(--color-alert);
+  position: relative;
+  margin: 4px 0;
+}
+.cut-line::after {
+  content: 'CUT LINE';
+  position: absolute;
+  right: 0;
+  top: -0.9em;
+  font: 700 9px/1 var(--font-mono);
+  letter-spacing: 0.18em;
+  color: var(--color-alert);
+  background: var(--color-panel);
+  padding: 0 4px;
+}
+
+/* Orange DEFCON 2 accent */
+.text-orange { color: #f0702a; }
+.border-orange { border-color: #f0702a; }
+.bg-orange { background: #f0702a; }
+.shadow-orange { box-shadow: 0 0 20px -4px #f0702a; }

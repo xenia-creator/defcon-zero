@@ -19,10 +19,10 @@ export function Panel({
   children: ReactNode
 }) {
   return (
-    <section className={`relative flex flex-col border border-steel bg-panel/90 shadow-[0_0_0_1px_#000,0_10px_30px_-10px_#000] ${className}`}>
+    <section className={`relative flex flex-col border border-steel bg-panel/90 panel-3d ${className}`}>
       {title && (
         <header className="flex items-center justify-between gap-3 border-b border-steel bg-steel/40 px-4 py-2">
-          <h2 className="label !text-paper">{title}</h2>
+          <h2 className="label !text-paper tracking-[0.18em]">{title}</h2>
           {right}
         </header>
       )}
@@ -32,9 +32,9 @@ export function Panel({
 }
 
 const BUTTON_STYLES = {
-  primary: 'bg-alert text-white border-alert hover:bg-[#ff3b52] shadow-[0_0_20px_-4px_var(--color-alert)]',
-  ghost: 'bg-transparent text-paper border-steel-light hover:border-paper',
-  danger: 'bg-transparent text-alert border-alert-dim hover:border-alert',
+  primary: 'bg-alert text-white border-alert hover:bg-[#ff3b52] shadow-[0_0_20px_-4px_var(--color-alert)] hover:shadow-[0_0_28px_-2px_var(--color-alert)] active:scale-95',
+  ghost: 'bg-transparent text-paper border-steel-light hover:border-paper hover:text-alert',
+  danger: 'bg-transparent text-alert border-alert-dim hover:border-alert hover:shadow-[0_0_12px_-4px_var(--color-alert)]',
 }
 
 export function Button({
@@ -44,14 +44,14 @@ export function Button({
 }: ButtonHTMLAttributes<HTMLButtonElement> & { variant?: keyof typeof BUTTON_STYLES }) {
   return (
     <button
-      className={`cursor-pointer border px-4 py-2 font-mono text-xs font-semibold uppercase tracking-widest transition disabled:cursor-not-allowed disabled:opacity-40 ${BUTTON_STYLES[variant]} ${className}`}
+      className={`cursor-pointer border px-4 py-2 font-mono text-xs font-semibold uppercase tracking-widest transition-all duration-150 disabled:cursor-not-allowed disabled:opacity-40 ${BUTTON_STYLES[variant]} ${className}`}
       {...props}
     />
   )
 }
 
 export const inputClass =
-  'w-full border border-steel-light bg-ink px-3 py-2 font-mono text-sm text-paper outline-none focus:border-alert'
+  'w-full border border-steel-light bg-ink px-3 py-2 font-mono text-sm text-paper outline-none focus:border-alert focus:shadow-[0_0_8px_-2px_var(--color-alert)] transition-shadow'
 
 const STATUS_TONE: Record<string, string> = {
   accepted: 'text-coop border-coop/50',
@@ -70,6 +70,7 @@ const STATUS_TONE: Record<string, string> = {
   review: 'text-peace border-peace/50',
   locked: 'text-paper border-steel-light',
   draft: 'text-muted border-steel-light',
+  taken: 'text-alert border-alert/40',
 }
 
 export function Badge({ status }: { status: string }) {
@@ -96,11 +97,13 @@ export function WindowTimer({ round }: { round: Round | null | undefined }) {
     return <p className="py-1 text-sm text-muted">{round ? (WAITING[round.status] ?? round.status) : 'No round is active'}</p>
   }
   const urgent = seconds < 60
-  const tone = urgent ? 'text-alert' : seconds < 300 ? 'text-amber' : 'text-coop'
+  const nearEnd = seconds < 300
+  const tone = urgent ? 'text-alert' : nearEnd ? 'text-amber' : 'text-coop'
+  const glowColor = urgent ? 'drop-shadow-[0_0_18px_var(--color-alert)]' : nearEnd ? 'drop-shadow-[0_0_14px_var(--color-amber)]' : 'drop-shadow-[0_0_12px_var(--color-coop)]'
   return (
     <div data-testid="timer">
-      <span className="label !text-[11px]">{seconds > 0 ? 'Window closes in' : 'Window closing'}</span>
-      <p className={`text-4xl font-bold tabular-nums drop-shadow-[0_0_14px_currentColor] ${tone} ${urgent ? 'blink' : ''}`}>{formatDuration(seconds)}</p>
+      <span className="label !text-[11px] tracking-[0.2em]">{seconds > 0 ? 'Window closes in' : 'Window closing'}</span>
+      <p className={`text-4xl font-bold tabular-nums ${tone} ${glowColor} ${urgent ? 'blink' : ''}`}>{formatDuration(seconds)}</p>
       {!synced && <p className="mt-1 text-xs text-amber">Syncing with the server clock…</p>}
     </div>
   )
@@ -113,8 +116,8 @@ export function Countdown({ round, large = false }: { round: Round | null | unde
   const urgent = seconds < 60
   return (
     <span className="flex items-baseline gap-2">
-      <span className="label">Window closes</span>
-      <span className={`font-bold tabular-nums ${large ? 'text-4xl' : 'text-lg'} ${urgent ? 'text-alert blink' : 'text-amber'}`}>{formatDuration(seconds)}</span>
+      <span className="label tracking-[0.14em]">Window closes</span>
+      <span className={`font-bold tabular-nums ${large ? 'text-4xl' : 'text-lg'} ${urgent ? 'text-alert blink drop-shadow-[0_0_10px_var(--color-alert)]' : 'text-amber drop-shadow-[0_0_8px_var(--color-amber)]'}`}>{formatDuration(seconds)}</span>
     </span>
   )
 }
@@ -123,7 +126,7 @@ export function Countdown({ round, large = false }: { round: Round | null | unde
 export function ConnectionStatus() {
   const { isPending, isError } = useCurrentRound()
   const status = isError ? 'reconnecting' : isPending ? 'connecting' : 'connected'
-  const tone = status === 'connected' ? 'bg-coop' : 'bg-amber blink'
+  const tone = status === 'connected' ? 'bg-coop shadow-[0_0_6px_var(--color-coop)]' : 'bg-amber blink'
   return (
     <span className="flex items-center gap-2" title="Connection to the server">
       <span className={`h-2 w-2 rounded-full ${tone}`} />
@@ -132,16 +135,26 @@ export function ConnectionStatus() {
   )
 }
 
-const DEFCON_TONE = ['border-alert bg-alert !text-ink', 'text-alert', 'text-[#f0702a]', 'text-amber', 'text-coop', 'text-peace']
+const DEFCON_CONFIG: Record<number, { label: string; color: string; glowClass: string; border: string }> = {
+  3: { label: 'DEFCON', color: 'text-amber', glowClass: 'defcon-glow-3', border: 'border-amber/60' },
+  2: { label: 'DEFCON', color: 'text-orange', glowClass: 'defcon-glow-2', border: 'border-orange/60' },
+  1: { label: 'DEFCON', color: 'text-alert', glowClass: 'defcon-glow-1', border: 'border-alert/60' },
+  0: { label: 'DEFCON', color: 'text-ink font-black', glowClass: 'defcon-glow-0', border: 'border-white' },
+}
 
 /** DEFCON 3, 2, 1 for the three rounds, and ZERO once the final results are out. */
 export function Defcon({ round }: { round: Round | null | undefined }) {
   const finished = !!round && round.number >= 3 && round.status === 'published'
   const level = finished ? 0 : round ? Math.max(1, Math.min(3, 4 - round.number)) : 3
+  const cfg = DEFCON_CONFIG[level] ?? DEFCON_CONFIG[3]
   return (
-    <span data-testid="defcon" className={`flex items-center gap-2 border border-steel px-3 py-1 ${level === 0 ? DEFCON_TONE[0] : ''}`} title="The threat level rises each round">
-      <span className={`label !text-[10px] ${level === 0 ? '!text-ink' : ''}`}>Defcon</span>
-      <span className={`text-xl font-bold ${level === 0 ? '' : DEFCON_TONE[level]}`}>{level === 0 ? 'ZERO' : level}</span>
+    <span
+      data-testid="defcon"
+      className={`flex items-center gap-2 border px-3 py-1 transition-all duration-700 ${cfg.border} ${cfg.glowClass}`}
+      title="The threat level rises each round"
+    >
+      <span className={`label !text-[10px] ${level === 0 ? '!text-ink' : ''}`}>{cfg.label}</span>
+      <span className={`text-xl font-bold ${cfg.color}`}>{level === 0 ? 'ZERO' : level}</span>
     </span>
   )
 }
@@ -168,8 +181,8 @@ export function ConfirmDialog({
     return () => window.removeEventListener('keydown', onKey)
   }, [onCancel])
   return (
-    <div className="fixed inset-0 z-40 flex items-center justify-center bg-ink/80 p-4" role="dialog" aria-modal="true">
-      <Panel title={title} className="w-full max-w-md">
+    <div className="fixed inset-0 z-40 flex items-center justify-center bg-ink/85 p-4 tactical-grid" role="dialog" aria-modal="true">
+      <Panel title={title} className="w-full max-w-md panel-3d">
         <div className="flex flex-col gap-4 text-sm">
           <div className="text-paper">{body}</div>
           <div className="flex justify-end gap-2">
@@ -236,11 +249,11 @@ export function LoadFailed({ what, onRetry }: { what: string; onRetry: () => voi
 export function Toasts() {
   const toasts = useLive((s) => s.toasts)
   const dismiss = useLive((s) => s.dismiss)
-  const tone = { info: 'border-steel-light', good: 'border-coop text-coop', bad: 'border-alert text-alert' }
+  const tone = { info: 'border-steel-light bg-panel', good: 'border-coop text-coop bg-panel shadow-[0_0_12px_-4px_var(--color-coop)]', bad: 'border-alert text-alert bg-panel shadow-[0_0_12px_-4px_var(--color-alert)]' }
   return (
     <div role="status" data-testid="toasts" className="fixed bottom-4 left-4 z-40 flex w-80 flex-col gap-2">
       {toasts.map((t) => (
-        <button key={t.id} onClick={() => dismiss(t.id)} className={`border bg-panel px-3 py-2 text-left text-xs ${tone[t.tone]}`}>
+        <button key={t.id} onClick={() => dismiss(t.id)} className={`border px-3 py-2 text-left text-xs tracking-wide transition-opacity ${tone[t.tone]}`}>
           {t.text}
         </button>
       ))}
@@ -249,5 +262,5 @@ export function Toasts() {
 }
 
 export function Empty({ children }: { children: ReactNode }) {
-  return <p className="py-6 text-center text-sm text-muted">{children}</p>
+  return <p className="py-6 text-center text-sm text-muted tracking-wide">{children}</p>
 }
