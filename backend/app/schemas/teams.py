@@ -12,7 +12,10 @@ TeamStatus = Literal["active", "eliminated", "disqualified"]
 class TeamProfile(BaseModel):
     """Body of GET /me, POST /teams/claim and PATCH /admin/teams/{id}, which the contract makes identical."""
 
+    # The user id, which always exists. team_id is separate because a user has
+    # no team until they claim, and organisers never have one.
     id: int
+    team_id: int | None
     username: str
     role: Role
     # `str | None` with no default: the key is always present in the JSON and
@@ -29,6 +32,9 @@ class ClaimRequest(BaseModel):
 
 class Territory(BaseModel):
     territory_code: str
+    # The territory's display name, such as "Russia". nation_name below is the
+    # name the team chose, and stays null until the territory is claimed.
+    name: str
     claimed: bool
     nation_name: str | None
 

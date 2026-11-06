@@ -21,7 +21,7 @@ from app.schemas.submissions import (
     SubmissionsResponse,
     SubmissionSummary,
 )
-from app.schemas.teams import TeamProfile, TerritoriesResponse, Territory
+from app.schemas.teams import TeamProfile
 
 # One frozen clock for every response. It never ticks, so a frontend timer will
 # show a constant 24m 45s until real data arrives. It falls after the fake
@@ -37,6 +37,7 @@ FAKE_LOGIN = LoginResponse(
 
 FAKE_TEAM = TeamProfile(
     id=7,
+    team_id=7,
     username="team_kremlin",
     role="team",
     nation_name="Red Dawn",
@@ -45,13 +46,6 @@ FAKE_TEAM = TeamProfile(
 )
 
 FAKE_DISQUALIFIED_TEAM = FAKE_TEAM.model_copy(update={"status": "disqualified"})
-
-FAKE_TERRITORIES = TerritoriesResponse(
-    territories=[
-        Territory(territory_code="RU", claimed=True, nation_name="Red Dawn"),
-        Territory(territory_code="BR", claimed=False, nation_name=None),
-    ]
-)
 
 FAKE_OPEN_ROUND = Round(
     id=1,

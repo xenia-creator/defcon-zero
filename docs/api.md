@@ -1,7 +1,10 @@
 # DEFCON Zero API Contract
 
-Status: draft v3. Changes in v3 are marked **[NEW]** or **[CHANGED]**.
+Status: draft v4. Changes in v4 are marked **[v4]**. Older **[NEW]** and **[CHANGED]** markers are from v3.
 Owner: Sumedh (backend). Engine signatures owned by Shashwat.
+
+Changelog:
+- v4: `GET /territories` returns a `name` for each territory. Nation name rules added to `POST /teams/claim`. `team_id` is also `null` for teams that have not claimed yet. `GET /me` gains `team_id`, and its `id` is confirmed as the user id. Usernames are case-insensitive.
 
 ---
 
@@ -70,14 +73,17 @@ Response `200`:
 
 `role` is `"team"` or `"organiser"`. Organiser accounts are created by the backend team only. Errors: `401 INVALID_CREDENTIALS`.
 
-**[CHANGED]** `team_id` is `null` for organisers.
+**[v4]** Usernames are case-insensitive: they are stored in lowercase, and `Team_Kremlin` logs in to the `team_kremlin` account.
+
+**[v4]** `team_id` is `null` for organisers and for teams that have not claimed yet.
 
 ### `GET /me`
 
 Response `200`:
 ```json
 {
-  "id": 7,
+  "id": 12,
+  "team_id": 7,
   "username": "team_kremlin",
   "role": "team",
   "nation_name": "Red Dawn",
@@ -86,7 +92,9 @@ Response `200`:
 }
 ```
 
-`nation_name` and `territory_code` are `null` until claimed. `status` is `active`, `eliminated` or `disqualified`.
+**[v4]** `id` is the user id. `team_id` is the team id, and is `null` for organisers and for teams that have not claimed yet.
+
+`nation_name` and `territory_code` are `null` until claimed. `status` is `active`, `eliminated` or `disqualified`. **[v4]** A team that has not claimed yet has `status` `active`. Organisers have no team, so they get `team_id`, `nation_name` and `territory_code` as `null` and `status` `active`.
 
 ---
 
@@ -99,21 +107,30 @@ Request:
 { "territory_code": "RU", "nation_name": "Red Dawn" }
 ```
 
+**[v4]** `nation_name` rules:
+- The server first trims spaces from both ends and collapses repeated spaces into one. The rules below apply to the cleaned name, and the cleaned name is what is stored and returned.
+- 3 to 24 characters.
+- Only A-Z (either case), 0-9 and spaces. No accented letters.
+- At least one letter.
+- Unique ignoring case, so `Red Dawn` and `RED DAWN` cannot both exist.
+
 Response `200`: same body as `GET /me`.
 
-Errors: `409 TERRITORY_TAKEN`, `409 NAME_TAKEN`, `409 ALREADY_CLAIMED`. Uniqueness is enforced by database constraints, so two teams claiming at the same moment cannot both succeed.
+Errors: `400 VALIDATION_ERROR` (name breaks the rules above, or `territory_code` is not a known territory) **[v4]**, `403 FORBIDDEN` (organisers cannot claim) **[v4]**, `409 TERRITORY_TAKEN`, `409 NAME_TAKEN`, `409 ALREADY_CLAIMED`. Uniqueness is enforced by database constraints, so two teams claiming at the same moment cannot both succeed.
 
-### `GET /territories`
+### `GET /territories` **[v4]**
 
 Response `200`:
 ```json
 {
   "territories": [
-    { "territory_code": "RU", "claimed": true, "nation_name": "Red Dawn" },
-    { "territory_code": "BR", "claimed": false, "nation_name": null }
+    { "territory_code": "RU", "name": "Russia", "claimed": true, "nation_name": "Red Dawn" },
+    { "territory_code": "BR", "name": "Brazil", "claimed": false, "nation_name": null }
   ]
 }
 ```
+
+- **[v4] `name`:** the territory's display name. Always present. `nation_name` is the name the team chose, and stays `null` until claimed.
 
 ---
 
@@ -293,6 +310,8 @@ Organiser only.
 ```
 
 **[CHANGED]** Response `200`: same body as `GET /me`.
+
+**[v4]** `{id}` in the URL is the team id, which matches `team_id` in the response. `id` in the response is the user id.
 
 There is no fair-play report route. Reports go to organisers directly, and organisers disqualify through this route.
 
