@@ -1,5 +1,5 @@
 import { useQueryClient } from '@tanstack/react-query'
-import { Suspense, lazy, useEffect } from 'react'
+import { Suspense, lazy, useEffect, useState } from 'react'
 import { ErrorBoundary } from '../components/ErrorBoundary'
 import { Button, ConnectionStatus, Countdown, Defcon, Empty, Toasts } from '../components/ui'
 import { useAuth } from '../lib/auth'
@@ -30,7 +30,6 @@ function ZoneOverlay({ round }: { round: ReturnType<typeof useCurrentRound>['dat
   return <div className="zone-closing" aria-hidden />
 }
 
-const STEPS = ['Claim nation', 'Workspace']
 
 export function App() {
   const session = useAuth((s) => s.session)
@@ -41,6 +40,8 @@ export function App() {
   useTeamSync(!!team)
   const { data: round } = useCurrentRound()
 
+  const [activeTab, setActiveTab] = useState<'workspace' | 'warmap'>(team ? 'workspace' : 'warmap')
+
   // However the session ended, the next person must not see this team's data
   useEffect(() => {
     if (!signedIn) queries.clear()
@@ -49,7 +50,7 @@ export function App() {
   if (!session) return <Login />
 
   const needsCountry = !!team && !team.territory_code
-  const step = needsCountry ? 0 : 1
+  const isMapActive = activeTab === 'warmap' || !team
 
   return (
     <div className="flex h-screen flex-col">
@@ -64,16 +65,24 @@ export function App() {
             <span className="h-3 w-3 bg-alert shadow-[0_0_14px_2px_var(--color-alert)] blink" aria-hidden />
             <span className="text-lg font-bold tracking-[0.3em] whitespace-nowrap text-alert glow select-none">DEFCON ZERO</span>
           </span>
-          {team && (
-            <nav className="hidden gap-1 xl:flex" aria-label="Progress">
-              {STEPS.map((label, i) => (
-                <span key={label} className={`border-b-2 px-3 py-4 text-xs font-bold tracking-[0.2em] whitespace-nowrap uppercase transition-colors ${step === i ? 'border-alert text-paper' : 'border-transparent text-muted'}`}>
-                  <span className="mr-2 text-alert">0{i + 1}</span>
-                  {label}
-                </span>
-              ))}
-            </nav>
-          )}
+          <nav className="flex gap-1" aria-label="Views">
+            {team && (
+              <button
+                onClick={() => setActiveTab('workspace')}
+                className={`cursor-pointer border-b-2 px-3 py-4 text-xs font-bold tracking-[0.2em] whitespace-nowrap uppercase transition-colors ${!isMapActive ? 'border-alert text-paper' : 'border-transparent text-muted hover:text-paper'}`}
+              >
+                <span className="mr-2 text-alert">01</span>
+                {needsCountry ? 'Claim nation' : 'Workspace'}
+              </button>
+            )}
+            <button
+              onClick={() => setActiveTab('warmap')}
+              className={`cursor-pointer border-b-2 px-3 py-4 text-xs font-bold tracking-[0.2em] whitespace-nowrap uppercase transition-colors ${isMapActive ? 'border-alert text-paper' : 'border-transparent text-muted hover:text-paper'}`}
+            >
+              <span className="mr-2 text-alert">{team ? '02' : '01'}</span>
+              Big Board · War Map
+            </button>
+          </nav>
         </div>
         <div className="flex shrink-0 items-center gap-5">
           <Countdown round={round} />
@@ -88,8 +97,8 @@ export function App() {
         </div>
       </header>
 
-      <main className="min-h-0 flex-1 overflow-y-auto">
-        {!team ? (
+      <main className={`min-h-0 flex-1 flex flex-col ${isMapActive ? 'overflow-hidden h-full' : 'overflow-y-auto'}`}>
+        {isMapActive ? (
           <WarMapPreview />
         ) : needsCountry ? (
           <ClaimCountry username={session.username} />

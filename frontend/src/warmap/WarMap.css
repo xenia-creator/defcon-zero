@@ -191,7 +191,9 @@
 .warmap__frame {
   position: relative;
   aspect-ratio: var(--map-ratio);
-  width: min(100cqw, 100cqh * var(--map-ratio));
+  width: min(100cqw, max(360px, 100cqh * var(--map-ratio)));
+  max-width: 100%;
+  max-height: 100%;
   border: 1px solid var(--wm-line);
   box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.6), 0 20px 60px rgba(0, 0, 0, 0.6);
 }

@@ -202,6 +202,20 @@ export function Login() {
               >
                 {busy ? 'Authenticating…' : 'Request Clearance'}
               </Button>
+
+              <div className="relative my-2 flex items-center justify-center">
+                <span className="h-px w-full bg-steel" />
+                <span className="absolute bg-ink px-2 font-mono text-[9px] uppercase tracking-widest text-muted">or</span>
+              </div>
+
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={() => setSession({ access: 'spectator_token', username: 'spectator', role: 'spectator', team: null })}
+                className="tracking-[0.2em] border-steel text-muted hover:!text-amber hover:border-amber"
+              >
+                👁️ View Big Board · War Map
+              </Button>
             </form>
           </div>
         </div>
