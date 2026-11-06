@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { COUNTRIES, LAT_BOTTOM, LAT_TOP, MAP_HEIGHT, MAP_WIDTH, projectX, projectY } from './worldPaths'
+import { AmbientBackground } from './AmbientBackground'
 import { TroopLayer } from './TroopLayer'
 import type { Round, StandingsNation, StandingsResponse, TeamStatus, TerritoriesResponse, TroopMovement } from './types'
 import './WarMap.css'
@@ -105,6 +106,7 @@ export function WarMap({ round, territories, standings, movements = NO_MOVES }: 
 
   return (
     <div className="warmap">
+      <AmbientBackground />
       <header className="warmap__header">
         <div className="warmap__defcon">
           <span className="warmap__defcon-label">DEFCON</span>

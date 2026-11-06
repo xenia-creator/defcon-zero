@@ -23,6 +23,23 @@
   text-align: left;
   letter-spacing: 0.02em;
   overflow: hidden;
+  isolation: isolate;
+}
+
+/* Ambient radar + starfield canvas: full screen, behind everything, never interactive */
+.warmap__ambient {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 0;
+  pointer-events: none;
+}
+
+.warmap__header,
+.warmap__body {
+  position: relative;
+  z-index: 1;
 }
 
 .warmap *,
