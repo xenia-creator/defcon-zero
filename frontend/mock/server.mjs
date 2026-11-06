@@ -59,7 +59,8 @@ const detail = ({ id, roundId, version, status, createdAt, code, blocks, check }
 // Like the backend: id is the user's id, team_id is the team's
 const me = (username, { id, team }) => ({
   id,
-  team_id: team.id,
+  // Like the backend: no team id until the team has claimed its nation
+  team_id: team.territory_code ? team.id : null,
   username,
   role: 'team',
   nation_name: team.nation_name,

@@ -6,7 +6,7 @@ import { Button, Empty, Guard, Panel, WindowTimer, inputClass, useConfirm } from
 import { ApiError, errorMessage, request } from '../../lib/api'
 import { newId } from '../../lib/ids'
 import { serverNow, windowRemaining } from '../../lib/clock'
-import { SubmissionDetail, Submitted, isChecked, type Round, type Team } from '../../lib/contract'
+import { SubmissionDetail, Submitted, isChecked, type ClaimedTeam, type Round } from '../../lib/contract'
 import { useLive } from '../../lib/live'
 import { useCurrentRound, useSubmission, useSubmissions } from '../../lib/queries'
 import { BlockEditor } from '../blocks/BlockEditor'
@@ -133,7 +133,8 @@ function CodeEditor({ value, onChange, onMount }: { value: string; onChange: (co
 type Tab = 'code' | number
 
 /** Each game gets a fresh workspace. Leaving one saves its draft, so nothing is lost when the round moves on. */
-export function Workspace({ team }: { team: Team }) {
+/** Only for a claimed team: everything here (drafts, sent markers, submissions) is keyed by its team id. */
+export function Workspace({ team }: { team: ClaimedTeam }) {
   const { data: round } = useCurrentRound()
   const toast = useLive((s) => s.toast)
   const key = round?.game
@@ -154,7 +155,7 @@ export function Workspace({ team }: { team: Team }) {
   return <RoundWorkspace key={gameKey} team={team} gameKey={gameKey} />
 }
 
-function RoundWorkspace({ team, gameKey }: { team: Team; gameKey: string }) {
+function RoundWorkspace({ team, gameKey }: { team: ClaimedTeam; gameKey: string }) {
   const { data: round, isError: roundFailed } = useCurrentRound()
   const { data: submissions, isError: submissionsFailed } = useSubmissions(round?.id)
   // Rounds 2 and 3 read their limits (troops, regions, endowment, multiplier) from the round's config

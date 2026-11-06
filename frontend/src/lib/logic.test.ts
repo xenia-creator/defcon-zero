@@ -6,7 +6,7 @@ import { nationNameProblem } from '../workspace/auth/ClaimCountry'
 import { newestDraft, parseAgent } from '../workspace/editor/drafts'
 import { gameInfo } from '../workspace/editor/games'
 import { parseSession } from './auth'
-import { Round, SubmissionDetail, Team, Territories, isChecked, territoryName } from './contract'
+import { Round, SubmissionDetail, Team, Territories, isChecked, isClaimed, territoryName } from './contract'
 import { formatDuration, offsetFrom, windowRemaining } from './clock'
 import { newId } from './ids'
 import { ROUNDS, defconLevel, gameName, moveOption, roundByGame } from './rounds'
@@ -391,5 +391,25 @@ describe('round 2 on the map', () => {
     expect(parseAllocation('def strategy(my_history, opp_history):\n    return [50, 50]\n', 5)).toBeNull()
     expect(evenAllocation(100, 5)).toEqual([20, 20, 20, 20, 20])
     expect(evenAllocation(101, 5)).toEqual([21, 20, 20, 20, 20])
+  })
+})
+
+describe('a team that has not claimed its nation yet', () => {
+  it('can log in: /me with team_id null parses, and counts as unclaimed', () => {
+    const fresh = Team.parse({ id: 101, team_id: null, username: 'team1', role: 'team', nation_name: null, territory_code: null })
+    expect(fresh.team_id).toBeNull()
+    expect(isClaimed(fresh)).toBe(false)
+    const claimed = Team.parse({ id: 101, team_id: 7, username: 'team1', role: 'team', nation_name: 'Red Dawn', territory_code: 'RU' })
+    expect(isClaimed(claimed)).toBe(true)
+    expect(isClaimed(null)).toBe(false)
+  })
+
+  it('still needs team_id to be sent, even as null', () => {
+    expect(Team.safeParse({ id: 101, nation_name: null, territory_code: null }).success).toBe(false)
+  })
+
+  it('survives a reload: a stored unclaimed session is still valid', () => {
+    const team = { team_id: null, nation_name: null, territory_code: null, status: 'active' }
+    expect(parseSession(JSON.stringify({ access: 'a', username: 'team1', role: 'team', team }))?.team?.team_id).toBeNull()
   })
 })

@@ -10,19 +10,25 @@ import { ROUNDS, gameName, roundByGame } from '../../lib/rounds'
 interface AdminTeamRow {
   team_id: number
   username: string
-  nation_name: string
+  /** null until the team claims its nation */
+  nation_name: string | null
   territory_code: string | null
   status: 'active' | 'eliminated' | 'disqualified'
   is_bot: boolean
   submission: {
     version: number
     status: string
+    /** test matches the strategy won */
     passed: number
+    /** test matches played */
     total: number
     submitted_at: string
   } | null
   score: number
 }
+
+/** How a team is named in actions and dialogs: its nation, or its login while it has none. */
+const nameOf = (t: AdminTeamRow) => t.nation_name ?? t.username
 
 interface AdminOverview {
   round: {
@@ -259,7 +265,13 @@ export function OrganiserConsole() {
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2">
                       <span className="mono text-xs font-bold text-alert">{t.territory_code ?? '--'}</span>
-                      <span className="truncate font-bold tracking-wider uppercase">{t.nation_name}</span>
+                      {t.nation_name ? (
+                        <span className="truncate font-bold tracking-wider uppercase">{t.nation_name}</span>
+                      ) : (
+                        <span className="truncate tracking-wider text-muted uppercase italic" title="This team has not claimed a nation yet">
+                          Unclaimed
+                        </span>
+                      )}
                       <Badge status={t.is_bot ? 'draft' : t.username} />
                       {t.status !== 'active' && <Badge status={t.status} />}
                     </div>
@@ -267,7 +279,7 @@ export function OrganiserConsole() {
                       {sub ? (
                         sub.status === 'accepted' ? (
                           <span className="text-coop">
-                            ● v{sub.version} accepted ({sub.passed}/{sub.total} bots)
+                            ● v{sub.version} accepted · won {sub.passed} / {sub.total} test matches
                           </span>
                         ) : (
                           <span className="text-alert">✕ v{sub.version} rejected</span>
@@ -287,12 +299,12 @@ export function OrganiserConsole() {
                         disabled={!!busy}
                         onClick={() =>
                           ask({
-                            title: `Disqualify ${t.nation_name}?`,
-                            body: `${t.nation_name} will be marked disqualified on the War Map and excluded from active scoring.`,
+                            title: `Disqualify ${nameOf(t)}?`,
+                            body: `${nameOf(t)} will be marked disqualified on the War Map and excluded from active scoring.`,
                             confirmLabel: 'Disqualify nation',
                             run: () => {
                               void runAction(
-                                `Disqualified ${t.nation_name}`,
+                                `Disqualified ${nameOf(t)}`,
                                 `/admin/teams/${t.team_id}`,
                                 'PATCH',
                                 { status: 'disqualified' },
@@ -310,7 +322,7 @@ export function OrganiserConsole() {
                         disabled={!!busy}
                         onClick={() =>
                           runAction(
-                            `Restored ${t.nation_name} to active status`,
+                            `Restored ${nameOf(t)} to active status`,
                             `/admin/teams/${t.team_id}`,
                             'PATCH',
                             { status: 'active' },

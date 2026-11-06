@@ -26,7 +26,7 @@ export const LoginOut = z.object({
  * so it is left out here; the team is always `team_id`.
  */
 export const Team = z.object({
-  team_id: z.number(),
+  team_id: z.number().nullable(),
   nation_name: z.string().nullable(),
   territory_code: z.string().nullable(),
   status: z.string().default('active'),
@@ -37,6 +37,13 @@ export const Team = z.object({
   score: z.number().nullable().optional(),
 })
 export type Team = z.infer<typeof Team>
+
+/**
+ * A team that has claimed its nation. The server sends team_id: null until then, so only a
+ * claimed team has an id to key drafts and submissions by, and only a claimed team gets a workspace.
+ */
+export type ClaimedTeam = Team & { team_id: number }
+export const isClaimed = (team: Team | null | undefined): team is ClaimedTeam => !!team && team.team_id !== null
 
 /** The contract only sends codes for now, so names come from the browser unless the server adds them. */
 export function territoryName(code: string, name?: string | null): string {

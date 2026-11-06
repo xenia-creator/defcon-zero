@@ -3,6 +3,7 @@ import { Suspense, lazy, useEffect, useState } from 'react'
 import { ErrorBoundary } from '../components/ErrorBoundary'
 import { Button, ConnectionStatus, Countdown, Defcon, Empty, Toasts } from '../components/ui'
 import { useAuth, type Session } from '../lib/auth'
+import { isClaimed } from '../lib/contract'
 import { windowRemaining, useServerNow } from '../lib/clock'
 import { useCurrentRound, useTeam } from '../lib/queries'
 import { gameName } from '../lib/rounds'
@@ -58,7 +59,8 @@ function Shell({ session }: { session: Session }) {
   const view = chosen && views.includes(chosen) ? chosen : views[0]
   // A team works on the current round only; with nothing else to open, the bar names that round instead of tabs
   const singleView = views.length <= 1
-  const needsCountry = !!team && !team.territory_code
+  // team_id stays null until the team claims its nation, so an unclaimed team goes to the claim flow, never the workspace
+  const needsCountry = !!team && (!isClaimed(team) || !team.territory_code)
 
   return (
     <div className="flex h-screen flex-col">
@@ -125,7 +127,7 @@ function Shell({ session }: { session: Session }) {
           <WarMapPreview showStandings={seesStandings(session)} />
         ) : view !== 'workspace' || !team ? (
           <Empty>This account has nothing to show yet. Ask an organiser to check it is linked to a team.</Empty>
-        ) : needsCountry ? (
+        ) : !isClaimed(team) || !team.territory_code ? (
           <ClaimCountry username={session.username} />
         ) : (
           <ErrorBoundary
