@@ -62,11 +62,13 @@ interface WarMapProps {
   standings: StandingsResponse
   // Provisional troop data; see TroopMovement in types.ts.
   movements?: TroopMovement[]
+  // The map covers the whole screen, so it carries its own way out.
+  onLogout?: () => void
 }
 
 const NO_MOVES: TroopMovement[] = []
 
-export function WarMap({ round, territories, standings, movements = NO_MOVES }: WarMapProps) {
+export function WarMap({ round, territories, standings, movements = NO_MOVES, onLogout }: WarMapProps) {
   const colourByTeam = useMemo(() => {
     const nations = [...standings.nations].sort((a, b) => a.team_id - b.team_id)
     const pinned = new Set(nations.map((n) => NATION_COLOUR_BY_NAME[n.nation_name]).filter(Boolean))
@@ -128,6 +130,11 @@ export function WarMap({ round, territories, standings, movements = NO_MOVES }: 
           </span>
           <span className="warmap__clock-time">{formatClock(standings.server_time)} UTC</span>
         </div>
+        {onLogout && (
+          <button type="button" className="warmap__logout" onClick={onLogout}>
+            Log out
+          </button>
+        )}
       </header>
 
       <main className="warmap__body">

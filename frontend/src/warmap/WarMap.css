@@ -141,6 +141,36 @@
   color: var(--wm-muted);
 }
 
+.warmap__logout {
+  align-self: center;
+  padding: 8px 14px;
+  border: 1px solid var(--wm-red);
+  background: rgba(229, 37, 60, 0.08);
+  color: var(--wm-red);
+  font: inherit;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+  text-shadow: 0 0 8px rgba(229, 37, 60, 0.5);
+  box-shadow: inset 0 0 10px rgba(229, 37, 60, 0.1);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, border-color 0.15s, box-shadow 0.15s;
+}
+
+.warmap__logout:hover {
+  border-color: var(--wm-amber);
+  background: rgba(245, 165, 38, 0.12);
+  color: var(--wm-amber);
+  text-shadow: 0 0 8px rgba(245, 165, 38, 0.5);
+  box-shadow: 0 0 14px rgba(245, 165, 38, 0.25), inset 0 0 10px rgba(245, 165, 38, 0.12);
+}
+
+.warmap__logout:focus-visible {
+  outline: 2px solid var(--wm-amber);
+  outline-offset: 2px;
+}
+
 .warmap__live {
   display: flex;
   align-items: center;
