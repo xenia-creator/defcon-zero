@@ -8,6 +8,7 @@ import { useCurrentRound, useTeam } from '../lib/queries'
 import { WarMapPreview } from '../warmap/WarMapPreview'
 import { ClaimCountry } from '../workspace/auth/ClaimCountry'
 import { Login } from '../workspace/auth/Login'
+import { OrganiserConsole } from '../workspace/organiser/OrganiserConsole'
 import { windowRemaining } from '../lib/clock'
 import { useServerNow } from '../lib/clock'
 
@@ -41,7 +42,7 @@ export function App() {
   useTeamSync(!!team)
   const { data: round } = useCurrentRound()
 
-  const [activeTab, setActiveTab] = useState<'workspace' | 'warmap'>(team ? 'workspace' : 'warmap')
+  const [activeTab, setActiveTab] = useState<'workspace' | 'warmap' | 'command'>(team ? 'workspace' : 'warmap')
   const [selectedRound, setSelectedRound] = useState<1 | 2 | 3>(1)
 
   async function switchRound(index: 1 | 2 | 3) {
@@ -53,6 +54,8 @@ export function App() {
         body: JSON.stringify({ index }),
       })
       queries.invalidateQueries({ queryKey: ['round'] })
+      queries.invalidateQueries({ queryKey: ['warmap-standings'] })
+      queries.invalidateQueries({ queryKey: ['admin-overview'] })
     } catch {
       // mock endpoint only available in local demo
     }
@@ -66,7 +69,8 @@ export function App() {
   if (!session) return <Login />
 
   const needsCountry = !!team && !team.territory_code
-  const isMapActive = activeTab === 'warmap' || !team
+  const isMapActive = activeTab === 'warmap' || (!team && activeTab === 'workspace')
+  const isCommandActive = activeTab === 'command'
   const activeRoundNumber = (round?.number as 1 | 2 | 3 | undefined) ?? selectedRound
 
   return (
@@ -86,7 +90,7 @@ export function App() {
             {team && (
               <button
                 onClick={() => setActiveTab('workspace')}
-                className={`cursor-pointer border-b-2 px-3 py-4 text-xs font-bold tracking-[0.2em] whitespace-nowrap uppercase transition-colors ${!isMapActive ? 'border-alert text-paper' : 'border-transparent text-muted hover:text-paper'}`}
+                className={`cursor-pointer border-b-2 px-3 py-4 text-xs font-bold tracking-[0.2em] whitespace-nowrap uppercase transition-colors ${!isMapActive && !isCommandActive ? 'border-alert text-paper' : 'border-transparent text-muted hover:text-paper'}`}
               >
                 <span className="mr-2 text-alert">01</span>
                 {needsCountry ? 'Claim nation' : 'Workspace'}
@@ -98,6 +102,13 @@ export function App() {
             >
               <span className="mr-2 text-alert">{team ? '02' : '01'}</span>
               Big Board · War Map
+            </button>
+            <button
+              onClick={() => setActiveTab('command')}
+              className={`cursor-pointer border-b-2 px-3 py-4 text-xs font-bold tracking-[0.2em] whitespace-nowrap uppercase transition-colors ${isCommandActive ? 'border-alert text-paper' : 'border-transparent text-muted hover:text-paper'}`}
+            >
+              <span className="mr-2 text-alert">{team ? '03' : '02'}</span>
+              Command Console
             </button>
           </nav>
         </div>
@@ -128,7 +139,9 @@ export function App() {
       </header>
 
       <main className={`min-h-0 flex-1 flex flex-col ${isMapActive ? 'overflow-hidden h-full' : 'overflow-y-auto'}`}>
-        {isMapActive ? (
+        {isCommandActive ? (
+          <OrganiserConsole />
+        ) : isMapActive || !team ? (
           <WarMapPreview roundOverride={activeRoundNumber} />
         ) : needsCountry ? (
           <ClaimCountry username={session.username} />

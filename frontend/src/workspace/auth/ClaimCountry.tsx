@@ -7,12 +7,16 @@ import { Team } from '../../lib/contract'
 import { useTerritories } from '../../lib/queries'
 
 const NAME_RULE = /^[A-Za-z0-9 ]{3,24}$/
+const HAS_LETTER = /[A-Za-z]/
 
-/** What's wrong with a nation name, or null. The server checks again, and alone knows if it is taken. */
-export function nationNameProblem(name: string): string | null {
+/** What's wrong with a nation name, or null. Follows docs/api.md v4 rules. */
+export function nationNameProblem(raw: string): string | null {
+  const name = raw.replace(/\s+/g, ' ')
   if (name.length === 0) return 'Choose a nation name.'
   if (name.length < 3 || name.length > 24) return 'A nation name is 3 to 24 characters.'
-  return NAME_RULE.test(name) ? null : 'A nation name can only use letters, numbers and spaces.'
+  if (!NAME_RULE.test(name)) return 'A nation name can only use letters, numbers and spaces.'
+  if (!HAS_LETTER.test(name)) return 'A nation name must include at least one letter.'
+  return null
 }
 
 /** Deterministic emblem from nation name hash */
