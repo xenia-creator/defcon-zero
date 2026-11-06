@@ -24,6 +24,17 @@ async def list_claimed_teams(db: AsyncSession) -> list[Team]:
     return list(result.scalars())
 
 
+async def get_team_for_update(db: AsyncSession, team_id: int) -> Team | None:
+    """Return a team and lock its row until the transaction ends, or None."""
+    result = await db.execute(
+        select(Team)
+        .where(Team.id == team_id)
+        .with_for_update()
+        .execution_options(populate_existing=True)
+    )
+    return result.scalar_one_or_none()
+
+
 async def get_team_by_id(db: AsyncSession, team_id: int) -> Team | None:
     """Return the team with this id, or None if there is no such team."""
     result = await db.execute(select(Team).where(Team.id == team_id))

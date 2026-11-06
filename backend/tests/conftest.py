@@ -12,8 +12,10 @@ connections, so tests really do write. They are kept away from real data like th
    and stops the run if the answer is anything else, before any table is wiped.
 """
 
+import asyncio
 from collections.abc import AsyncIterator, Awaitable, Callable
 from pathlib import Path
+from typing import Any
 
 import httpx
 import pytest
@@ -37,7 +39,9 @@ settings.database_url = settings.test_database_url
 # These imports must stay below the swap, as they create the engine.
 from app.core.database import SessionLocal, engine  # noqa: E402
 from app.main import app  # noqa: E402
+from app.repositories import rounds as rounds_repository  # noqa: E402
 from app.services.auth import create_account  # noqa: E402
+from app.services.rounds import create_missing_rounds  # noqa: E402
 
 PASSWORD = "correct-horse-battery"
 
@@ -45,10 +49,10 @@ PASSWORD = "correct-horse-battery"
 async def wipe_tables() -> None:
     """Empty every table the tests write to.
 
-    CASCADE also empties the tables that point at these, which are unused so far.
+    CASCADE also empties the tables that point at these, such as submissions.
     """
     async with engine.begin() as connection:
-        await connection.execute(text("TRUNCATE users, teams CASCADE"))
+        await connection.execute(text("TRUNCATE users, teams, rounds CASCADE"))
 
 
 @pytest.fixture(scope="session")
@@ -122,6 +126,76 @@ def log_in_new_user(
         return bearer(response.json()["access_token"])
 
     return create_and_log_in
+
+
+@pytest.fixture
+async def round_ids() -> dict[int, int]:
+    """Create the three rounds, as scripts/create_rounds.py does. Maps number to id."""
+    async with SessionLocal() as db:
+        await create_missing_rounds(db)
+        await db.commit()
+        rows = await rounds_repository.list_rounds(db)
+    return {row.number: row.id for row in rows}
+
+
+@pytest.fixture
+async def organiser(
+    log_in_new_user: Callable[..., Awaitable[dict[str, str]]],
+) -> dict[str, str]:
+    """Auth headers for an organiser."""
+    return await log_in_new_user("boss", "organiser")
+
+
+@pytest.fixture
+def claimed_team(
+    client: httpx.AsyncClient,
+    log_in_new_user: Callable[..., Awaitable[dict[str, str]]],
+) -> Callable[..., Awaitable[dict[str, str]]]:
+    """Return a helper that makes a team with a territory and gives back its headers."""
+
+    async def create_and_claim(
+        username: str = "team_a",
+        territory_code: str = "RU",
+        nation_name: str = "Red Dawn",
+    ) -> dict[str, str]:
+        headers = await log_in_new_user(username)
+        response = await client.post(
+            "/teams/claim",
+            json={"territory_code": territory_code, "nation_name": nation_name},
+            headers=headers,
+        )
+        assert response.status_code == 200
+        return headers
+
+    return create_and_claim
+
+
+async def run_sql(statement: str, **params: Any) -> list[Any]:
+    """Run raw SQL and commit. Returns the rows, if the statement gives any.
+
+    For putting the database into a state no route can reach yet, such as a
+    published round, and for reading columns the API does not show.
+    """
+    async with engine.begin() as connection:
+        result = await connection.execute(text(statement), params)
+        return list(result) if result.returns_rows else []
+
+
+async def wait_until_a_query_is_blocked() -> None:
+    """Return once Postgres reports a query waiting on a lock, or fail the test.
+
+    Lock tests use this rather than a fixed sleep, because a sleep cannot tell a
+    query that is waiting from one that never reached the lock at all.
+    """
+    for _ in range(200):
+        rows = await run_sql(
+            "SELECT count(*) FROM pg_stat_activity "
+            "WHERE datname = current_database() AND wait_event_type = 'Lock'"
+        )
+        if rows[0][0] > 0:
+            return
+        await asyncio.sleep(0.01)
+    pytest.fail("No query ever waited on the lock.")
 
 
 def bearer(token: str) -> dict[str, str]:

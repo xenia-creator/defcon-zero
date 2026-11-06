@@ -11,12 +11,13 @@ This file only reads the HTTP request. The rules are in services/auth.py.
 
 from typing import Annotated
 
-from fastapi import Depends
+from fastapi import Depends, Path
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.models.user import User
+from app.schemas.ids import MAX_DATABASE_ID
 from app.services import auth as auth_service
 
 # HTTPBearer reads "Authorization: Bearer <token>" and adds the Authorize button
@@ -49,3 +50,7 @@ async def require_organiser(user: CurrentUser) -> User:
 
 
 CurrentOrganiser = Annotated[User, Depends(require_organiser)]
+
+# An id taken from the URL. Outside this range is a 400 VALIDATION_ERROR before
+# the route runs, so it can never reach a query and crash it.
+PathId = Annotated[int, Path(ge=1, le=MAX_DATABASE_ID)]
