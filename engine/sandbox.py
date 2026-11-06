@@ -15,9 +15,9 @@ import time
 import traceback
 from types import ModuleType, SimpleNamespace
 
-from .games import PRISONERS_DILEMMA
+from .games import GAMES, PRISONERS_DILEMMA
 from .match import play_match
-from .strategies import BUILT_IN_BOTS
+from .strategies import BOTS_BY_GAME, BUILT_IN_BOTS
 from .tournament import match_seed, schedule, summarize
 
 MATCH_TIMEOUT = 2.0   # seconds per match, enforced inside the worker
@@ -77,7 +77,7 @@ def validate_code(code):
         elif isinstance(node, ast.ImportFrom):
             if node.level or node.module not in ALLOWED_IMPORTS:
                 errors.append(f"{line}: importing from '{node.module}' is not allowed (only random and math).")
-        elif isinstance(node, (ast.Try, ast.TryStar)):
+        elif isinstance(node, (ast.Try, getattr(ast, "TryStar", ast.Try))):
             # Otherwise a bot could catch the timeout and keep running
             errors.append(f"{line}: try/except is not allowed.")
         elif isinstance(node, ast.Name):
@@ -188,9 +188,10 @@ def _play_job(index, sources, game, turns, noise, seed, record=False):
                 # Side 0 moves first each turn, so it sees every completed turn
                 histories = (list(my_history), list(opp_history))
             _running[index] = side
+            allowed = getattr(game, "moves", ("C", "D"))
             m = bot(my_history, opp_history)
-            if m not in ("C", "D"):
-                raise BadMove(f"returned {m!r} instead of 'C' or 'D'")
+            if m not in allowed:
+                raise BadMove(f"returned {m!r} instead of one of {allowed!r}")
             return m
         return move
 
@@ -334,25 +335,29 @@ def play_safe_match(name1, name2, bot_codes, game, turns, noise=0.0, seed=None):
     }
 
 
-def test_submission(code, turns=50):
+def test_submission(code, turns=50, game_key="prisoners_dilemma"):
     """Check an uploaded bot before accepting it: validate, then play it against
-    tit_for_tat, always_defect and random_bot in the sandbox.
+    the round's built-in bots in the sandbox.
 
-    Returns {"ok": True, "errors": []} or {"ok": False, "errors": [messages]}.
+    Returns {"ok": True, "errors": [], "test_results": [...]} or {"ok": False, "errors": [messages], "test_results": []}.
     """
     errors = validate_code(code)
     if errors:
-        return {"ok": False, "errors": errors}
+        return {"ok": False, "errors": errors, "test_results": []}
 
-    opponents = ["tit_for_tat", "always_defect", "random_bot"]
+    game = GAMES.get(game_key, PRISONERS_DILEMMA)
+    opponents = list(BOTS_BY_GAME.get(game_key, {"tit_for_tat": None, "always_defect": None, "random_bot": None}).keys())
     sources = {"submission": code, **{name: name for name in opponents}}
     matches = [(0, "submission", name) for name in opponents]
-    outcomes = _run_in_pool(matches, sources, PRISONERS_DILEMMA, turns, 0.0, seed=0)
+    outcomes = _run_in_pool(matches, sources, game, turns, 0.0, seed=0)
 
     errors = []
-    for name, (_, _, forfeit) in zip(opponents, outcomes):
+    test_results = []
+    for name, (sa, sb, forfeit) in zip(opponents, outcomes):
         if forfeit:
             side, reason = forfeit
             who = "Your bot" if side == 0 else name  # built-ins never fail, but be exact
             errors.append(f"Against {name}: {who} {reason}")
-    return {"ok": not errors, "errors": errors}
+        else:
+            test_results.append({"opponent": name, "my_score": int(sa), "opp_score": int(sb)})
+    return {"ok": not errors, "errors": errors, "test_results": test_results}

@@ -1,7 +1,9 @@
-"""Built-in bots. Each takes (my_history, opp_history) and returns "C" or "D"."""
+"""Built-in bots for all three DEFCON Zero rounds."""
 
 import random
 
+
+# --- Round 1: Prisoner's Dilemma ("C", "D") ---
 
 def always_cooperate(my_history, opp_history):
     """Always cooperates."""
@@ -52,6 +54,59 @@ def win_stay_lose_shift(my_history, opp_history):
     return "D" if my_history[-1] == "C" else "C"
 
 
+# --- Round 2: Theatre of War ("ATTACK", "DEFEND", "EXPAND") ---
+
+def aggressive(my_history, opp_history):
+    """Always attacks."""
+    return "ATTACK"
+
+
+def defensive(my_history, opp_history):
+    """Always defends."""
+    return "DEFEND"
+
+
+def fortress(my_history, opp_history):
+    """Defends if attacked last turn, otherwise expands."""
+    if opp_history and opp_history[-1] == "ATTACK":
+        return "DEFEND"
+    return "EXPAND"
+
+
+def opportunistic(my_history, opp_history):
+    """Counters the opponent's previous move."""
+    if not opp_history:
+        return "EXPAND"
+    last = opp_history[-1]
+    if last == "EXPAND":
+        return "ATTACK"
+    if last == "ATTACK":
+        return "DEFEND"
+    return "EXPAND"
+
+
+# --- Round 3: Foreign Aid ("AID", "WITHHOLD") ---
+
+def always_aid(my_history, opp_history):
+    """Always sends aid."""
+    return "AID"
+
+
+def never_aid(my_history, opp_history):
+    """Always withholds aid."""
+    return "WITHHOLD"
+
+
+def tit_for_tat_aid(my_history, opp_history):
+    """Aids first, then copies the opponent's last move."""
+    return opp_history[-1] if opp_history else "AID"
+
+
+def grudger_aid(my_history, opp_history):
+    """Aids until the opponent withholds once, then withholds forever."""
+    return "WITHHOLD" if "WITHHOLD" in opp_history else "AID"
+
+
 BUILT_IN_BOTS = {
     "always_cooperate": always_cooperate,
     "always_defect": always_defect,
@@ -62,4 +117,33 @@ BUILT_IN_BOTS = {
     "alternator": alternator,
     "suspicious_tit_for_tat": suspicious_tit_for_tat,
     "win_stay_lose_shift": win_stay_lose_shift,
+    "aggressive": aggressive,
+    "defensive": defensive,
+    "fortress": fortress,
+    "opportunistic": opportunistic,
+    "always_aid": always_aid,
+    "never_aid": never_aid,
+    "tit_for_tat_aid": tit_for_tat_aid,
+    "grudger_aid": grudger_aid,
+}
+
+BOTS_BY_GAME = {
+    "prisoners_dilemma": {
+        "tit_for_tat": tit_for_tat,
+        "always_defect": always_defect,
+        "always_cooperate": always_cooperate,
+        "grudger": grudger,
+    },
+    "theatre_of_war": {
+        "aggressive": aggressive,
+        "defensive": defensive,
+        "fortress": fortress,
+        "opportunistic": opportunistic,
+    },
+    "foreign_aid": {
+        "always_aid": always_aid,
+        "never_aid": never_aid,
+        "tit_for_tat_aid": tit_for_tat_aid,
+        "grudger_aid": grudger_aid,
+    },
 }

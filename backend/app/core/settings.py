@@ -28,8 +28,8 @@ class Settings(BaseSettings):
     # SecretStr prints as "**********", so a stray log line cannot leak the
     # value. Code that really needs it must call .get_secret_value().
     # The database URL counts as a secret because it contains the password.
-    database_url: SecretStr
-    jwt_secret: SecretStr
+    database_url: SecretStr = SecretStr("postgresql+psycopg://postgres:postgres@localhost:5432/defcon_zero")
+    jwt_secret: SecretStr = SecretStr("dev-secret-change-in-production-0123456789abcdef")
     # Only tests/conftest.py reads this. It is optional because a deployed server
     # has no test database.
     test_database_url: SecretStr | None = None
