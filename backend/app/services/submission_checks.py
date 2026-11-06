@@ -44,7 +44,7 @@ async def save_result(submission_id: int, check: SubmissionCheck) -> None:
     """
     async with SessionLocal() as db:
         submission = await submissions_repository.get_by_id(db, submission_id)
-        submission.status = "rejected" if check.error else "accepted"
+        submission.status = "rejected" if check.error is not None else "accepted"
         submission.check = check.model_dump()
         await db.commit()
 

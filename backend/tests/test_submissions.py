@@ -18,6 +18,9 @@ from app.main import app
 from app.repositories import rounds as rounds_repository
 from app.services import engine_bridge, submission_checks
 from app.services.submissions import BLOCKS_MAX_BYTES, CODE_MAX_BYTES
+from engine.blotto_strategies import BLOTTO_BOTS
+from engine.foreign_aid_strategies import FOREIGN_AID_BOTS
+from engine.strategies import BUILT_IN_BOTS
 from tests.conftest import assert_error, run_sql, wait_until_a_query_is_blocked
 
 GOOD_BOT = (
@@ -26,6 +29,17 @@ GOOD_BOT = (
 )
 BOT_WITH_SYNTAX_ERROR = "def strategy(my_history, opp_history)\n    return 'C'\n"
 BOT_WITH_BAD_MOVE = "def strategy(my_history, opp_history):\n    return 'X'\n"
+# The example bots from docs/api.md section 8.
+THEATRE_OF_WAR_BOT = (
+    "def strategy(my_history, opp_history):\n"
+    "    return [20, 20, 20, 20, 20]\n"
+)
+FOREIGN_AID_BOT = (
+    "def strategy(my_history, opp_history):\n"
+    "    if len(opp_history) == len(my_history):\n"
+    "        return 5\n"
+    "    return opp_history[-1]\n"
+)
 BLOCKS = {"modules": [{"type": "workspace"}]}
 
 ClaimedTeam = Callable[..., Awaitable[dict[str, str]]]
@@ -576,6 +590,33 @@ async def stored_result(submission_id: int) -> tuple[str, dict[str, Any] | None]
     return rows[0][0], rows[0][1]
 
 
+def opponents(check: dict[str, Any]) -> set[str]:
+    return {result["opponent"] for result in check["test_results"]}
+
+
+def result_against(check: dict[str, Any], opponent: str) -> dict[str, Any]:
+    return next(r for r in check["test_results"] if r["opponent"] == opponent)
+
+
+async def open_round(
+    client: httpx.AsyncClient,
+    organiser: dict[str, str],
+    round_ids: dict[int, int],
+    number: int,
+) -> int:
+    """Open this round, after publishing the earlier ones as the order rule needs."""
+    await run_sql(
+        "UPDATE rounds SET status = 'published' WHERE number < :number", number=number
+    )
+    response = await client.post(
+        f"/admin/rounds/{round_ids[number]}/open",
+        json={"minutes": 30},
+        headers=organiser,
+    )
+    assert response.status_code == 200
+    return round_ids[number]
+
+
 async def test_a_good_bot_is_accepted(
     client: httpx.AsyncClient, claimed_team: ClaimedTeam, open_round_id: int
 ) -> None:
@@ -583,7 +624,14 @@ async def test_a_good_bot_is_accepted(
 
     status, check = await stored_result(response.json()["id"])
     assert status == "accepted"
-    assert check == {"error": None, "test_results": []}
+    assert check["error"] is None
+    assert opponents(check) == set(BUILT_IN_BOTS)
+    # 50 turns of mutual cooperation at 3 points each.
+    assert result_against(check, "tit_for_tat") == {
+        "opponent": "tit_for_tat",
+        "my_score": 150,
+        "opp_score": 150,
+    }
 
 
 async def test_a_syntax_error_is_rejected_with_its_message(
@@ -608,29 +656,59 @@ async def test_a_bad_move_is_rejected_with_its_message(
 
     status, check = await stored_result(response.json()["id"])
     assert status == "rejected"
-    assert "instead of 'C' or 'D'" in check["error"]
+    assert "Invalid Prisoner's Dilemma move 'X'" in check["error"]
+    # The matches did run, so their results are stored as the engine gave them.
+    assert opponents(check) == set(BUILT_IN_BOTS)
 
 
-async def test_games_the_engine_lacks_are_rejected_as_not_available(
+async def test_a_valid_theatre_of_war_bot_is_accepted(
     client: httpx.AsyncClient,
     claimed_team: ClaimedTeam,
     organiser: dict[str, str],
-    open_round_id: int,
+    round_ids: dict[int, int],
+) -> None:
+    """This bot's move is only legal in Theatre of War, so it proves the round's
+    game reached the engine."""
+    headers = await claimed_team()
+    round_id = await open_round(client, organiser, round_ids, 2)
+
+    response = await submit(client, headers, round_id, THEATRE_OF_WAR_BOT)
+
+    status, check = await stored_result(response.json()["id"])
+    assert status == "accepted"
+    assert check["error"] is None
+    assert opponents(check) == set(BLOTTO_BOTS)
+    # Identical allocations tie every region, so each side gets 0.5 for 50 turns.
+    assert result_against(check, "even_split") == {
+        "opponent": "even_split",
+        "my_score": 25,
+        "opp_score": 25,
+    }
+
+
+async def test_a_valid_foreign_aid_bot_is_accepted(
+    client: httpx.AsyncClient,
+    claimed_team: ClaimedTeam,
+    organiser: dict[str, str],
     round_ids: dict[int, int],
 ) -> None:
     headers = await claimed_team()
-    await run_sql(
-        "UPDATE rounds SET status = 'published' WHERE id = :id", id=open_round_id
-    )
-    await client.post(
-        f"/admin/rounds/{round_ids[2]}/open", json={"minutes": 30}, headers=organiser
-    )
+    round_id = await open_round(client, organiser, round_ids, 3)
 
-    response = await submit(client, headers, round_ids[2])
+    response = await submit(client, headers, round_id, FOREIGN_AID_BOT)
 
     status, check = await stored_result(response.json()["id"])
-    assert status == "rejected"
-    assert check == {"error": "not available yet", "test_results": []}
+    assert status == "accepted"
+    assert check["error"] is None
+    assert opponents(check) == set(FOREIGN_AID_BOTS)
+    # This opponent sends and returns nothing. On its 25 sending turns the bot sends
+    # 5 and scores 5, and the opponent scores 15. On the other 25 the opponent keeps
+    # its 10 and the bot scores 0. See the scoring in docs/api.md section 8.
+    assert result_against(check, "always_send_0_return_0") == {
+        "opponent": "always_send_0_return_0",
+        "my_score": 125,
+        "opp_score": 625,
+    }
 
 
 async def test_status_is_running_while_the_check_runs(
@@ -659,7 +737,7 @@ async def test_a_crash_in_the_checker_rejects_and_hides_the_details(
     open_round_id: int,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    def crash(code: str) -> None:
+    def crash(code: str, game: str) -> None:
         raise RuntimeError("secret internal detail")
 
     monkeypatch.setattr(engine_bridge, "test_submission", crash)
@@ -835,7 +913,8 @@ async def test_a_team_reads_its_own_submission_in_full(
     assert full["status"] == "accepted"
     assert full["code"] == GOOD_BOT
     assert full["blocks"] == BLOCKS
-    assert full["check"] == {"error": None, "test_results": []}
+    assert full["check"]["error"] is None
+    assert opponents(full["check"]) == set(BUILT_IN_BOTS)
     assert "server_time" in full
 
 
