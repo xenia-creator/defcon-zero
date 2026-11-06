@@ -2,6 +2,8 @@
 .env
 .env.*
 !.env.example
+# Account files for scripts/create_users.py, which hold plain text passwords.
+users*.csv
 
 # Python
 __pycache__/
