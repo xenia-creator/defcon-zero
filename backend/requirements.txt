@@ -1,8 +1,0 @@
-# Python dependencies for the backend. Only what the code imports today is
-# listed; each later step adds its own (SQLAlchemy, PyJWT, and so on).
-# Versions are pinned so every teammate and the deploy run identical code.
-
-fastapi==0.162.0
-pydantic==2.14.3
-# ASGI server: the program that listens on a port and hands requests to FastAPI.
-uvicorn==0.54.0

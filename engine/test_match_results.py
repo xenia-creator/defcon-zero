@@ -7,12 +7,12 @@ from engine import sandbox
 from engine.games import PRISONERS_DILEMMA as PD
 from engine.tournament import match_seed
 
-COOP = "def strategy(my_history, opp_history):\n    return 'AID'\n"
-DEFECT = "def strategy(my_history, opp_history):\n    return 'WITHHOLD'\n"
-TFT = "def strategy(my_history, opp_history):\n    return opp_history[-1] if opp_history else 'AID'\n"
+COOP = "def strategy(my_history, opp_history):\n    return 'C'\n"
+DEFECT = "def strategy(my_history, opp_history):\n    return 'D'\n"
+TFT = "def strategy(my_history, opp_history):\n    return opp_history[-1] if opp_history else 'C'\n"
 RANDOM = ("import random\n"
           "def strategy(my_history, opp_history):\n"
-          "    return 'AID' if random.random() < 0.5 else 'WITHHOLD'\n")
+          "    return 'C' if random.random() < 0.5 else 'D'\n")
 BAD_MOVE = "def strategy(my_history, opp_history):\n    return 'X'\n"
 CRASH = "def strategy(my_history, opp_history):\n    return 1 // 0\n"
 LOOP = "def strategy(my_history, opp_history):\n    while True:\n        pass\n"
@@ -100,7 +100,7 @@ class AggregateTests(unittest.TestCase):
         self.assertEqual({x["name"]: x["total"] for x in r["leaderboard"]},
                          {"defect": 60, "coop": 30})
         self.assertEqual(r["disqualified"], ["bad"])
-        reason = "Invalid Prisoner's Dilemma move 'X'; expected one of: 'AID', 'WITHHOLD'"
+        reason = "Invalid Prisoner's Dilemma move 'X'; expected one of: 'C', 'D'"
         self.assertEqual(r["forfeits"], [
             {"bot": "bad", "opponent": "bad", "repetition": 0, "reason": reason},
             {"bot": "bad", "opponent": "coop", "repetition": 0, "reason": reason},

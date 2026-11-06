@@ -34,7 +34,7 @@ class WorkerMemoryLimitTests(unittest.TestCase):
         memory_bot = (
             "def strategy(my_history, opp_history):\n"
             "    values = [0] * 70000000\n"
-            "    return 'AID'\n"
+            "    return 'C'\n"
         )
         result = sandbox.run_safe_round_robin(
             {1: memory_bot}, PRISONERS_DILEMMA, turns=1,

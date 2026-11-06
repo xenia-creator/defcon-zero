@@ -34,6 +34,10 @@ class Game:
         self._forfeit_formula = forfeit_formula
 
     def score(self, move1, move2):
+        for move in (move1, move2):
+            error = self.validate_action(move)
+            if error:
+                raise ValueError(error)
         return self.payoffs[(move1, move2)]
 
     def validate_action(self, move):
@@ -41,6 +45,13 @@ class Game:
             return None
         allowed = ", ".join(repr(action) for action in self.actions)
         return f"Invalid {self.name} move {move!r}; expected one of: {allowed}"
+
+    def collect_actions(self, bots, histories, turn, call_bot):
+        """Collect simultaneous actions in player order."""
+        return (
+            call_bot(bots[0], 0, histories[0], histories[1], self.validate_action),
+            call_bot(bots[1], 1, histories[1], histories[0], self.validate_action),
+        )
 
     def forfeit_credit(self, turns):
         """Points the opponent receives when this bot forfeits the match."""
@@ -74,30 +85,30 @@ class Game:
         return f"Game({self.name!r})"
 
 
-class BlottoGame(Game):
-    """Colonel Blotto with ten troops and four simultaneous fronts."""
+class TheatreOfWarGame(Game):
+    """Five-region allocation game with 100 troops."""
 
-    troop_count = 10
-    front_count = 4
+    troop_count = 100
+    front_count = 5
     configured = True
 
     def __init__(self):
         super().__init__(
-            "Colonel Blotto", None, key="blotto", actions=(),
+            "Theatre of War", None, key="theatre_of_war", actions=(),
             forfeit_formula=_credit(3), round_number=2,
         )
 
     def validate_action(self, move):
         if not isinstance(move, list):
-            return "Invalid Colonel Blotto allocation; expected a list of four integers"
+            return "Invalid Theatre of War allocation; expected a list of five integers"
         if len(move) != self.front_count:
-            return f"Invalid Colonel Blotto allocation; expected 4 fronts, got {len(move)}"
+            return f"Invalid Theatre of War allocation; expected 5 regions, got {len(move)}"
         if any(not isinstance(troops, int) or isinstance(troops, bool) for troops in move):
-            return "Invalid Colonel Blotto allocation; every front must have an integer troop count"
+            return "Invalid Theatre of War allocation; every region must have a whole-number troop count"
         if any(troops < 0 for troops in move):
-            return "Invalid Colonel Blotto allocation; troop counts cannot be negative"
+            return "Invalid Theatre of War allocation; troop counts cannot be negative"
         if sum(move) != self.troop_count:
-            return f"Invalid Colonel Blotto allocation; troop counts must sum to 10, got {sum(move)}"
+            return f"Invalid Theatre of War allocation; troop counts must sum to 100, got {sum(move)}"
         return None
 
     def score(self, move1, move2):
@@ -105,67 +116,119 @@ class BlottoGame(Game):
             error = self.validate_action(move)
             if error:
                 raise ValueError(error)
-        score1 = score2 = 0.0
+        regions1 = regions2 = 0.0
         for troops1, troops2 in zip(move1, move2):
             if troops1 > troops2:
-                score1 += 1
+                regions1 += 1
             elif troops2 > troops1:
-                score2 += 1
+                regions2 += 1
             else:
-                score1 += 0.5
-                score2 += 0.5
-        return score1, score2
+                regions1 += 0.5
+                regions2 += 0.5
+        if regions1 > regions2:
+            return 1, 0
+        if regions2 > regions1:
+            return 0, 1
+        return 0.5, 0.5
 
 
-class UnconfiguredTrustGame:
-    """Trust game key placeholder until its approved rules are available."""
+class ForeignAidGame(Game):
+    """Alternating sender/receiver game with sequential actions per turn."""
 
-    name = "Trust"
-    key = "trust"
-    actions = ()
-    configured = False
-    round_number = 3
-
-    @staticmethod
-    def _blocked():
-        raise NotImplementedError(
-            "Trust game rules are pending team approval; scoring and move validation are unavailable"
+    def __init__(self):
+        super().__init__(
+            "Foreign Aid", None, key="foreign_aid", actions=(),
+            forfeit_formula=_credit(3), round_number=3,
         )
 
-    def validate_action(self, move):
-        self._blocked()
+    def validate_action(self, move, *, role="sender", sent=None):
+        if not isinstance(move, int) or isinstance(move, bool):
+            return "Invalid Foreign Aid action; expected a whole number"
+        if role == "sender":
+            if not 0 <= move <= 10:
+                return "Invalid Foreign Aid send; expected a whole number from 0 to 10"
+            return None
+        if role == "receiver":
+            if sent is None:
+                raise ValueError("sent is required to validate a receiver return")
+            if not 0 <= move <= sent * 3:
+                return f"Invalid Foreign Aid return; expected a whole number from 0 to {sent * 3}"
+            return None
+        raise ValueError(f"Unknown Foreign Aid role: {role!r}")
 
-    def score(self, move1, move2):
-        self._blocked()
+    def collect_actions(self, bots, histories, turn, call_bot):
+        sender = turn % 2
+        receiver = 1 - sender
+        sent = call_bot(
+            bots[sender],
+            sender,
+            histories[sender],
+            histories[receiver],
+            self.validate_action,
+        )
+        receiver_opponent_history = [*histories[sender], sent]
+        returned = call_bot(
+            bots[receiver],
+            receiver,
+            histories[receiver],
+            receiver_opponent_history,
+            lambda move: self.validate_action(move, role="receiver", sent=sent),
+        )
+        actions = [None, None]
+        actions[sender] = sent
+        actions[receiver] = returned
+        return tuple(actions)
 
-    def forfeit_credit(self, turns):
-        self._blocked()
+    def score(self, sent, returned):
+        error = self.validate_action(sent, role="sender")
+        if error:
+            raise ValueError(error)
+        error = self.validate_action(returned, role="receiver", sent=sent)
+        if error:
+            raise ValueError(error)
+        tripled = sent * 3
+        return 10 - sent + returned, tripled - returned
 
-    def forfeit_scores(self, side, turns):
-        self._blocked()
+    def new_state(self):
+        return {"score1": 0, "score2": 0, "turn": 0}
+
+    def apply(self, state, move1, move2):
+        sender = state["turn"] % 2
+        sent, returned = (move1, move2) if sender == 0 else (move2, move1)
+        sender_score, receiver_score = self.score(sent, returned)
+        scores = [0, 0]
+        scores[sender] = sender_score
+        scores[1 - sender] = receiver_score
+        state["score1"] += scores[0]
+        state["score2"] += scores[1]
+        state["turn"] += 1
 
 
 PRISONERS_DILEMMA = Game(
     "Prisoner's Dilemma",
     {
-        ("AID", "AID"): (3, 3),
-        ("AID", "WITHHOLD"): (0, 5),
-        ("WITHHOLD", "AID"): (5, 0),
-        ("WITHHOLD", "WITHHOLD"): (1, 1),
+        ("C", "C"): (3, 3),
+        ("C", "D"): (0, 5),
+        ("D", "C"): (5, 0),
+        ("D", "D"): (1, 1),
     },
     key="prisoners_dilemma",
-    actions=("AID", "WITHHOLD"),
+    actions=("C", "D"),
     forfeit_formula=_credit(3),
     round_number=1,
 )
 
-BLOTTO = BlottoGame()
-TRUST = UnconfiguredTrustGame()
+THEATRE_OF_WAR = TheatreOfWarGame()
+FOREIGN_AID = ForeignAidGame()
+
+# Compatibility aliases for callers using the earlier internal constant names.
+BLOTTO = THEATRE_OF_WAR
+TRUST = FOREIGN_AID
 
 GAMES = {
     PRISONERS_DILEMMA.key: PRISONERS_DILEMMA,
-    BLOTTO.key: BLOTTO,
-    TRUST.key: TRUST,
+    THEATRE_OF_WAR.key: THEATRE_OF_WAR,
+    FOREIGN_AID.key: FOREIGN_AID,
 }
 
 

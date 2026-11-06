@@ -19,6 +19,7 @@ from collections.abc import Mapping
 from types import ModuleType, SimpleNamespace
 
 from .blotto_strategies import BLOTTO_BOTS
+from .foreign_aid_strategies import FOREIGN_AID_BOTS
 from .games import GAMES, PRISONERS_DILEMMA, get_game
 from .match import play_match
 from .strategies import BUILT_IN_BOTS
@@ -28,7 +29,17 @@ MATCH_TIMEOUT = 2.0   # seconds per match, enforced inside the worker
 WATCHDOG_GRACE = 1.0  # extra seconds before the parent kills a stuck worker
 WORKER_MEMORY_LIMIT_BYTES = 512 * 1024 * 1024
 _HAS_SIGNAL_TIMER = hasattr(signal, "SIGALRM") and hasattr(signal, "setitimer")
-BUILT_IN_BOTS_BY_NAME = {**BUILT_IN_BOTS, **BLOTTO_BOTS}
+BUILT_IN_BOT_NAMES = set(BUILT_IN_BOTS) | set(BLOTTO_BOTS) | set(FOREIGN_AID_BOTS)
+
+
+def _builtins_for(game):
+    if game.key == "prisoners_dilemma":
+        return BUILT_IN_BOTS
+    if game.key == "theatre_of_war":
+        return BLOTTO_BOTS
+    if game.key == "foreign_aid":
+        return FOREIGN_AID_BOTS
+    raise ValueError(f"No built-in bots are registered for {game.key!r}")
 
 if os.name != "nt":
     try:
@@ -270,13 +281,14 @@ def _bot_line(error):
     return f" (line {lines[-1]})" if lines else ""
 
 
-def _load(source, random_seed=None):
+def _load(source, game, random_seed=None):
     """A source is either a built-in bot name or code."""
-    return (
-        BUILT_IN_BOTS_BY_NAME[source]
-        if source in BUILT_IN_BOTS_BY_NAME
-        else load_bot(source, random_seed)
-    )
+    bots = _builtins_for(game)
+    if source in bots:
+        return bots[source]
+    if source in BUILT_IN_BOT_NAMES:
+        raise ValueError(f"Built-in bot {source!r} belongs to a different game")
+    return load_bot(source, random_seed)
 
 
 def _play_job(index, sources, game, turns, noise, seed, bot_seeds, record=False):
@@ -291,12 +303,24 @@ def _play_job(index, sources, game, turns, noise, seed, bot_seeds, record=False)
     def guard(bot, side):
         def move(my_history, opp_history):
             nonlocal histories
-            if record and side == 0:
-                # Side 0 moves first each turn, so it sees every completed turn
-                histories = (my_history.copy(), opp_history.copy())
+            if record and len(my_history) == len(opp_history):
+                # The first action of each turn sees only completed-turn history.
+                histories = (
+                    (my_history.copy(), opp_history.copy())
+                    if side == 0
+                    else (opp_history.copy(), my_history.copy())
+                )
             _running[index] = side
             m = bot(my_history, opp_history)
-            error = game.validate_action(m)
+            if game.key == "foreign_aid":
+                receiving = len(opp_history) > len(my_history)
+                error = game.validate_action(
+                    m,
+                    role="receiver" if receiving else "sender",
+                    sent=opp_history[-1] if receiving else None,
+                )
+            else:
+                error = game.validate_action(m)
             if error:
                 raise BadMove(error)
             return m
@@ -309,7 +333,7 @@ def _play_job(index, sources, game, turns, noise, seed, bot_seeds, record=False)
         bots = []
         for side in (0, 1):
             _running[index] = side
-            bots.append(guard(_load(sources[side], bot_seeds[side]), side))
+            bots.append(guard(_load(sources[side], game, bot_seeds[side]), side))
         result = play_match(
             bots[0], bots[1], game, turns, noise, seed,
             bot_random_seeds=bot_seeds,
@@ -417,7 +441,7 @@ def run_safe_round_robin(bot_codes, game, turns, repetitions=1, noise=0.0, seed=
     for name, source in sources.items():
         if not isinstance(source, str):
             raise TypeError(f"Bot {name!r} source must be code text")
-        if source in BUILT_IN_BOTS_BY_NAME:
+        if source in BUILT_IN_BOT_NAMES:
             raise ValueError(f"Bot {name!r} cannot use a built-in as a tournament participant")
         errors = validate_code(source)
         if errors:
@@ -494,7 +518,9 @@ def play_safe_match(name1, name2, bot_codes, game, turns, noise=0.0, seed=None):
     if not getattr(game, "configured", True):
         raise NotImplementedError(f"{game.name} rules are pending team approval")
     for name in (name1, name2):
-        if bot_codes[name] not in BUILT_IN_BOTS_BY_NAME:
+        if bot_codes[name] not in _builtins_for(game):
+            if bot_codes[name] in BUILT_IN_BOT_NAMES:
+                raise ValueError(f"Built-in bot {bot_codes[name]!r} belongs to a different game")
             errors = validate_code(bot_codes[name])
             if errors:
                 raise ValueError(f"Bot {name!r} is invalid: " + " ".join(errors))
@@ -531,11 +557,7 @@ def test_submission(code, game=PRISONERS_DILEMMA, turns=50):
     if errors:
         return {"error": " ".join(errors), "test_results": []}
 
-    opponents = (
-        list(BUILT_IN_BOTS)
-        if game.key == PRISONERS_DILEMMA.key
-        else list(BLOTTO_BOTS)
-    )
+    opponents = list(_builtins_for(game))
     sources = {"submission": code, **{name: name for name in opponents}}
     matches = [(0, "submission", name) for name in opponents]
     outcomes = _run_in_pool(

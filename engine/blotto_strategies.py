@@ -1,9 +1,8 @@
-"""Built-in Colonel Blotto strategies."""
+"""Built-in Theatre of War allocation strategies."""
 
-import random
-from itertools import combinations
+import random as _random
 
-EVEN_SPLIT = [3, 3, 2, 2]
+EVEN_SPLIT = [20, 20, 20, 20, 20]
 
 
 def even_split(my_history, opp_history):
@@ -11,48 +10,44 @@ def even_split(my_history, opp_history):
 
 
 def all_in(my_history, opp_history):
-    return [10, 0, 0, 0]
+    return [100, 0, 0, 0, 0]
 
 
-def random_allocation(my_history, opp_history):
-    cuts = sorted(random.sample(range(1, 10), 3))
-    points = (0, *cuts, 10)
-    return [points[i + 1] - points[i] for i in range(4)]
+def random(my_history, opp_history):
+    cuts = sorted(_random.sample(range(101), 4))
+    points = (0, *cuts, 100)
+    return [points[i + 1] - points[i] for i in range(5)]
 
 
 def copy_opponent_last(my_history, opp_history):
     return list(opp_history[-1]) if opp_history else list(EVEN_SPLIT)
 
 
-def _allocations(total, fronts):
-    if fronts == 1:
-        yield (total,)
-        return
-    for first in range(total + 1):
-        for rest in _allocations(total - first, fronts - 1):
-            yield (first, *rest)
-
-
-def _score_against(candidate, opponent):
-    return sum(
-        1 if mine > theirs else 0.5 if mine == theirs else 0
-        for mine, theirs in zip(candidate, opponent)
-    )
-
-
 def counter_opponent_last(my_history, opp_history):
     if not opp_history:
         return list(EVEN_SPLIT)
-    previous = opp_history[-1]
-    candidates = _allocations(10, 4)
-    best = max(candidates, key=lambda allocation: _score_against(allocation, previous))
-    return list(best)
+
+    opponent = list(opp_history[-1])
+    weakest = sorted(range(5), key=lambda index: (opponent[index], index))[:3]
+    allocation = opponent.copy()
+    for index in weakest:
+        allocation[index] += 1
+
+    remaining = [index for index in range(5) if index not in weakest]
+    # The two unchallenged regions contain at least 40 troops in total. Remove
+    # the three added troops from the larger first, with index as a stable tie-break.
+    for index in sorted(remaining, key=lambda item: (-allocation[item], item)):
+        removed = min(allocation[index], sum(allocation) - 100)
+        allocation[index] -= removed
+        if sum(allocation) == 100:
+            break
+    return allocation
 
 
 BLOTTO_BOTS = {
     "even_split": even_split,
     "all_in": all_in,
-    "random_allocation": random_allocation,
+    "random": random,
     "copy_opponent_last": copy_opponent_last,
     "counter_opponent_last": counter_opponent_last,
 }

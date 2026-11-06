@@ -1,91 +1,106 @@
 # DEFCON ZERO Engine
 
-The engine implements the approved `prisoners_dilemma` and `blotto` games.
-`trust` is present in the game catalog but deliberately unconfigured until the
-team provides its approved action range, scoring, resources, and forfeit rules.
+The engine provides reusable game, match, bot registry, tournament, and
+submission-sandbox components. The current implemented behavior and unresolved
+game-rule changes are recorded in [rules.md](./rules.md).
 
-## Bot interface
+## Architecture
 
-Every strategy has the same signature:
+- `games.py` defines game actions, validation, scoring, and forfeit scores.
+- `match.py` runs two strategies for a fixed number of turns and returns the
+  scored histories, scores, and any forfeit.
+- `strategies.py` and `blotto_strategies.py` hold built-in strategies.
+- `registry.py` associates built-in IDs with their game and strategy.
+- `tournament.py` schedules and summarizes in-process round robins.
+- `sandbox.py` validates submitted source and runs safe matches, round robins,
+  and submission checks in worker processes.
+
+## Supported rounds and bot interface
+
+Every configured strategy uses the same interface:
 
 ```python
 def strategy(my_history, opp_history):
     return move
 ```
 
-Histories contain previous scored moves, oldest first. Bots receive copies and
-no score, resource, opponent identity, noise setting, or turn-count information.
+Histories contain previous scored moves, oldest first. The match runner passes
+copies. Bots do not receive score, opponent identity, noise setting, or
+turn-count information.
 
-### Prisoner's Dilemma
+### Round 1 — Prisoner's Dilemma
 
-Moves are `"AID"` and `"WITHHOLD"`. The prior payoff matrix is preserved:
+Actions are `"C"` and `"D"`. The existing payoff matrix and ten built-in
+strategies are preserved. See [rules.md](./rules.md).
 
-| Row / Column | AID | WITHHOLD |
-|---|---:|---:|
-| AID | 3, 3 | 0, 5 |
-| WITHHOLD | 5, 0 | 1, 1 |
+### Round 2 — Theatre of War
 
-### Colonel Blotto
+Bots return five non-negative whole-number allocations totaling 100. Regions
+are resolved first, then the turn winner scores one point (or both score half
+on a tie). Built-ins are `even_split`, `all_in`, `random`,
+`copy_opponent_last`, and `counter_opponent_last`.
 
-Moves are lists of exactly four non-negative integers summing to 10. On each
-front, a larger allocation earns one point; a tie gives each bot 0.5 points.
-Scores are summed across the four fronts. Noise is not currently defined for
-Blotto and a non-zero noise setting is rejected.
+### Round 3 — Foreign Aid
 
-Built-in Blotto submission-test strategies are `even_split`, `all_in`,
-`random_allocation`, `copy_opponent_last`, and `counter_opponent_last`. A
-history-dependent strategy uses `[3, 3, 2, 2]` as its opening allocation.
+The sender/receiver roles alternate. Send and return ranges, tripling, exact
+payoffs, and role detection through the existing two-history bot interface are
+specified in [rules.md](./rules.md). Built-ins are
+`always_send_10_return_half`, `always_send_0_return_0`, `tit_for_tat`, and
+`random`.
 
-### Trust
+## Registering and running bots
 
-Trust validation, scoring, and submission tests raise/return a blocked status.
-No numeric range or game behavior is inferred from another game.
+To add a built-in for a configured game, implement the common strategy
+signature in the relevant strategy module, then register it with
+`register_bot(bot_id, strategy, game)` from `registry.py`. An ID is unique
+within a game; the same ID may be used for different games. Keep game-specific
+strategy logic in its strategy module and register it for the matching game.
+Use `play_registered(..., game=...)` when an ID such as `random` is ambiguous
+across games.
 
-## Tournament and submission checks
+An in-process match can be run with `play_match(bot1, bot2, game, turns, ...)`
+from `match.py`. For submitted source, use
+`sandbox.play_safe_match(...)`, `sandbox.run_safe_round_robin(...)`, or
+`sandbox.test_submission(...)`. The sandbox checks returned actions and treats
+bot failures, timeouts, and malformed actions as forfeits. Seeded bot random
+streams are independent and reproducible.
 
-`run_safe_round_robin(participant_code, game, turns, ...)` accepts only
-explicit participant code. Built-in bots are never added to participant
-tournaments automatically. Participant IDs are sorted before scheduling.
-Individual match records include forfeits and disqualified participants;
-those matches are marked uncounted and omitted from aggregate totals. Each
-scheduled match runs once.
+`run_safe_round_robin` uses only the explicitly supplied participants; built-in
+bots are not inserted into participant tournaments. `test_submission` runs a
+submission against the built-ins for its configured game.
 
-`test_submission(code, game=...)` runs the submission against each built-in for
-that game and returns the backend `SubmissionCheck` shape:
+`tournament.break_tie(tied_teams, head_to_head, seed=...)` separately returns
+the advancement order for tied teams. It uses head-to-head wins first and a
+local seeded shuffle for unresolved groups. It does not alter summary ranks;
+advancement logic must consume its returned order.
 
-```json
-{
-  "error": null,
-  "test_results": [
-    {"opponent": "always_cooperate", "my_score": 30, "opp_score": 0}
-  ]
-}
-```
+## Sandbox limits
 
-Bot random calls use independent streams. A supplied seed makes them
-reproducible, and a bot's `random.seed()` cannot alter another bot's stream.
+The sandbox validates the strategy signature, restricts imports and selected
+language constructs, runs matches in worker processes, enforces a match
+timeout, and caps each worker at 512 MiB where the host OS supports the
+configured limit. Unix workers use
+`resource.setrlimit(RLIMIT_AS)`; Windows workers use a Windows Job Object.
+Failure to apply the memory limit is reported rather than silently ignored.
+These are resource controls, not strong security isolation: bot code still
+runs as the service account.
 
-## Worker isolation limits
+## Application integration
 
-Each sandbox pool worker is capped at 512 MiB of process memory. Unix workers
-use `resource.setrlimit(RLIMIT_AS)`; Windows workers are assigned to a Windows
-Job Object with `JOB_OBJECT_LIMIT_PROCESS_MEMORY`. If the OS cannot apply the
-limit, the sandbox reports an error and does not run submissions without it.
-Windows Job Object assignment can be restricted when the hosting process is
-already in a constrained Job Object; this is reported, not silently bypassed.
-These limits and the worker timeout are resource controls, not a complete
-security boundary: bot code still runs as the service account.
-
-## Backend-owned event policy
-
-The engine has no `DEFAULT_EVENT` or event runner. The backend supplies
-participants, handles event ordering, disables self-play as required, and
-applies hidden-turn policy.
+The engine does not own event sequencing or application state. The calling
+application supplies participants and game/turn parameters, decides whether
+self-play is enabled, and applies event-specific hidden-turn policy. The
+engine has no event runner or backend/database integration.
 
 ## Tests
 
-Run the engine test suite from the repository root:
+From the repository root, run the engine tests and the existing integration
+tests with:
 
 ```powershell
 python -m pytest engine tests/test_engine.py tests/test_defcon_games.py
 ```
+
+Add tests for new game behavior under `engine/` when implementing it. The
+existing `tests/test_defcon_games.py` is outside the engine directory; changes
+to that file require separate scope approval.

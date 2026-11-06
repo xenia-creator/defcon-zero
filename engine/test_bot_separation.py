@@ -3,14 +3,20 @@
 import unittest
 
 from engine import registry, sandbox
-from engine.games import BLOTTO, GAMES, PRISONERS_DILEMMA as PD
+from engine.games import (
+    FOREIGN_AID,
+    GAMES,
+    PRISONERS_DILEMMA as PD,
+    THEATRE_OF_WAR,
+)
 from engine.strategies import BUILT_IN_BOTS as PD_BOTS
 from engine.blotto_strategies import BLOTTO_BOTS
+from engine.foreign_aid_strategies import FOREIGN_AID_BOTS
 from engine.tournament import schedule
 
-COOP = "def strategy(my_history, opp_history):\n    return 'AID'\n"
-DEFECT = "def strategy(my_history, opp_history):\n    return 'WITHHOLD'\n"
-TFT = "def strategy(my_history, opp_history):\n    return opp_history[-1] if opp_history else 'AID'\n"
+COOP = "def strategy(my_history, opp_history):\n    return 'C'\n"
+DEFECT = "def strategy(my_history, opp_history):\n    return 'D'\n"
+TFT = "def strategy(my_history, opp_history):\n    return opp_history[-1] if opp_history else 'C'\n"
 BAD_MOVE = "def strategy(my_history, opp_history):\n    return 'X'\n"
 
 
@@ -22,9 +28,13 @@ class BuiltInsStayAvailableTests(unittest.TestCase):
     def test_registry_still_holds_every_built_in(self):
         self.assertEqual(len(PD_BOTS), 10)
         self.assertEqual(len(BLOTTO_BOTS), 5)
+        self.assertEqual(len(FOREIGN_AID_BOTS), 4)
         self.assertEqual(set(registry.bots_for(PD)), set(PD_BOTS))
-        self.assertEqual(set(registry.bots_for(BLOTTO)), set(BLOTTO_BOTS))
-        self.assertEqual(set(GAMES), {"prisoners_dilemma", "blotto", "trust"})
+        self.assertEqual(set(registry.bots_for(THEATRE_OF_WAR)), set(BLOTTO_BOTS))
+        self.assertEqual(set(registry.bots_for(FOREIGN_AID)), set(FOREIGN_AID_BOTS))
+        self.assertEqual(set(GAMES), {
+            "prisoners_dilemma", "theatre_of_war", "foreign_aid",
+        })
 
     def test_submission_testing_still_plays_against_built_ins(self):
         result = sandbox.test_submission(COOP, turns=10)
@@ -55,6 +65,48 @@ class BuiltInsStayAvailableTests(unittest.TestCase):
         finally:
             sandbox.run_safe_round_robin = real
 
+    def test_same_random_builtin_name_resolves_per_game_in_the_sandbox(self):
+        blotto = sandbox.play_safe_match(
+            "left", "right", {"left": "random", "right": "random"},
+            THEATRE_OF_WAR, 2, seed=3,
+        )
+        trust = sandbox.play_safe_match(
+            "left", "right", {"left": "random", "right": "random"},
+            FOREIGN_AID, 2, seed=3,
+        )
+        self.assertIsNone(blotto["forfeit"])
+        self.assertIsNone(trust["forfeit"])
+        self.assertTrue(all(
+            len(move) == 5 and sum(move) == 100
+            for move in blotto["history1"] + blotto["history2"]
+        ))
+
+    def test_submission_testing_runs_against_foreign_aid_builtins(self):
+        result = sandbox.test_submission(
+            "def strategy(my_history, opp_history):\n    return 0\n",
+            FOREIGN_AID,
+            turns=4,
+        )
+        self.assertIsNone(result["error"])
+        self.assertEqual(len(result["test_results"]), len(FOREIGN_AID_BOTS))
+
+    def test_foreign_aid_sandbox_preserves_completed_turn_histories_on_forfeit(self):
+        first = (
+            "def strategy(my_history, opp_history):\n"
+            "    return 31 if len(opp_history) > len(my_history) else 10\n"
+        )
+        second = (
+            "def strategy(my_history, opp_history):\n"
+            "    return 10 if len(my_history) == len(opp_history) else 0\n"
+        )
+        result = sandbox.play_safe_match(
+            "first", "second", {"first": first, "second": second},
+            FOREIGN_AID, 3, seed=2,
+        )
+        self.assertEqual(result["forfeit"]["side"], 0)
+        self.assertEqual(result["history1"], [10])
+        self.assertEqual(result["history2"], [0])
+
 
 class BuiltInsStayOutOfTheTournamentTests(unittest.TestCase):
     def test_only_the_supplied_participants_play(self):
@@ -76,7 +128,7 @@ class BuiltInsStayOutOfTheTournamentTests(unittest.TestCase):
             sandbox.run_safe_round_robin({1: COOP}, False, PD, 5, 1, 0.0)
 
     def test_built_in_name_is_rejected_as_a_participant(self):
-        for name in (*PD_BOTS, *BLOTTO_BOTS):
+        for name in (*PD_BOTS, *BLOTTO_BOTS, *FOREIGN_AID_BOTS):
             with self.assertRaises(ValueError) as ctx:
                 run({"mine": COOP, "sneaky": name})
             self.assertIn("built-in", str(ctx.exception))
@@ -147,7 +199,9 @@ class ParticipantBoundaryTests(unittest.TestCase):
         self.assertIsNone(importlib.util.find_spec("engine.event"))
 
     def test_game_keys_are_exactly_the_backend_keys(self):
-        self.assertEqual(tuple(GAMES), ("prisoners_dilemma", "blotto", "trust"))
+        self.assertEqual(tuple(GAMES), (
+            "prisoners_dilemma", "theatre_of_war", "foreign_aid",
+        ))
 
 
 if __name__ == "__main__":

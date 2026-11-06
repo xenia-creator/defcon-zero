@@ -6,20 +6,20 @@ from engine.sandbox import run_safe_round_robin
 
 
 def random_move(my_history, opp_history):
-    return random.choice(("AID", "WITHHOLD"))
+    return random.choice(("C", "D"))
 
 
 def reseeding_move(my_history, opp_history):
     random.seed(12345)
     for _ in range(100):
         random.random()
-    return "AID"
+    return "C"
 
 
 def consuming_move(my_history, opp_history):
     for _ in range(100):
         random.random()
-    return "AID"
+    return "C"
 
 
 def test_bot_reseeding_does_not_change_the_other_random_stream():
@@ -45,14 +45,14 @@ def test_sandbox_bot_cannot_reseed_another_submissions_random_stream():
         "def strategy(my_history, opp_history):\n"
         "    random.seed(12345)\n"
         "    for _ in range(100): random.random()\n"
-        "    return 'AID'\n"
+        "    return 'C'\n"
     )
     random_code = (
         "import random\n"
         "def strategy(my_history, opp_history):\n"
-        "    return 'AID' if random.random() < 0.5 else 'WITHHOLD'\n"
+        "    return 'C' if random.random() < 0.5 else 'D'\n"
     )
-    plain = "def strategy(my_history, opp_history):\n    return 'AID'\n"
+    plain = "def strategy(my_history, opp_history):\n    return 'C'\n"
 
     def random_history(opponent):
         result = run_safe_round_robin(

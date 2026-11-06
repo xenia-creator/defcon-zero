@@ -1,6 +1,7 @@
 """Round-robin tournament between named bots."""
 
 import hashlib
+import random
 from itertools import combinations
 
 from .match import play_match
@@ -13,6 +14,57 @@ def match_seed(seed, a, b, repetition):
         return None
     key = f"{seed}|{a}|{b}|{repetition}".encode()
     return int.from_bytes(hashlib.sha256(key).digest()[:8], "big")
+
+
+def break_tie(tied_teams, head_to_head, seed=None):
+    """Return a deterministic advancement order for teams tied on tournament score.
+
+    Head-to-head wins among the supplied tied teams are ordered first. Each
+    still-tied group is shuffled with a local RNG seeded from `seed`; tied
+    results and missing pairings do not award a head-to-head win. Records may
+    be `(team_a, team_b, score_a, score_b)` tuples or match dictionaries using
+    `player_a`, `player_b`, `score_a`, and `score_b`.
+    """
+    teams = list(tied_teams)
+    if len(set(teams)) != len(teams):
+        raise ValueError("tied_teams must not contain duplicates")
+    if len(teams) < 2:
+        return teams
+
+    tied = set(teams)
+    wins = {team: 0 for team in teams}
+    for record in head_to_head or ():
+        if isinstance(record, dict):
+            a, b = record.get("player_a"), record.get("player_b")
+            score_a, score_b = record.get("score_a"), record.get("score_b")
+        else:
+            try:
+                a, b, score_a, score_b = record
+            except (TypeError, ValueError):
+                raise ValueError(
+                    "head_to_head records must be 4-item tuples or match dictionaries"
+                ) from None
+        if a not in tied or b not in tied or a == b:
+            continue
+        if score_a is None or score_b is None:
+            continue
+        if score_a > score_b:
+            wins[a] += 1
+        elif score_b > score_a:
+            wins[b] += 1
+
+    groups = {}
+    for team in teams:
+        groups.setdefault(wins[team], []).append(team)
+
+    rng = random.Random(seed)
+    ordered = []
+    for head_to_head_wins in sorted(groups, reverse=True):
+        group = sorted(groups[head_to_head_wins])
+        if len(group) > 1:
+            rng.shuffle(group)
+        ordered.extend(group)
+    return ordered
 
 
 def schedule(names, repetitions, include_self_play=True):

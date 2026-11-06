@@ -28,7 +28,7 @@ class RemoteFailure(Exception):
 def unresponsive_cooperate(my_history, opp_history):
     """Valid cooperate bot that never returns in time. Used by the timeout test."""
     time.sleep(30)
-    return "AID"
+    return "C"
 
 
 def _run(func, args, queue):

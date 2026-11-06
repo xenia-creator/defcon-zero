@@ -1,63 +1,63 @@
-"""Prisoner's Dilemma bots using the approved AID/WITHHOLD actions."""
+"""Prisoner's Dilemma bots using the C/D action contract."""
 
 import random
 
 
 def always_cooperate(my_history, opp_history):
     """Always cooperates."""
-    return "AID"
+    return "C"
 
 
 def always_defect(my_history, opp_history):
     """Always defects."""
-    return "WITHHOLD"
+    return "D"
 
 
 def random_bot(my_history, opp_history):
     """Aids or withholds with equal probability."""
-    return random.choice(["AID", "WITHHOLD"])
+    return random.choice(["C", "D"])
 
 
 def tit_for_tat(my_history, opp_history):
     """Cooperates first, then copies the opponent's last move."""
-    return opp_history[-1] if opp_history else "AID"
+    return opp_history[-1] if opp_history else "C"
 
 
 def grudger(my_history, opp_history):
     """Cooperates until the opponent defects once, then defects forever."""
-    return "WITHHOLD" if "WITHHOLD" in opp_history else "AID"
+    return "D" if "D" in opp_history else "C"
 
 
 def tit_for_two_tats(my_history, opp_history):
     """Defects only if the opponent defected in each of the last two rounds."""
-    return "WITHHOLD" if opp_history[-2:] == ["WITHHOLD", "WITHHOLD"] else "AID"
+    return "D" if opp_history[-2:] == ["D", "D"] else "C"
 
 
 def alternator(my_history, opp_history):
-    """Alternates AID, WITHHOLD, ... starting with AID."""
-    return "AID" if len(my_history) % 2 == 0 else "WITHHOLD"
+    """Alternates C, D, ... starting with C."""
+    return "C" if len(my_history) % 2 == 0 else "D"
 
 
 def suspicious_tit_for_tat(my_history, opp_history):
-    """Defects first, then copies the opponent's last move."""
-    return opp_history[-1] if opp_history else "WITHHOLD"
+    """Betrays first, then copies the opponent's last move."""
+    return opp_history[-1] if opp_history else "D"
 
 
 def win_stay_lose_shift(my_history, opp_history):
     """Cooperates first; repeats its move if the opponent cooperated, otherwise switches."""
     if not my_history:
-        return "AID"
-    if opp_history[-1] == "AID":
+        return "C"
+    if opp_history[-1] == "C":
         return my_history[-1]
-    return "WITHHOLD" if my_history[-1] == "AID" else "AID"
+    return "D" if my_history[-1] == "C" else "C"
 
 
 def adaptive_aid(my_history, opp_history):
-    """AID when at least half of the opponent's last five moves were AID."""
+    """Cooperates when at least half of the opponent's last five moves were C."""
     if not opp_history:
-        return "AID"
+        return "C"
     recent = opp_history[-5:]
-    return "AID" if recent.count("AID") * 2 >= len(recent) else "WITHHOLD"
+    return "C" if recent.count("C") * 2 >= len(recent) else "D"
 
 
 BUILT_IN_BOTS = {
