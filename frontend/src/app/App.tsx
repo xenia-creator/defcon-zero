@@ -4,6 +4,7 @@ import { ErrorBoundary } from '../components/ErrorBoundary'
 import { Button, ConnectionStatus, Countdown, Defcon, Empty, Toasts } from '../components/ui'
 import { useAuth } from '../lib/auth'
 import { useCurrentRound, useTeam } from '../lib/queries'
+import { WarMapPreview } from '../warmap/WarMapPreview'
 import { ClaimCountry } from '../workspace/auth/ClaimCountry'
 import { Login } from '../workspace/auth/Login'
 
@@ -73,7 +74,7 @@ export function App() {
       </header>
       <main className="min-h-0 flex-1 overflow-y-auto">
         {!team ? (
-          <Empty>This account ({session.role}) has no team. The team workspace is only for competing teams.</Empty>
+          <WarMapPreview />
         ) : needsCountry ? (
           <ClaimCountry username={session.username} />
         ) : (
