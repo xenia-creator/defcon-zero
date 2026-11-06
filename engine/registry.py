@@ -4,10 +4,9 @@ Every bot has one id and one game. Round 1 ids stay in `BUILT_IN_BOTS` so the
 sandbox can keep loading them by name. Register new bots with `register_bot`.
 """
 
-from .aid_strategies import AID_BOTS
-from .games import FOREIGN_AID, PRISONERS_DILEMMA, THEATRE_OF_WAR
+from .blotto_strategies import BLOTTO_BOTS
+from .games import BLOTTO, PRISONERS_DILEMMA
 from .strategies import BUILT_IN_BOTS
-from .war_strategies import WAR_BOTS
 
 
 class BotRegistry:
@@ -21,8 +20,8 @@ class BotRegistry:
             raise ValueError("bot id must be a non-empty string")
         if not callable(strategy):
             raise TypeError("strategy must be a function")
-        if not getattr(game, "actions", None):
-            raise ValueError("game must define its actions")
+        if not callable(getattr(game, "validate_action", None)):
+            raise ValueError("game must define a move validator")
         if bot_id in self._bots:
             raise ValueError(f"Bot {bot_id!r} is already registered")
         self._bots[bot_id] = {"strategy": strategy, "game": game}
@@ -57,10 +56,8 @@ def _standard_registry():
     registry = BotRegistry()
     for name, strategy in BUILT_IN_BOTS.items():
         registry.register(name, strategy, PRISONERS_DILEMMA)
-    for name, strategy in WAR_BOTS.items():
-        registry.register(name, strategy, THEATRE_OF_WAR)
-    for name, strategy in AID_BOTS.items():
-        registry.register(name, strategy, FOREIGN_AID)
+    for name, strategy in BLOTTO_BOTS.items():
+        registry.register(name, strategy, BLOTTO)
     return registry
 
 

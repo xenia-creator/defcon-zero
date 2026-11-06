@@ -21,8 +21,8 @@ class SampleBotResult(BaseModel):
     """One test match against a sample bot. `opponent` is its engine identifier."""
 
     opponent: str
-    my_score: int
-    opp_score: int
+    my_score: int | float
+    opp_score: int | float
 
 
 class SubmissionCheck(BaseModel):

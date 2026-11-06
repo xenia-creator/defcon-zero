@@ -4,6 +4,7 @@ import hashlib
 from itertools import combinations
 
 from .match import play_match
+from .games import get_game
 
 
 def match_seed(seed, a, b, repetition):
@@ -14,11 +15,19 @@ def match_seed(seed, a, b, repetition):
     return int.from_bytes(hashlib.sha256(key).digest()[:8], "big")
 
 
-def schedule(names, repetitions):
-    """Every match as (repetition, a, b): each bot vs itself, then every pair."""
+def schedule(names, repetitions, include_self_play=True):
+    """Every match as (repetition, a, b), optionally including self-play."""
+    if not isinstance(repetitions, int) or isinstance(repetitions, bool):
+        raise TypeError("repetitions must be an integer")
+    if repetitions < 1:
+        raise ValueError("repetitions must be at least 1")
+    if not isinstance(include_self_play, bool):
+        raise TypeError("include_self_play must be a bool")
+
     matches = []
     for rep in range(repetitions):
-        matches += [(rep, name, name) for name in names]
+        if include_self_play:
+            matches += [(rep, name, name) for name in names]
         matches += [(rep, a, b) for a, b in combinations(names, 2)]
     return matches
 
@@ -29,6 +38,7 @@ def summarize(names, results, turns, repetitions):
     Self-play (a == b) adds one side's score to the total but does not count
     toward wins, losses or draws.
     """
+    names = sorted(names)
     stats = {name: {"total": 0, "wins": 0, "losses": 0, "draws": 0, "matches": 0}
              for name in names}
     pair_totals = {a: {b: 0 for b in names} for a in names}
@@ -69,8 +79,13 @@ def summarize(names, results, turns, repetitions):
             "draws": s["draws"],
         })
     leaderboard.sort(key=lambda row: row["total"], reverse=True)
-    for rank, row in enumerate(leaderboard, start=1):
+    rank = 0
+    previous_total = None
+    for position, row in enumerate(leaderboard, start=1):
+        if position == 1 or row["total"] != previous_total:
+            rank = position
         row["rank"] = rank
+        previous_total = row["total"]
 
     matrix = {a: {b: total / repetitions for b, total in row.items()}
               for a, row in pair_totals.items()}
@@ -78,7 +93,8 @@ def summarize(names, results, turns, repetitions):
     return {"leaderboard": leaderboard, "matrix": matrix}
 
 
-def run_round_robin(bots, game, turns, repetitions=1, noise=0.0, seed=None):
+def run_round_robin(bots, game, turns, repetitions=1, noise=0.0, seed=None,
+                    include_self_play=True):
     """Every pair of bots plays one match per repetition, and each bot also plays
     a copy of itself. A seed makes the whole tournament repeatable.
 
@@ -86,9 +102,12 @@ def run_round_robin(bots, game, turns, repetitions=1, noise=0.0, seed=None):
       leaderboard: list of dicts sorted by total score (highest first)
       matrix: matrix[a][b] = a's average score per match against b (a == b is self-play)
     """
-    names = list(bots)
+    game = get_game(game)
+    if not getattr(game, "configured", True):
+        raise NotImplementedError(f"{game.name} rules are pending team approval")
+    names = sorted(bots)
     results = []
-    for rep, a, b in schedule(names, repetitions):
+    for rep, a, b in schedule(names, repetitions, include_self_play):
         result = play_match(bots[a], bots[b], game, turns, noise, match_seed(seed, a, b, rep))
         results.append((a, b, result["score1"], result["score2"]))
     return summarize(names, results, turns, repetitions)

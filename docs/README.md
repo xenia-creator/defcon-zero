@@ -1,4 +1,4 @@
 # Docs
 
-- `rules.md` — game rules for all three rounds. The Round 2 and Round 3 numbers are still a draft and need team approval.
+- `rules.md` — approved Prisoner's Dilemma and Colonel Blotto rules, plus the blocked Trust decisions.
 - How to add a bot, run a match and run the tests: `../engine/README.md`.

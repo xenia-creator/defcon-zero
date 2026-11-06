@@ -1,12 +1,18 @@
-"""Game rules: action sets, payoffs, resources and forfeit credit.
+"""Game definitions for the approved DEFCON ZERO game keys."""
 
-Rounds 2 and 3 use the numbers in docs/rules.md. Those numbers are still
-marked proposed there and still need team approval.
-"""
+from dataclasses import dataclass
+
+
+@dataclass(frozen=True)
+class _LinearCredit:
+    per_turn: int
+
+    def __call__(self, turns):
+        return self.per_turn * turns
 
 
 def _credit(per_turn):
-    return lambda turns: per_turn * turns
+    return _LinearCredit(per_turn)
 
 
 class Game:
@@ -18,6 +24,7 @@ class Game:
 
     def __init__(self, name, payoffs, *, key, actions, forfeit_formula,
                  round_number=None, turns=None):
+        self.configured = True
         self.name = name
         self.key = key
         self.payoffs = payoffs
@@ -28,6 +35,12 @@ class Game:
 
     def score(self, move1, move2):
         return self.payoffs[(move1, move2)]
+
+    def validate_action(self, move):
+        if any(move == action for action in self.actions):
+            return None
+        allowed = ", ".join(repr(action) for action in self.actions)
+        return f"Invalid {self.name} move {move!r}; expected one of: {allowed}"
 
     def forfeit_credit(self, turns):
         """Points the opponent receives when this bot forfeits the match."""
@@ -61,143 +74,112 @@ class Game:
         return f"Game({self.name!r})"
 
 
-class ForeignAidGame(Game):
-    """Foreign Aid. The match score is each player's final resources.
+class BlottoGame(Game):
+    """Colonel Blotto with ten troops and four simultaneous fronts."""
 
-    Starting resources, the aid cost and the receiver's benefit are the
-    proposed Round 3 rules. A player who chooses AID with fewer resources
-    than the cost at the start of the turn plays WITHHOLD instead.
-    """
+    troop_count = 10
+    front_count = 4
+    configured = True
 
-    def __init__(self, name, payoffs, *, starting, cost, benefit, **kwargs):
-        self.starting = starting
-        self.cost = cost
-        self.benefit = benefit
-        super().__init__(name, payoffs, **kwargs)
-
-    def new_state(self):
-        return {
-            "resources": [self.starting, self.starting],
-            "score1": self.starting,
-            "score2": self.starting,
-        }
-
-    def resolve_actions(self, state, move1, move2):
-        resources = state["resources"]
-        return (
-            self._affordable(move1, resources[0]),
-            self._affordable(move2, resources[1]),
+    def __init__(self):
+        super().__init__(
+            "Colonel Blotto", None, key="blotto", actions=(),
+            forfeit_formula=_credit(3), round_number=2,
         )
 
-    def _affordable(self, move, resources):
-        if move == "AID" and resources < self.cost:
-            return "WITHHOLD"
-        return move
+    def validate_action(self, move):
+        if not isinstance(move, list):
+            return "Invalid Colonel Blotto allocation; expected a list of four integers"
+        if len(move) != self.front_count:
+            return f"Invalid Colonel Blotto allocation; expected 4 fronts, got {len(move)}"
+        if any(not isinstance(troops, int) or isinstance(troops, bool) for troops in move):
+            return "Invalid Colonel Blotto allocation; every front must have an integer troop count"
+        if any(troops < 0 for troops in move):
+            return "Invalid Colonel Blotto allocation; troop counts cannot be negative"
+        if sum(move) != self.troop_count:
+            return f"Invalid Colonel Blotto allocation; troop counts must sum to 10, got {sum(move)}"
+        return None
 
-    def apply(self, state, move1, move2):
-        # my resources = my resources - cost * g_me + benefit * g_opponent
-        resources = state["resources"]
-        gave1 = 1 if move1 == "AID" else 0
-        gave2 = 1 if move2 == "AID" else 0
-        updated = [
-            max(0, resources[0] - self.cost * gave1 + self.benefit * gave2),
-            max(0, resources[1] - self.cost * gave2 + self.benefit * gave1),
-        ]
-        state["resources"] = updated
-        state["score1"], state["score2"] = updated
+    def score(self, move1, move2):
+        for move in (move1, move2):
+            error = self.validate_action(move)
+            if error:
+                raise ValueError(error)
+        score1 = score2 = 0.0
+        for troops1, troops2 in zip(move1, move2):
+            if troops1 > troops2:
+                score1 += 1
+            elif troops2 > troops1:
+                score2 += 1
+            else:
+                score1 += 0.5
+                score2 += 0.5
+        return score1, score2
 
 
-def _foreign_aid_payoffs(cost, benefit):
-    return {
-        ("AID", "AID"): (benefit - cost, benefit - cost),
-        ("AID", "WITHHOLD"): (-cost, benefit),
-        ("WITHHOLD", "AID"): (benefit, -cost),
-        ("WITHHOLD", "WITHHOLD"): (0, 0),
-    }
+class UnconfiguredTrustGame:
+    """Trust game key placeholder until its approved rules are available."""
+
+    name = "Trust"
+    key = "trust"
+    actions = ()
+    configured = False
+    round_number = 3
+
+    @staticmethod
+    def _blocked():
+        raise NotImplementedError(
+            "Trust game rules are pending team approval; scoring and move validation are unavailable"
+        )
+
+    def validate_action(self, move):
+        self._blocked()
+
+    def score(self, move1, move2):
+        self._blocked()
+
+    def forfeit_credit(self, turns):
+        self._blocked()
+
+    def forfeit_scores(self, side, turns):
+        self._blocked()
 
 
 PRISONERS_DILEMMA = Game(
     "Prisoner's Dilemma",
     {
-        ("C", "C"): (3, 3),
-        ("C", "D"): (0, 5),
-        ("D", "C"): (5, 0),
-        ("D", "D"): (1, 1),
+        ("AID", "AID"): (3, 3),
+        ("AID", "WITHHOLD"): (0, 5),
+        ("WITHHOLD", "AID"): (5, 0),
+        ("WITHHOLD", "WITHHOLD"): (1, 1),
     },
     key="prisoners_dilemma",
-    actions=("C", "D"),
+    actions=("AID", "WITHHOLD"),
     forfeit_formula=_credit(3),
     round_number=1,
 )
 
-CHICKEN = Game(
-    "Chicken",
-    {
-        ("C", "C"): (3, 3),
-        ("C", "D"): (1, 5),
-        ("D", "C"): (5, 1),
-        ("D", "D"): (0, 0),
-    },
-    key="chicken",
-    actions=("C", "D"),
-    # The sandbox still pays 3 per turn for every game it runs.
-    forfeit_formula=_credit(3),
-)
-
-STAG_HUNT = Game(
-    "Stag Hunt",
-    {
-        ("C", "C"): (4, 4),
-        ("C", "D"): (0, 3),
-        ("D", "C"): (3, 0),
-        ("D", "D"): (2, 2),
-    },
-    key="stag_hunt",
-    actions=("C", "D"),
-    forfeit_formula=_credit(3),
-)
-
-THEATRE_OF_WAR = Game(
-    "Theatre of War",
-    {
-        ("ATTACK", "ATTACK"): (1, 1),
-        ("ATTACK", "DEFEND"): (0, 2),
-        ("ATTACK", "EXPAND"): (5, 0),
-        ("DEFEND", "ATTACK"): (2, 0),
-        ("DEFEND", "DEFEND"): (2, 2),
-        ("DEFEND", "EXPAND"): (1, 4),
-        ("EXPAND", "ATTACK"): (0, 5),
-        ("EXPAND", "DEFEND"): (4, 1),
-        ("EXPAND", "EXPAND"): (3, 3),
-    },
-    key="theatre_of_war",
-    actions=("ATTACK", "DEFEND", "EXPAND"),
-    forfeit_formula=_credit(3),
-    round_number=2,
-    turns=200,
-)
-
-_AID_START = 10
-_AID_COST = 1
-_AID_BENEFIT = 3
-
-FOREIGN_AID = ForeignAidGame(
-    "Foreign Aid",
-    _foreign_aid_payoffs(_AID_COST, _AID_BENEFIT),
-    key="foreign_aid",
-    actions=("AID", "WITHHOLD"),
-    forfeit_formula=lambda turns: _AID_START + (_AID_BENEFIT - _AID_COST) * turns,
-    round_number=3,
-    turns=200,
-    starting=_AID_START,
-    cost=_AID_COST,
-    benefit=_AID_BENEFIT,
-)
+BLOTTO = BlottoGame()
+TRUST = UnconfiguredTrustGame()
 
 GAMES = {
     PRISONERS_DILEMMA.key: PRISONERS_DILEMMA,
-    THEATRE_OF_WAR.key: THEATRE_OF_WAR,
-    FOREIGN_AID.key: FOREIGN_AID,
-    CHICKEN.key: CHICKEN,
-    STAG_HUNT.key: STAG_HUNT,
+    BLOTTO.key: BLOTTO,
+    TRUST.key: TRUST,
 }
+
+
+def get_game(key):
+    """Resolve one canonical game instance from a key or verify an instance."""
+    if isinstance(key, str):
+        try:
+            return GAMES[key]
+        except KeyError:
+            raise ValueError(f"Unknown game key: {key}") from None
+    game_key = getattr(key, "key", None)
+    if game_key not in GAMES:
+        raise TypeError(f"Expected a game key or configured game instance, got {key!r}")
+    registered = GAMES[game_key]
+    if type(key) is not type(registered):
+        raise TypeError(f"Game instance for {game_key!r} is not the registered game type")
+    return registered

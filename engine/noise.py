@@ -8,15 +8,13 @@ module, which `play_match` seeds separately. A noise level of 0 draws nothing.
 def apply_noise(move, actions, noise, rng):
     """Return the move that is actually played.
 
-    Round 1 flips between `C` and `D` (any move other than `C` becomes `C`).
-    Round 2 replaces the move with one of the other two actions.
-    Round 3 swaps `AID` and `WITHHOLD`.
+    Prisoner's Dilemma swaps `AID` and `WITHHOLD`. Colonel Blotto noise is
+    undefined and is rejected by the match runner.
     """
     if not (noise and rng.random() < noise):
         return move
-    # Preserve the original Round 1 flip, including an invalid non-C move.
-    if set(actions) == {"C", "D"}:
-        return "D" if move == "C" else "C"
+    if set(actions) == {"AID", "WITHHOLD"}:
+        return "WITHHOLD" if move == "AID" else "AID"
     alternatives = [action for action in actions if action != move]
     if len(alternatives) <= 1:
         return alternatives[0] if alternatives else move

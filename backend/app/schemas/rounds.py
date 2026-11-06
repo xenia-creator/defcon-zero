@@ -4,7 +4,7 @@ from typing import Literal
 
 from pydantic import AwareDatetime, BaseModel, Field
 
-Game = Literal["prisoners_dilemma", "theatre_of_war", "foreign_aid"]
+Game = Literal["prisoners_dilemma", "blotto", "trust"]
 RoundStatus = Literal["waiting", "open", "running", "review", "published"]
 
 

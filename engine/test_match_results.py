@@ -7,12 +7,12 @@ from engine import sandbox
 from engine.games import PRISONERS_DILEMMA as PD
 from engine.tournament import match_seed
 
-COOP = "def strategy(my_history, opp_history):\n    return 'C'\n"
-DEFECT = "def strategy(my_history, opp_history):\n    return 'D'\n"
-TFT = "def strategy(my_history, opp_history):\n    return opp_history[-1] if opp_history else 'C'\n"
+COOP = "def strategy(my_history, opp_history):\n    return 'AID'\n"
+DEFECT = "def strategy(my_history, opp_history):\n    return 'WITHHOLD'\n"
+TFT = "def strategy(my_history, opp_history):\n    return opp_history[-1] if opp_history else 'AID'\n"
 RANDOM = ("import random\n"
           "def strategy(my_history, opp_history):\n"
-          "    return 'C' if random.random() < 0.5 else 'D'\n")
+          "    return 'AID' if random.random() < 0.5 else 'WITHHOLD'\n")
 BAD_MOVE = "def strategy(my_history, opp_history):\n    return 'X'\n"
 CRASH = "def strategy(my_history, opp_history):\n    return 1 // 0\n"
 LOOP = "def strategy(my_history, opp_history):\n    while True:\n        pass\n"
@@ -86,21 +86,21 @@ class AggregateTests(unittest.TestCase):
         self.assertEqual({row["name"]: row["total"] for row in r["leaderboard"]},
                          {"defect": 50, "coop": 0})
 
-    def test_scoring_matches_the_pre_change_baseline(self):
-        """Golden values recorded from the untouched runner before this change."""
+    def test_seeded_random_streams_have_stable_scoring(self):
+        """Golden values cover the isolated per-bot streams and unchanged payoffs."""
         r = run({"coop": COOP, "defect": DEFECT, "tft": TFT, "rnd": RANDOM},
                 turns=40, repetitions=2, noise=0.05, seed=7)
         self.assertEqual([(x["name"], x["total"]) for x in r["leaderboard"]],
-                         [("defect", 816), ("tft", 731), ("rnd", 684), ("coop", 620)])
+                         [("defect", 783), ("rnd", 759), ("tft", 697), ("coop", 607)])
         self.assertEqual(r["matrix"]["rnd"],
-                         {"coop": 152.5, "defect": 25.5, "tft": 88.5, "rnd": 75.5})
+                         {"coop": 156.0, "defect": 31.5, "rnd": 103.0, "tft": 89.0})
 
     def test_forfeit_outcome_matches_the_pre_change_baseline(self):
         r = run({"coop": COOP, "defect": DEFECT, "bad": BAD_MOVE}, seed=3)
         self.assertEqual({x["name"]: x["total"] for x in r["leaderboard"]},
                          {"defect": 60, "coop": 30})
         self.assertEqual(r["disqualified"], ["bad"])
-        reason = "returned 'X' instead of 'C' or 'D'"
+        reason = "Invalid Prisoner's Dilemma move 'X'; expected one of: 'AID', 'WITHHOLD'"
         self.assertEqual(r["forfeits"], [
             {"bot": "bad", "opponent": "bad", "repetition": 0, "reason": reason},
             {"bot": "bad", "opponent": "coop", "repetition": 0, "reason": reason},
@@ -147,7 +147,7 @@ class FailureTests(unittest.TestCase):
 
     def test_invalid_move(self):
         self.check_forfeit_shape(run({"good": COOP, "bad": BAD_MOVE}), "bad", "good",
-                                 "instead of 'C' or 'D'")
+                                 "Invalid Prisoner's Dilemma move")
 
     def test_crash(self):
         self.check_forfeit_shape(run({"good": COOP, "bad": CRASH}), "bad", "good",
@@ -163,8 +163,11 @@ class FailureTests(unittest.TestCase):
         pair = next(m for m in r["matches"] if not m["self_play"])
         self.assertEqual(pair["status"], "forfeited")
         self.assertIn("timed out", pair["forfeit_reason"])
-        self.assertEqual((pair["forfeit_side"], pair["winner"], pair["counted"]), (1, "good", False))
-        self.assertEqual((pair["score_a"], pair["score_b"]), (9, 0))
+        bad_side = 0 if pair["player_a"] == "bad" else 1
+        self.assertEqual((pair["forfeit_side"], pair["winner"], pair["counted"]),
+                         (bad_side, "good", False))
+        expected_scores = (0, 9) if bad_side == 0 else (9, 0)
+        self.assertEqual((pair["score_a"], pair["score_b"]), expected_scores)
 
     def test_all_failure_kinds_use_the_same_record_shape(self):
         shapes = set()

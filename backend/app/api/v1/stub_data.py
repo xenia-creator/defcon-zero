@@ -64,7 +64,7 @@ FAKE_OPEN_ROUND = Round(
     opens_at=datetime(2026, 11, 12, 10, 0, 0, tzinfo=UTC),
     closes_at=datetime(2026, 11, 12, 10, 45, 0, tzinfo=UTC),
     config=RoundConfig(
-        moves=["C", "D"],
+        moves=["AID", "WITHHOLD"],
         max_modules=3,
         block_limit=40,
         rounds_per_match=200,
@@ -76,12 +76,29 @@ FAKE_OPEN_ROUND = Round(
 FAKE_WAITING_ROUND = Round(
     id=2,
     number=2,
-    game="theatre_of_war",
+    game="blotto",
     status="waiting",
     opens_at=None,
     closes_at=None,
     config=RoundConfig(
-        moves=["ATTACK", "DEFEND", "EXPAND"],
+        moves=["four non-negative integers summing to 10"],
+        max_modules=3,
+        block_limit=40,
+        rounds_per_match=200,
+        repetitions=5,
+    ),
+    server_time=FAKE_SERVER_TIME,
+)
+
+FAKE_TRUST_ROUND = Round(
+    id=3,
+    number=3,
+    game="trust",
+    status="waiting",
+    opens_at=None,
+    closes_at=None,
+    config=RoundConfig(
+        moves=[],
         max_modules=3,
         block_limit=40,
         rounds_per_match=200,
@@ -91,7 +108,7 @@ FAKE_WAITING_ROUND = Round(
 )
 
 FAKE_ROUNDS = RoundsResponse(
-    rounds=[FAKE_OPEN_ROUND, FAKE_WAITING_ROUND],
+    rounds=[FAKE_OPEN_ROUND, FAKE_WAITING_ROUND, FAKE_TRUST_ROUND],
     server_time=FAKE_SERVER_TIME,
 )
 
@@ -111,7 +128,7 @@ FAKE_PENDING_SUBMISSION = Submission(
     version=4,
     status="pending",
     created_at=datetime(2026, 11, 12, 10, 20, 11, tzinfo=UTC),
-    code='def strategy(my_history, opp_history):\n    return opp_history[-1] if opp_history else "C"\n',
+    code='def strategy(my_history, opp_history):\n    return opp_history[-1] if opp_history else "AID"\n',
     blocks=Blocks(modules=[{"...": "Blockly workspace JSON"}]),
     check=None,
     server_time=FAKE_SERVER_TIME,

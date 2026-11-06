@@ -130,7 +130,7 @@ Response `200`:
   "opens_at": "2026-11-12T10:00:00Z",
   "closes_at": "2026-11-12T10:45:00Z",
   "config": {
-    "moves": ["C", "D"],
+    "moves": ["AID", "WITHHOLD"],
     "max_modules": 3,
     "block_limit": 40,
     "rounds_per_match": 200,
@@ -141,7 +141,7 @@ Response `200`:
 ```
 
 - **[CHANGED] `opens_at`, `closes_at`:** nullable while `status` is `waiting`.
-- **[NEW] `game`:** one of `prisoners_dilemma`, `theatre_of_war`, `foreign_aid`. **The frontend must choose the game, editor and docs from `game`, never from `number`.** `number` is for display only (DEFCON level).
+- **[NEW] `game`:** one of `prisoners_dilemma`, `blotto`, `trust`. **The frontend must choose the game, editor and docs from `game`, never from `number`.** `number` is for display only (DEFCON level).
 - **[NEW] `config`:** per-round rules. The editor reads its limits and move blocks from here instead of hardcoding them.
   - `moves`: the valid moves for this game (see section 8).
   - `max_modules`: maximum Blockly modules per submission.
@@ -306,9 +306,9 @@ All games use the same signature. Only the allowed moves differ, and they are li
 
 | Game | `game` key | Moves | Status |
 |---|---|---|---|
-| Prisoner's Dilemma | `prisoners_dilemma` | `"C"`, `"D"` | Confirmed against engine |
-| Theatre of War | `theatre_of_war` | `"ATTACK"`, `"DEFEND"`, `"EXPAND"` | Pending: not in engine yet |
-| Foreign Aid | `foreign_aid` | `"AID"`, `"WITHHOLD"` | Pending: not in engine yet |
+| Prisoner's Dilemma | `prisoners_dilemma` | `"AID"`, `"WITHHOLD"` | Approved |
+| Colonel Blotto | `blotto` | Four non-negative integer troop counts summing to 10 | Approved |
+| Trust | `trust` | Numeric action/range not specified | Blocked pending team approval |
 
 `my_history` and `opp_history` are lists of previous moves, oldest first, empty on the first turn. Returning anything not in `config.moves` is an invalid move.
 
@@ -316,11 +316,11 @@ Example (Prisoner's Dilemma):
 
 ```python
 def strategy(my_history, opp_history):
-    # Tit for Tat: cooperate first, then copy the opponent's last move
-    return opp_history[-1] if opp_history else "C"
+    # Tit for Tat: aid first, then copy the opponent's last move
+    return opp_history[-1] if opp_history else "AID"
 ```
 
-Theatre of War and Foreign Aid move strings are pending confirmation from Shashwat. **Do not build editor templates for them until they are confirmed.**
+Trust move validation and scoring are blocked until its approved rules are supplied. Colonel Blotto bots return an allocation list, not one of the strings in `config.moves`.
 
 ---
 
