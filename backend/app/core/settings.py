@@ -19,8 +19,8 @@ class Settings(BaseSettings):
     """Field names match the variable names, ignoring case.
 
     A real environment variable beats the value in .env, so a deploy can set
-    these without a file. Neither field has a default on purpose: if one is
-    missing the app refuses to start, rather than running with a fake secret.
+    these without a file. The two required fields have no default on purpose: if
+    one is missing the app refuses to start, rather than running with a fake secret.
     """
 
     model_config = SettingsConfigDict(env_file=ENV_FILE, extra="ignore")
@@ -30,6 +30,9 @@ class Settings(BaseSettings):
     # The database URL counts as a secret because it contains the password.
     database_url: SecretStr
     jwt_secret: SecretStr
+    # Only tests/conftest.py reads this. It is optional because a deployed server
+    # has no test database.
+    test_database_url: SecretStr | None = None
 
 
 settings = Settings()
