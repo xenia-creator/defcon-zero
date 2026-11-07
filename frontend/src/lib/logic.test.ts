@@ -5,8 +5,8 @@ import { countBlocks, moduleName } from '../workspace/blocks/layout'
 import { nationNameProblem } from '../workspace/auth/ClaimCountry'
 import { newestDraft, parseAgent } from '../workspace/editor/drafts'
 import { gameInfo } from '../workspace/editor/games'
-import { parseSession } from './auth'
-import { Round, SubmissionDetail, Team, Territories, isChecked, isClaimed, territoryName } from './contract'
+import { SPECTATOR_SESSION, parseSession, tokenOf } from './auth'
+import { AdminOverview, LoginOut, Round, Rounds, Standings, SubmissionDetail, Submissions, Team, Territories, TerritoryList, isChecked, isClaimed } from './contract'
 import { formatDuration, offsetFrom, windowRemaining } from './clock'
 import { newId } from './ids'
 import { ROUNDS, defconLevel, gameName, moveOption, roundByGame } from './rounds'
@@ -50,9 +50,22 @@ describe('stored session', () => {
   )
 
   it('accepts a real one', () => {
-    const team = { team_id: 7, nation_name: null, territory_code: null, status: 'alive' }
+    const team = { id: 107, team_id: 7, username: 'team07', role: 'team', nation_name: null, territory_code: null, status: 'active' }
     expect(parseSession(JSON.stringify({ access: 'a', username: 'team07', role: 'team', team }))?.team?.team_id).toBe(7)
+    // A team stored by an older client (no user id, made-up status) means logging in again
+    const old = { team_id: 7, nation_name: null, territory_code: null, status: 'alive' }
+    expect(parseSession(JSON.stringify({ access: 'a', username: 'team07', role: 'team', team: old }))).toBeNull()
     expect(parseSession(JSON.stringify({ access: 'a', username: 'admin', role: 'organiser', team: null }))?.team).toBeNull()
+  })
+
+  it('a spectator has no token and never sends one; only a spectator may be without one', () => {
+    expect(parseSession(JSON.stringify(SPECTATOR_SESSION))?.role).toBe('spectator')
+    expect(tokenOf(SPECTATOR_SESSION)).toBeNull()
+    // an older client stored a placeholder token for the spectator: still never sent
+    expect(tokenOf({ ...SPECTATOR_SESSION, access: 'spectator_token' })).toBeNull()
+    expect(tokenOf({ access: 'abc', username: 'admin', role: 'organiser', team: null })).toBe('abc')
+    expect(parseSession(JSON.stringify({ access: '', username: 'admin', role: 'organiser', team: null }))).toBeNull()
+    expect(parseSession(JSON.stringify({ access: 'a', username: 'x', role: 'admin', team: null }))).toBeNull()
   })
 })
 
@@ -77,6 +90,8 @@ describe('reading the contract', () => {
 
   it('refuses a round with no game, no moves list or a wrong shape', () => {
     expect(Round.safeParse({ ...round, number: 'one' }).success).toBe(false)
+    expect(Round.safeParse({ ...round, status: 'paused' }).success).toBe(false)
+    expect(Round.safeParse({ ...round, game: 'chess' }).success).toBe(false)
     expect(Round.safeParse({ ...round, config: { ...round.config, moves: undefined } }).success).toBe(false)
     expect(Round.safeParse({ ...round, game: undefined }).success).toBe(false)
   })
@@ -90,31 +105,78 @@ describe('reading the contract', () => {
     expect(Round.parse(round).config.troops).toBeUndefined()
   })
 
-  it('reads a team, defaulting to active', () => {
-    expect(Team.parse({ id: 101, team_id: 7, username: 'x', role: 'team', nation_name: 'Red Dawn', territory_code: 'RU' }).status).toBe('active')
+  it('reads GET /rounds', () => {
+    const waiting = { ...round, id: 2, number: 2, status: 'waiting', opens_at: null, closes_at: null }
+    const { rounds } = Rounds.parse({ rounds: [round, waiting], server_time: round.server_time })
+    expect(rounds.map((r) => [r.id, r.status, r.opensAt])).toEqual([[1, 'open', Date.parse(round.opens_at)], [2, 'waiting', null]])
+  })
+
+  it('reads the login answer from docs/api.md, and refuses an unknown role', () => {
+    expect(LoginOut.parse({ access_token: 't', token_type: 'bearer', role: 'team', team_id: null }).team_id).toBeNull()
+    expect(LoginOut.safeParse({ access_token: 't', token_type: 'bearer', role: 'admin', team_id: null }).success).toBe(false)
+  })
+
+  it('reads the /me example from docs/api.md, and refuses a missing or unknown status', () => {
+    const me = { id: 12, team_id: 7, username: 'team_kremlin', role: 'team', nation_name: 'Red Dawn', territory_code: 'RU', status: 'active' }
+    expect(Team.parse(me).status).toBe('active')
+    expect(Team.safeParse({ ...me, status: undefined }).success).toBe(false)
+    expect(Team.safeParse({ ...me, status: 'alive' }).success).toBe(false)
   })
 
   it('takes the team from team_id, never from the user id', () => {
-    const team = Team.parse({ id: 101, team_id: 7, username: 'x', role: 'team', nation_name: null, territory_code: null })
-    expect(team.team_id).toBe(7)
-    expect('id' in team).toBe(false)
-    expect(Team.safeParse({ id: 7, nation_name: null, territory_code: null }).success).toBe(false)
+    const team = Team.parse({ id: 101, team_id: 7, username: 'x', role: 'team', nation_name: null, territory_code: null, status: 'active' })
+    expect([team.id, team.team_id]).toEqual([101, 7])
+    expect(Team.safeParse({ id: 7, nation_name: null, territory_code: null, status: 'active' }).success).toBe(false)
   })
 
   it('reads a pending submission with no check, and a finished one', () => {
-    const pending = SubmissionDetail.parse({ id: 42, version: 4, status: 'pending', code: 'x', blocks: null, check: null })
+    const base = { id: 42, round_id: 1, version: 4, created_at: '2026-11-12T10:20:11Z', code: 'x', blocks: { modules: [] }, server_time: '2026-11-12T10:20:15Z' }
+    const pending = SubmissionDetail.parse({ ...base, status: 'pending', check: null })
     expect([pending.error, pending.tests, isChecked(pending.status)]).toEqual([null, [], false])
-    const done = SubmissionDetail.parse({ id: 42, version: 4, status: 'accepted', code: 'x', blocks: { modules: [{}] }, check: { error: null, test_results: [{ opponent: 'fortress', my_score: 600, opp_score: 0 }] } })
-    expect(done.tests[0].my_score).toBe(600)
+    const results = [{ opponent: 'tit_for_tat', my_score: 600.5, opp_score: 0 }]
+    const done = SubmissionDetail.parse({ ...base, status: 'accepted', blocks: { modules: [{}] }, check: { error: null, test_results: results } })
+    expect([done.tests[0].my_score, done.round_id]).toEqual([600.5, 1])
+    expect(SubmissionDetail.safeParse({ ...base, status: 'done', check: null }).success).toBe(false)
+    const list = Submissions.parse({ submissions: [{ id: 42, version: 4, status: 'accepted', created_at: base.created_at }], server_time: base.server_time })
+    expect(list[0].version).toBe(4)
     expect(isChecked('running')).toBe(false)
     expect(isChecked('rejected')).toBe(true)
   })
 
-  it('names territories from the code, whichever code style the server uses', () => {
-    expect(territoryName('BR')).toBe('Brazil')
-    expect(territoryName('BR', 'Federative Brazil')).toBe('Federative Brazil')
-    expect(territoryName('not a code')).toBe('not a code')
-    expect(Territories.parse({ territories: [{ territory_code: 'RU', claimed: true, nation_name: 'Red Dawn' }, { territory_code: 'BR', claimed: false, nation_name: null }] }).map((t) => t.name)).toEqual(['Brazil', 'Russia'])
+  it("names territories with the server's name, sorted for the claim screen", () => {
+    const list = {
+      territories: [
+        { territory_code: 'RU', name: 'Russia', claimed: true, nation_name: 'Red Dawn' },
+        { territory_code: 'BR', name: 'Brazil', claimed: false, nation_name: null },
+      ],
+    }
+    expect(Territories.parse(list).map((t) => t.name)).toEqual(['Brazil', 'Russia'])
+    expect(TerritoryList.parse(list).territories[0].nation_name).toBe('Red Dawn')
+    // name is always sent (v4)
+    expect(TerritoryList.safeParse({ territories: [{ territory_code: 'BR', claimed: false, nation_name: null }] }).success).toBe(false)
+  })
+
+  it('reads the standings example from docs/api.md, and an empty board before anything is published', () => {
+    const nation = { team_id: 7, nation_name: 'Red Dawn', territory_code: 'RU', status: 'active', score: 3120, rank: 1 }
+    const board = { round_id: 1, round_status: 'published', nations: [nation], server_time: '2026-11-12T10:50:03Z' }
+    expect(Standings.parse(board).nations[0].rank).toBe(1)
+    expect(Standings.parse({ ...board, round_status: 'running', nations: [] }).nations).toEqual([])
+    expect(Standings.safeParse({ ...board, round_status: 'live' }).success).toBe(false)
+  })
+
+  it('reads the admin overview example from docs/api.md', () => {
+    const overview = AdminOverview.parse({
+      round: { id: 1, number: 1, game: 'prisoners_dilemma', status: 'review', opens_at: '2026-11-12T10:00:00Z', closes_at: '2026-11-12T10:45:00Z' },
+      teams: [
+        {
+          team_id: 7, username: 'team_kremlin', nation_name: 'Red Dawn', territory_code: 'RU', status: 'active', is_bot: false,
+          submission: { version: 4, status: 'accepted', passed: 7, total: 10, submitted_at: '2026-11-12T10:20:11Z' }, score: 3120.0,
+        },
+      ],
+      unclaimed: ['team_nautilus'],
+      server_time: '2026-11-12T10:50:03Z',
+    })
+    expect([overview.teams[0].submission?.passed, overview.unclaimed]).toEqual([7, ['team_nautilus']])
   })
 
   it('an unknown game gets a working editor with no blocks', () => {
@@ -274,7 +336,7 @@ describe('generating Python from blocks', () => {
 })
 
 describe('rounds 2 and 3 in the editor', () => {
-  const config = { moves: [], max_modules: 3, block_limit: 40 }
+  const config = { moves: [], max_modules: 3, block_limit: 40, rounds_per_match: 200, repetitions: 5 }
 
   it('take their limits from the round config, not from fixed numbers', () => {
     const war = gameInfo('theatre_of_war', { ...config, troops: 60, regions: 3 })
@@ -301,7 +363,7 @@ describe('rounds 2 and 3 in the editor', () => {
 })
 
 describe('who sees what', () => {
-  const team = { team_id: 7, nation_name: 'Red Dawn', territory_code: 'RU', status: 'active' }
+  const team = { id: 107, team_id: 7, username: 'team07', role: 'team', nation_name: 'Red Dawn', territory_code: 'RU', status: 'active' } as const
 
   it('a team gets only its own workspace: no war map, no standings, no Command Console', () => {
     expect(viewsFor({ role: 'team', team })).toEqual(['workspace'])
@@ -310,22 +372,25 @@ describe('who sees what', () => {
     expect(viewsFor({ role: 'team', team: null })).toEqual([])
   })
 
-  it('only the organiser gets the Command Console and the standings', () => {
+  it('only the organiser gets the Command Console', () => {
     expect(viewsFor({ role: 'organiser', team: null })).toEqual(['warmap', 'command'])
+    for (const role of ['spectator', 'admin', 'team', '']) expect(viewsFor({ role, team: null })).not.toContain('command')
+  })
+
+  it('published standings are for the organiser and the public board, never a team or an unknown role', () => {
     expect(seesStandings({ role: 'organiser' })).toBe(true)
-    for (const role of ['spectator', 'admin', 'team', '']) {
-      expect(viewsFor({ role, team: null })).not.toContain('command')
-      expect(seesStandings({ role })).toBe(false)
-    }
+    expect(seesStandings({ role: 'spectator' })).toBe(true)
+    for (const role of ['team', 'admin', '']) expect(seesStandings({ role })).toBe(false)
   })
 
-  it('a spectator gets the war map only', () => {
+  it('a spectator, or a role this client does not know, gets the public war map only', () => {
     expect(viewsFor({ role: 'spectator', team: null })).toEqual(['warmap'])
+    expect(viewsFor({ role: 'admin', team: null })).toEqual(['warmap'])
   })
 
-  it("reads a team's own score from /me, and copes without one", () => {
-    expect(Team.parse({ id: 101, team_id: 7, nation_name: 'Red Dawn', territory_code: 'RU', score: 860 }).score).toBe(860)
-    expect(Team.parse({ id: 101, team_id: 7, nation_name: 'Red Dawn', territory_code: 'RU' }).score).toBeUndefined()
+  it('/me never carries a score: the contract has none, so one sent anyway is dropped', () => {
+    const me = Team.parse({ id: 101, team_id: 7, username: 'team07', role: 'team', nation_name: 'Red Dawn', territory_code: 'RU', status: 'active', score: 860 })
+    expect('score' in me).toBe(false)
   })
 })
 
@@ -396,20 +461,20 @@ describe('round 2 on the map', () => {
 
 describe('a team that has not claimed its nation yet', () => {
   it('can log in: /me with team_id null parses, and counts as unclaimed', () => {
-    const fresh = Team.parse({ id: 101, team_id: null, username: 'team1', role: 'team', nation_name: null, territory_code: null })
+    const fresh = Team.parse({ id: 101, team_id: null, username: 'team1', role: 'team', nation_name: null, territory_code: null, status: 'active' })
     expect(fresh.team_id).toBeNull()
     expect(isClaimed(fresh)).toBe(false)
-    const claimed = Team.parse({ id: 101, team_id: 7, username: 'team1', role: 'team', nation_name: 'Red Dawn', territory_code: 'RU' })
+    const claimed = Team.parse({ id: 101, team_id: 7, username: 'team1', role: 'team', nation_name: 'Red Dawn', territory_code: 'RU', status: 'active' })
     expect(isClaimed(claimed)).toBe(true)
     expect(isClaimed(null)).toBe(false)
   })
 
   it('still needs team_id to be sent, even as null', () => {
-    expect(Team.safeParse({ id: 101, nation_name: null, territory_code: null }).success).toBe(false)
+    expect(Team.safeParse({ id: 101, username: 'team1', role: 'team', nation_name: null, territory_code: null, status: 'active' }).success).toBe(false)
   })
 
   it('survives a reload: a stored unclaimed session is still valid', () => {
-    const team = { team_id: null, nation_name: null, territory_code: null, status: 'active' }
+    const team = { id: 101, team_id: null, username: 'team1', role: 'team', nation_name: null, territory_code: null, status: 'active' }
     expect(parseSession(JSON.stringify({ access: 'a', username: 'team1', role: 'team', team }))?.team?.team_id).toBeNull()
   })
 })
