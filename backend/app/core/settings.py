@@ -6,9 +6,10 @@ itself, which keeps the list of required values in one place.
 """
 
 from pathlib import Path
+from typing import Annotated
 
-from pydantic import SecretStr
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import SecretStr, field_validator
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 # An absolute path, so .env is found whichever folder the server, Alembic or a
 # test is started from. A bare ".env" would be looked up in the current folder.
@@ -33,6 +34,32 @@ class Settings(BaseSettings):
     # Only tests/conftest.py reads this. It is optional because a deployed server
     # has no test database.
     test_database_url: SecretStr | None = None
+    # The browser origins allowed to call this API (see CORS in app/main.py),
+    # written in .env as one comma-separated line. The default is the frontend's
+    # Vite dev server, so local development works without setting it. The event
+    # server sets it to the frontend's real address.
+    # NoDecode stops pydantic-settings reading a list setting as JSON, its default,
+    # so the plain comma-separated text reaches split_origins below instead.
+    cors_origins: Annotated[list[str], NoDecode] = [
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+    ]
+
+    @field_validator("cors_origins", mode="before")
+    @classmethod
+    def split_origins(cls, value: object) -> object:
+        """Turn "a, b" into ["a", "b"], dropping spaces and empty entries.
+
+        A trailing slash is removed too, because the browser sends the Origin
+        header without one, and "http://host/" would never match "http://host".
+        """
+        if isinstance(value, str):
+            return [
+                origin.strip().rstrip("/")
+                for origin in value.split(",")
+                if origin.strip()
+            ]
+        return value
 
 
 settings = Settings()

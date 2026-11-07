@@ -81,6 +81,18 @@ async def create_account(
     )
 
 
+async def change_password(db: AsyncSession, username: str, password: str) -> bool:
+    """Give an existing account a new password. Return False if there is no such user.
+
+    Used by scripts/set_password.py. The password is hashed with the same Argon2
+    helper as create_account, so login checks it the same way. The username is
+    normalised, so "Alice" finds the alice account. This does not commit.
+    """
+    return await users_repository.set_password_hash(
+        db, normalise_username(username), hash_password(password)
+    )
+
+
 async def login(db: AsyncSession, username: str, password: str) -> LoginResponse:
     """Check a username and password, and issue a token.
 

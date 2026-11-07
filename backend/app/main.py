@@ -12,6 +12,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.v1.router import api_router
 from app.core.errors import register_error_handling
+from app.core.settings import settings
 from app.services import round_runs, submission_checks
 
 
@@ -55,13 +56,16 @@ register_error_handling(app)
 
 # CORS is the browser rule that stops a page on one origin (the frontend) from
 # reading responses from another (this API) unless the API allows it.
-# Every origin is allowed for now and should be narrowed before the event.
+# Only the origins in the CORS_ORIGINS setting are allowed, so a page on any
+# other site cannot use a visitor's browser to read this API. A request from
+# another origin still reaches the app, but gets no CORS headers, so the browser
+# hides the response from that page.
 # allow_credentials stays off because auth uses a Bearer header, not cookies.
 # allow_headers must cover Authorization and Idempotency-Key, which the browser
 # asks permission for in a preflight OPTIONS request before sending them.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=settings.cors_origins,
     allow_methods=["*"],
     allow_headers=["*"],
 )
