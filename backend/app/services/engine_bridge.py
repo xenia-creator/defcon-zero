@@ -12,7 +12,7 @@ import sys
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from app.schemas.rounds import Game
 from app.schemas.submissions import SubmissionCheck
@@ -64,7 +64,12 @@ class MatchRecord(BaseModel):
     so the rest of the app never sees player_a or player_b. The engine's records
     carry more keys than these, such as the forfeit reason, and pydantic ignores
     the ones not listed.
+
+    populate_by_name also accepts our own names, so a record can be rebuilt from
+    a stored matches row when a round is re-ranked.
     """
+
+    model_config = ConfigDict(populate_by_name=True)
 
     team_a_id: int = Field(validation_alias="player_a")
     team_b_id: int = Field(validation_alias="player_b")

@@ -2,12 +2,14 @@
 
 Run once, when a round's matches finish, and stored in the standings table with
 them. GET /standings and /admin/overview then only read rows, which matters as
-the war map polls every 2 seconds.
+the war map polls every 2 seconds. move_to_bottom changes a stored order later,
+when an organiser disqualifies a team before its round is published.
 
-A pure function with no database access, so the ranking rules can be tested on
+Pure functions with no database access, so the ranking rules can be tested on
 their own.
 """
 
+from collections.abc import Iterable
 from itertools import groupby
 from typing import NamedTuple
 
@@ -92,4 +94,26 @@ def rank_round(
     return [
         TeamResult(team_id=team_id, score=totals[team_id], rank=position)
         for position, team_id in enumerate(order, start=1)
+    ]
+
+
+def move_to_bottom(results: list[TeamResult], team_ids: Iterable[int]) -> list[TeamResult]:
+    """Move these teams below every other team, then number the ranks 1 to N again.
+
+    Used when a team is disqualified after it was ranked. Every team below it
+    moves up one place, so the cut always keeps exactly N teams that are not
+    disqualified, and rank 1 of the last round is always a real winner. The
+    other teams keep their order, and so do the moved teams among themselves.
+    Scores do not change: a disqualification moves a team, it does not undo
+    the points its opponents earned against it.
+
+    results must be in rank order, best first.
+    """
+    moving = set(team_ids)
+    order = [r for r in results if r.team_id not in moving] + [
+        r for r in results if r.team_id in moving
+    ]
+    return [
+        TeamResult(team_id=r.team_id, score=r.score, rank=position)
+        for position, r in enumerate(order, start=1)
     ]

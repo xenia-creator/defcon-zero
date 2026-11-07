@@ -5,11 +5,12 @@ from datetime import UTC, datetime, timedelta
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.errors import AppError
-from app.core.rounds import ROUND_DEFINITIONS, RoundDefinition
+from app.core.rounds import ROUND_DEFINITIONS, TEAMS_KEPT_BY_ROUND_NUMBER, RoundDefinition
 
 # Renamed because the table's class and the API's schema are both called Round.
 from app.models.round import Round as RoundRow
 from app.repositories import rounds as rounds_repository
+from app.repositories import teams as teams_repository
 from app.schemas.rounds import Round, RoundsResponse
 from app.services import round_runs
 
@@ -175,5 +176,25 @@ async def retry_round(db: AsyncSession, round_id: int) -> Round:
     # Nothing changed, but the transaction must still end here to release the
     # lock. FastAPI runs background tasks before it closes the request's session,
     # so a lock left open would make the run's own save wait on it forever.
+    await db.commit()
+    return build_round(row, datetime.now(UTC))
+
+
+async def publish_round(db: AsyncSession, round_id: int) -> Round:
+    """Move a round from review to published, and apply the cut.
+
+    Publishing is what makes the results public on GET /standings, and the cut
+    is what decides who plays the next round, so both go in one commit. Nobody
+    can see results whose eliminations have not happened, or the reverse.
+
+    The cut follows the stored ranks, which already have every tie broken, so
+    exactly the teams ranked 1 to N stay in. After the last round that leaves the
+    winner at rank 1 and the runner-up at rank 2.
+    """
+    row = await lock_round_in_status(db, round_id, "review")
+    row.status = "published"
+    await teams_repository.eliminate_outside_top(
+        db, round_id, TEAMS_KEPT_BY_ROUND_NUMBER[row.number]
+    )
     await db.commit()
     return build_round(row, datetime.now(UTC))

@@ -1,8 +1,9 @@
 """Database queries for the matches table. All queries live in repositories."""
 
+from collections.abc import Sequence
 from typing import Any
 
-from sqlalchemy import insert
+from sqlalchemy import Row, insert, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.match import Match
@@ -22,3 +23,18 @@ async def add_matches(db: AsyncSession, round_id: int, rows: list[dict[str, Any]
     if not rows:
         return
     await db.execute(insert(Match), [{"round_id": round_id, **row} for row in rows])
+
+
+async def list_for_round(db: AsyncSession, round_id: int) -> Sequence[Row]:
+    """Return a round's matches, with the columns a re-rank needs."""
+    result = await db.execute(
+        select(
+            Match.team_a_id,
+            Match.team_b_id,
+            Match.repetition,
+            Match.score_a,
+            Match.score_b,
+            Match.counted,
+        ).where(Match.round_id == round_id)
+    )
+    return result.all()

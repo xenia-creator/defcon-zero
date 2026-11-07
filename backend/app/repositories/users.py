@@ -55,3 +55,22 @@ async def get_user_by_username(db: AsyncSession, username: str) -> User | None:
     """
     result = await db.execute(select(User).where(User.username == username))
     return result.scalar_one_or_none()
+
+
+async def get_user_by_team_id(db: AsyncSession, team_id: int) -> User | None:
+    """Return the user linked to this team, or None.
+
+    There is at most one, as uq_users_team_id refuses a second.
+    """
+    result = await db.execute(select(User).where(User.team_id == team_id))
+    return result.scalar_one_or_none()
+
+
+async def list_unclaimed_team_usernames(db: AsyncSession) -> list[str]:
+    """Return the usernames of team accounts with no team yet, in username order."""
+    result = await db.execute(
+        select(User.username)
+        .where(User.role == "team", User.team_id.is_(None))
+        .order_by(User.username)
+    )
+    return list(result.scalars())

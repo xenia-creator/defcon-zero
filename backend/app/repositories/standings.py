@@ -64,3 +64,32 @@ async def list_latest_published(db: AsyncSession) -> Sequence[Row]:
         .order_by(latest.c.rank, latest.c.round_number.desc(), Team.id)
     )
     return result.all()
+
+
+async def list_for_round_for_update(db: AsyncSession, round_id: int) -> list[Standing]:
+    """Return a round's standings in rank order, every row locked until the transaction ends.
+
+    Locked because a re-rank reads every rank and writes them all back. Two
+    disqualifications in the same round at once would otherwise both start from
+    the old order, and the second commit would undo the first one's move.
+    """
+    result = await db.execute(
+        select(Standing)
+        .where(Standing.round_id == round_id)
+        .order_by(Standing.rank)
+        .with_for_update()
+        .execution_options(populate_existing=True)
+    )
+    return list(result.scalars())
+
+
+async def get_scores_for_round(db: AsyncSession, round_id: int) -> dict[int, float]:
+    """Return each team's score in this round, as team id to score.
+
+    Read whatever the round's status, as only organisers see this. Empty until
+    the round's matches have been played.
+    """
+    result = await db.execute(
+        select(Standing.team_id, Standing.score).where(Standing.round_id == round_id)
+    )
+    return {row.team_id: row.score for row in result}

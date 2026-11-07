@@ -151,6 +151,12 @@ async def save_results(
     The round is locked first and its status checked again. If something else
     already finished it, such as a second server process, this run saves nothing
     rather than storing the same matches twice.
+
+    A team an organiser disqualified while the matches were playing is moved to
+    the bottom here, as a disqualification in review would move it, so the cut
+    never keeps a disqualified team. The round lock makes this read safe: a
+    status change takes a shared lock on the round first, so it cannot land
+    between this read and the commit.
     """
     async with SessionLocal() as db:
         round_row = await rounds_repository.get_round_for_update(db, round_id)
@@ -160,6 +166,10 @@ async def save_results(
         await matches_repository.add_matches(
             db, round_id, [match.model_dump() for match in result.matches]
         )
+        disqualified_meanwhile = await teams_repository.list_disqualified_ids(
+            db, [standing.team_id for standing in standings]
+        )
+        standings = ranking.move_to_bottom(standings, disqualified_meanwhile)
         await standings_repository.add_standings(
             db, round_id, [standing._asdict() for standing in standings]
         )

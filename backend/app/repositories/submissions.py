@@ -139,3 +139,24 @@ async def get_playing_codes(
         .order_by(Submission.team_id, Submission.version.desc())
     )
     return {row.team_id: row.code for row in result}
+
+
+async def list_latest_in_round(db: AsyncSession, round_id: int) -> Sequence[Row]:
+    """Return each team's latest submission in this round, whatever its status.
+
+    DISTINCT ON again, one row per team, the highest version. code and blocks are
+    left out, as the organiser console only needs the summary and the check.
+    """
+    result = await db.execute(
+        select(
+            Submission.team_id,
+            Submission.version,
+            Submission.status,
+            Submission.check,
+            Submission.created_at,
+        )
+        .where(Submission.round_id == round_id)
+        .distinct(Submission.team_id)
+        .order_by(Submission.team_id, Submission.version.desc())
+    )
+    return result.all()

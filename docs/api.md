@@ -4,7 +4,7 @@ Status: draft v5.2. Changes in v5.2 are marked **[v5.2]**, changes in v5.1 are m
 Owner: Sumedh (backend). Engine signatures owned by Shashwat.
 
 Changelog:
-- v5.2: `POST /admin/rounds/{id}/retry` added, to rerun a round's matches after a failed run. `start` now plays the matches in the background, and the round moves to `review` when they are stored. `GET /standings` only shows published results, and its ranking rules are written down in section 6.
+- v5.2: `POST /admin/rounds/{id}/retry` added, to rerun a round's matches after a failed run. `start` now plays the matches in the background, and the round moves to `review` when they are stored. `GET /standings` only shows published results, and its ranking rules are written down in section 6. `GET /territories` and `GET /standings` are public. `publish` applies the cut (top 15, then 8, then 2). `PATCH /admin/teams/{id}` is real. Disqualifying a team before publish moves it to the bottom of its round, and restoring it in `review` gives back its place. `GET /admin/overview` added.
 - v5.1: The engine now supports all three games, so `not available yet` is gone. `check.test_results` has one entry per sample bot, and a bot that fails during a match is `rejected` with its `test_results` still included. Example `opponent` values corrected.
 - v5: Final rules for all three games in section 8. `config.moves` is empty for `theatre_of_war` and `foreign_aid`. `config` gains `troops` and `regions` for `theatre_of_war`, and `endowment` and `multiplier` for `foreign_aid`. Scoring for Theatre of War and Foreign Aid added. All scores are floats. `POST /admin/rounds/{id}/open` takes `minutes` instead of `closes_at`, `minutes` must be 1 to 240, and rounds must open in order. `POST /submissions` limits `code`, `blocks` and `Idempotency-Key` sizes and lists more errors. The server checks `max_modules` but not `block_limit`. `check.test_results` stays empty until the new engine version lands.
 - v4: `GET /territories` returns a `name` for each territory. Nation name rules added to `POST /teams/claim`. `team_id` is also `null` for teams that have not claimed yet. `GET /me` gains `team_id`, and its `id` is confirmed as the user id. Usernames are case-insensitive.
@@ -13,7 +13,7 @@ Changelog:
 
 ## 1. Conventions
 
-- **Auth:** every route except `POST /auth/login` and `GET /health` needs `Authorization: Bearer <token>`. **[CHANGED]**
+- **Auth:** every route except `POST /auth/login`, `GET /health`, `GET /territories` and `GET /standings` needs `Authorization: Bearer <token>`. **[v5.2]** `GET /territories` and `GET /standings` are public so the spectator war map works without logging in. A public route ignores the `Authorization` header, so a missing, invalid or expired token is never a 401 there.
 - **Timestamps:** ISO 8601, UTC, for example `2026-11-12T10:30:00Z`.
 - **server_time:** every round and submission response includes `server_time`. Timers on the frontend must be computed as `closes_at - server_time`, never from the client clock.
 - **IDs:** integers.
@@ -123,6 +123,8 @@ Errors: `400 VALIDATION_ERROR` (name breaks the rules above, or `territory_code`
 
 ### `GET /territories` **[v4]**
 
+**[v5.2]** Public route: no token needed.
+
 Response `200`:
 ```json
 {
@@ -194,6 +196,8 @@ All return the updated Round object. Invalid transitions return `409 INVALID_ROU
 **[v5]** `open` sets `opens_at` to now and `closes_at` to now plus `minutes`. `extend` adds `minutes` to `closes_at`. `start` sets `closes_at` to now, which closes the window.
 
 **[v5.2]** After `start`, the matches play in the background and the round stays `running` until every match is stored, then moves to `review` by itself. Poll `GET /rounds/current` to see it change. If the run fails, the round stays `running`, and `retry` plays the matches again from the beginning. `retry` returns `409 INVALID_ROUND_TRANSITION` if the round is not `running`, or if its matches are still being played.
+
+**[v5.2]** `publish` makes the round's results public on `GET /standings` and applies the cut in the same step. Round 1 keeps the teams ranked 1 to 15, round 2 the top 8 and round 3 the top 2. Every other `active` team becomes `eliminated`, including one that did not play the round. A `disqualified` team stays `disqualified`. After round 3 is published, its rank 1 is the winner and its rank 2 the runner-up, the only two teams still `active`.
 
 **[v5]** `minutes` must be 1 to 240, otherwise `400 VALIDATION_ERROR`.
 
@@ -291,6 +295,8 @@ Visible to the owning team and organisers only. Any other team gets `404 NOT_FOU
 
 ### `GET /standings`
 
+**[v5.2]** Public route: no token needed. It only shows published results (see the rules below).
+
 Polled by the war map every 2 seconds. WebSockets will replace polling later without changing this shape.
 
 ```json
@@ -342,6 +348,58 @@ Organiser only.
 **[v4]** `{id}` in the URL is the team id, which matches `team_id` in the response. `id` in the response is the user id.
 
 There is no fair-play report route. Reports go to organisers directly, and organisers disqualify through this route.
+
+**[v5.2]** `status` is `active`, `eliminated` or `disqualified`, and any status can be set from any other, so a mistake can be undone. Errors: `400 VALIDATION_ERROR` (any other status), `403 FORBIDDEN` (not an organiser), `404 NOT_FOUND` (no such team).
+
+**[v5.2]** Disqualifying a team before its round is published moves it below every other team in that round, and every team below it moves up one place. So the cut at `publish` always keeps exactly N teams that are not disqualified, and round 3's rank 1 is always a real winner. This applies whether the round is `running` or in `review`. Setting a disqualified team back to `active` while its round is in `review` ranks the round again from its results, by the same rules, so the team returns to the place it earned. Teams still `disqualified` stay at the bottom.
+
+### `GET /admin/overview` **[v5.2]**
+
+Organiser only, else `403 FORBIDDEN`. Polled by the organiser console. Unlike `GET /standings`, it shows the current round's scores in every state, including `running` and `review`.
+
+Response `200`:
+```json
+{
+  "round": {
+    "id": 1,
+    "number": 1,
+    "game": "prisoners_dilemma",
+    "status": "review",
+    "opens_at": "2026-11-12T10:00:00Z",
+    "closes_at": "2026-11-12T10:45:00Z"
+  },
+  "teams": [
+    {
+      "team_id": 7,
+      "username": "team_kremlin",
+      "nation_name": "Red Dawn",
+      "territory_code": "RU",
+      "status": "active",
+      "is_bot": false,
+      "submission": {
+        "version": 4,
+        "status": "accepted",
+        "passed": 7,
+        "total": 10,
+        "submitted_at": "2026-11-12T10:20:11Z"
+      },
+      "score": 3120.0
+    }
+  ],
+  "unclaimed": ["team_nautilus"],
+  "server_time": "2026-11-12T10:50:03Z"
+}
+```
+
+- `round`: the current round, the same one as `GET /rounds/current`. Before any round has started, it is the first round, so the console works before the event. `404 NOT_FOUND` only if no rounds exist yet.
+- `teams`: every team that has claimed a territory, sorted by `username`. `team_id` is always set. `nation_name` and `territory_code` are typed nullable, but are always set for a listed team.
+- `is_bot`: always `false`.
+- `submission`: the team's latest submission in `round`, whatever its status, or `null` if it has none.
+  - `passed` is the number of test matches it won or drew against the sample bots (scoring at least as much as the sample bot), and `total` is the number it played.
+  - Both are `0` while the check has not finished.
+  - `submitted_at` is the submission's `created_at`.
+- `score`: the team's score in `round`, a float. `0` before results exist, and for a team that did not play the round.
+- `unclaimed`: usernames of team accounts that have not claimed a territory yet, sorted. They have no `team_id`, so they are not in `teams`.
 
 ---
 

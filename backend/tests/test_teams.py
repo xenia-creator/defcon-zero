@@ -9,7 +9,7 @@ from sqlalchemy import text
 
 from app.core.database import engine
 from app.core.territories import TERRITORIES
-from tests.conftest import assert_error
+from tests.conftest import assert_error, bearer
 
 
 async def claim(client, headers, territory_code="RU", nation_name="Red Dawn"):
@@ -41,8 +41,23 @@ async def count_teams_without_a_user() -> int:
 # --- GET /territories ---
 
 
-async def test_territories_needs_a_token(client):
-    assert_error(await client.get("/territories"), 401, "UNAUTHENTICATED")
+async def test_territories_is_public(client, log_in_new_user):
+    """No token is needed: the spectator war map shows it without logging in."""
+    headers = await log_in_new_user()
+    await claim(client, headers)
+
+    response = await client.get("/territories")
+
+    assert response.status_code == 200
+    territories = response.json()["territories"]
+    assert len(territories) == len(TERRITORIES)
+    assert {"territory_code": "RU", "name": "Russia", "claimed": True, "nation_name": "Red Dawn"} in territories
+
+
+async def test_territories_ignores_a_bad_token(client):
+    """A public route never reads the header, so a stale token is not a 401."""
+    response = await client.get("/territories", headers=bearer("not.a.token"))
+    assert response.status_code == 200
 
 
 async def test_territories_lists_everything_as_free_at_the_start(
