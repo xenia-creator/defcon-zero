@@ -1,6 +1,6 @@
 """Database queries for the users table. All queries live in repositories."""
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -74,3 +74,18 @@ async def list_unclaimed_team_usernames(db: AsyncSession) -> list[str]:
         .order_by(User.username)
     )
     return list(result.scalars())
+
+
+async def set_password_hash(db: AsyncSession, username: str, password_hash: str) -> bool:
+    """Replace this user's password hash. Return False if there is no such user.
+
+    One UPDATE, with RETURNING to tell whether a row matched, so there is no gap
+    between finding the user and changing them. Does not commit.
+    """
+    result = await db.execute(
+        update(User)
+        .where(User.username == username)
+        .values(password_hash=password_hash)
+        .returning(User.id)
+    )
+    return result.scalar_one_or_none() is not None
