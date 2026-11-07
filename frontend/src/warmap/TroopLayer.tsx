@@ -4,6 +4,9 @@ import type { StandingsNation, TroopMovement } from './types'
 
 // Animated overlay: troop arcs, impact shockwaves and elimination bursts.
 // Purely presentational; it only reads movements and standings.
+//   - Bursts come from real status changes in standings, so they show on the live map too.
+//   - Arcs and impacts come from `movements`, which only the showcase loop passes (the
+//     contract has no movement data). Without `movements`, none are scheduled or drawn.
 
 interface Flight {
   key: string
@@ -27,9 +30,10 @@ export interface Burst {
 }
 
 interface TroopLayerProps {
-  movements: TroopMovement[]
+  /** SHOWCASE ONLY. Undefined on the live map: no arcs. */
+  movements?: TroopMovement[]
   nations: StandingsNation[]
-  serverTime: string
+  serverTime: number // ms
   colourByTeam: Map<number, string>
   bursts: Burst[]
 }
@@ -48,9 +52,10 @@ export function TroopLayer({ movements, nations, serverTime, colourByTeam, burst
 
   // Schedule each movement relative to the poll's server_time.
   useEffect(() => {
+    if (!movements) return
     const { nations, serverTime, colourByTeam } = ctx.current
     const codeByTeam = new Map(nations.map((n) => [n.team_id, n.territory_code]))
-    const base = Date.parse(serverTime)
+    const base = serverTime
     const timers = movements.flatMap((m) => {
       const fromCode = codeByTeam.get(m.from_team_id)
       const toCode = codeByTeam.get(m.to_team_id)
@@ -99,14 +104,14 @@ export function TroopLayer({ movements, nations, serverTime, colourByTeam, burst
           </g>
         )
       })}
-      {impacts.map((i) => (
+      {movements && impacts.map((i) => (
         <g key={i.key} className="warmap__impact" style={{ ['--nation' as string]: i.colour }}>
           <path d={COUNTRIES[i.targetCode].d} className="warmap__impact-flash" />
           <circle cx={i.at[0]} cy={i.at[1]} r={14} className="warmap__impact-ring" />
           <circle cx={i.at[0]} cy={i.at[1]} r={2.5} className="warmap__impact-core" />
         </g>
       ))}
-      {flights.map((f) => (
+      {movements && flights.map((f) => (
         <TroopArc key={f.key} flight={f} onLand={land} />
       ))}
     </g>

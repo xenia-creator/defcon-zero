@@ -162,6 +162,16 @@
   animation: warmap-blink 1.4s ease-in-out infinite;
 }
 
+/* Showcase loop: amber "Demo" instead of red "Live", so it is never mistaken for the event */
+.warmap__live.is-demo {
+  color: var(--wm-amber);
+}
+
+.warmap__live.is-demo .warmap__live-dot {
+  background: var(--wm-amber);
+  box-shadow: 0 0 8px var(--wm-amber);
+}
+
 @keyframes warmap-blink {
   50% { opacity: 0.25; }
 }
@@ -255,8 +265,10 @@
   transition: fill 1.2s ease, fill-opacity 1.2s ease, stroke 0.6s ease;
 }
 
+/* Claimed, no published result yet: a dim wash of the nation's colour, no glow.
+   Full colour and glow arrive with .is-nation once it is ranked. */
 .warmap__country.is-claimed-unranked {
-  fill: var(--wm-land-claimed);
+  fill: color-mix(in srgb, var(--nation, var(--wm-land-claimed)) 32%, var(--wm-land-claimed));
 }
 
 /* Dark seam rather than a coloured stroke, so bordering nations stay
@@ -294,7 +306,7 @@
 .warmap__events {
   position: absolute;
   left: 32px;
-  bottom: 32px;
+  bottom: 64px; /* clears the Live / Showcase toggle (WarMapPreview, bottom-left) */
   margin: 0;
   padding: 0;
   list-style: none;
@@ -643,7 +655,143 @@
   100% { opacity: 0; stroke-dasharray: 16 30; }
 }
 
+/* Live states: a plate over the map (standby / round in progress / connecting) */
+.warmap__notice {
+  position: absolute;
+  top: 14px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  max-width: calc(100% - 28px);
+  padding: 8px 18px;
+  text-align: center;
+  text-transform: uppercase;
+  background: rgba(11, 15, 18, 0.9);
+  border: 1px solid rgba(245, 165, 38, 0.45);
+  border-top: 2px solid var(--wm-amber);
+  box-shadow: 0 0 18px rgba(245, 165, 38, 0.15);
+  pointer-events: none;
+  animation: warmap-event-in 0.4s ease-out;
+}
+
+.warmap__notice.is-progress {
+  border-color: rgba(32, 201, 94, 0.45);
+  border-top-color: var(--wm-green);
+  box-shadow: 0 0 18px rgba(32, 201, 94, 0.15);
+}
+
+.warmap__notice-title {
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.2em;
+  color: var(--wm-amber);
+}
+
+.warmap__notice.is-progress .warmap__notice-title {
+  color: var(--wm-green);
+}
+
+.warmap__notice-detail {
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  color: var(--wm-muted);
+}
+
+.warmap__board-empty {
+  margin: 0;
+  padding: 14px 0;
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--wm-muted);
+}
+
+/* Poll failed, last good data still shown */
+.warmap__live.is-lost {
+  color: var(--wm-amber);
+}
+
+.warmap__live.is-lost .warmap__live-dot {
+  background: var(--wm-amber);
+  box-shadow: 0 0 8px var(--wm-amber);
+  animation-duration: 0.7s;
+}
+
+/* Cold start, nothing to show: full error with retry */
+.warmap__fault {
+  position: relative;
+  z-index: 1;
+  margin: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  max-width: 440px;
+  padding: 28px 32px;
+  text-align: center;
+  background: rgba(14, 20, 24, 0.92);
+  border: 1px solid var(--wm-red-soft);
+  border-top: 2px solid var(--wm-red);
+  box-shadow: 0 0 24px rgba(229, 37, 60, 0.2);
+}
+
+.warmap__fault-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+  color: var(--wm-red);
+}
+
+.warmap__fault-title {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.warmap__fault-detail {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--wm-muted);
+}
+
+.warmap__retry {
+  margin-top: 6px;
+  padding: 7px 18px;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--wm-red);
+  background: rgba(229, 37, 60, 0.08);
+  border: 1px solid var(--wm-red);
+  cursor: pointer;
+  transition: background 0.2s ease;
+}
+
+.warmap__retry:hover:not(:disabled) {
+  background: rgba(229, 37, 60, 0.2);
+}
+
+.warmap__retry:disabled {
+  opacity: 0.6;
+  cursor: progress;
+}
+
 @media (prefers-reduced-motion: reduce) {
+  .warmap__notice {
+    animation: none;
+  }
   .warmap__impact-ring,
   .warmap__burst-ring,
   .warmap__burst-spark {

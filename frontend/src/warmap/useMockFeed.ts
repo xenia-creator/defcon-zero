@@ -1,20 +1,20 @@
 import { useEffect, useState } from 'react'
-import { mockCurrentRound, mockMovementSequence, mockStandingsSequence, mockTerritories } from './mock'
-import type { Round, StandingsResponse, TerritoriesResponse, TroopMovement } from './types'
+import { mockCurrentRound, mockMovementSequence, mockStandingsSequence, mockTerritories, type ShowcaseFrame } from './mock'
+import type { MapRound, MapTerritory, TroopMovement } from './types'
 
 const NO_MOVES: TroopMovement[] = []
 
 export interface WarMapFeed {
-  round: Round
-  territories: TerritoriesResponse
-  standings: StandingsResponse
-  // Provisional: will come from standings.movements once the backend adds it.
+  round: MapRound
+  territories: MapTerritory[]
+  frame: ShowcaseFrame
+  // Showcase only: the backend sends no movement data (see TroopMovement in types.ts).
   movements: TroopMovement[]
   tick: number
 }
 
-// Stands in for polling GET /standings every intervalMs. Steps through the
-// scripted sequence, holds on the final frame, then loops.
+// SHOWCASE LOOP ONLY. Never feeds the live map (LiveWarMap reads lib/queries).
+// Steps through the scripted sequence every intervalMs, holds on the final frame, then loops.
 export function useMockFeed(intervalMs = 2500, holdFrames = 3): WarMapFeed {
   const [tick, setTick] = useState(0)
 
@@ -30,7 +30,7 @@ export function useMockFeed(intervalMs = 2500, holdFrames = 3): WarMapFeed {
   return {
     round: mockCurrentRound,
     territories: mockTerritories,
-    standings: mockStandingsSequence[index],
+    frame: mockStandingsSequence[index],
     // Quiet during the hold on the final frame.
     movements: step < mockMovementSequence.length ? mockMovementSequence[index] : NO_MOVES,
     tick,

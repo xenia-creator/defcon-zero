@@ -1,33 +1,19 @@
-// Scripted mini-event for the war map. Every object here matches the exact
-// response shapes in docs/api.md so the component can switch to the real API
-// without changes. The one exception is the troop movement stream at the end,
-// which uses the provisional TroopMovement shape from types.ts.
+// Scripted mini-event for the war map's SHOWCASE LOOP (never the live map). Territories and
+// nations use the contract's shapes (lib/contract, docs/api.md v5.3); the troop movement
+// stream at the end uses the showcase-only TroopMovement from types.ts.
 
-import type {
-  Round,
-  StandingsNation,
-  StandingsResponse,
-  TeamStatus,
-  TerritoriesResponse,
-  TroopMovement,
-} from './types'
+import { COUNTRIES } from './worldPaths'
+import type { MapRound, MapTerritory, RoundStatus, StandingsNation, TeamStatus, TroopMovement } from './types'
 
-// GET /rounds/current
-export const mockCurrentRound: Round = {
-  id: 1,
-  number: 1,
-  game: 'prisoners_dilemma',
-  status: 'running',
-  opens_at: '2026-11-12T10:00:00Z',
-  closes_at: '2026-11-12T10:45:00Z',
-  config: {
-    moves: ['C', 'D'],
-    max_modules: 3,
-    block_limit: 40,
-    rounds_per_match: 200,
-    repetitions: 5,
-  },
-  server_time: '2026-11-12T10:30:00Z',
+// The round the showcase pretends is on.
+export const mockCurrentRound: MapRound = { number: 1, game: 'prisoners_dilemma', status: 'running' }
+const MOCK_START_MS = Date.parse('2026-11-12T10:30:00Z')
+
+/** One scripted poll: what GET /standings would have said, plus the server time it was sent at. */
+export interface ShowcaseFrame {
+  roundStatus: RoundStatus
+  nations: StandingsNation[]
+  serverTime: number // ms
 }
 
 const TEAMS = [
@@ -44,20 +30,20 @@ const TEAMS = [
 ] as const
 
 // GET /territories: claimed ones come from TEAMS, plus a few unclaimed.
-export const mockTerritories: TerritoriesResponse = {
-  territories: [
-    ...TEAMS.map((t) => ({
-      territory_code: t.territory_code,
-      claimed: true,
-      nation_name: t.nation_name,
-    })),
-    ...['FR', 'DE', 'ZA', 'MX', 'AR', 'EG', 'NG', 'ID'].map((code) => ({
-      territory_code: code,
-      claimed: false,
-      nation_name: null,
-    })),
-  ],
-}
+export const mockTerritories: MapTerritory[] = [
+  ...TEAMS.map((t) => ({
+    territory_code: t.territory_code,
+    name: COUNTRIES[t.territory_code]?.name ?? t.territory_code,
+    claimed: true,
+    nation_name: t.nation_name as string | null,
+  })),
+  ...['FR', 'DE', 'ZA', 'MX', 'AR', 'EG', 'NG', 'ID'].map((code) => ({
+    territory_code: code,
+    name: COUNTRIES[code]?.name ?? code,
+    claimed: false,
+    nation_name: null,
+  })),
+]
 
 // One frame per poll: score and status per team_id. The script opens mid-round
 // with scores already on the board, so the demo never shows a column of zeros. Rank is derived from
@@ -77,7 +63,7 @@ const FRAMES: Frame[] = [
 
 const STATUS_ORDER: Record<TeamStatus, number> = { active: 0, eliminated: 1, disqualified: 2 }
 
-function buildStandings(frame: Frame, index: number): StandingsResponse {
+function buildFrame(frame: Frame, index: number): ShowcaseFrame {
   const nations: StandingsNation[] = TEAMS.map((t) => {
     const [score, status] = frame[t.team_id]
     return { ...t, status, score, rank: 0 }
@@ -86,17 +72,15 @@ function buildStandings(frame: Frame, index: number): StandingsResponse {
   nations.forEach((n, i) => (n.rank = i + 1))
 
   const last = index === FRAMES.length - 1
-  const serverTime = new Date(Date.parse(mockCurrentRound.server_time) + index * 2000)
   return {
-    round_id: mockCurrentRound.id,
-    round_status: last ? 'published' : 'running',
+    roundStatus: last ? 'published' : 'running',
     nations,
-    server_time: serverTime.toISOString().replace(/\.\d{3}Z$/, 'Z'),
+    serverTime: MOCK_START_MS + index * 2000,
   }
 }
 
-// GET /standings, one response per poll, in order.
-export const mockStandingsSequence: StandingsResponse[] = FRAMES.map(buildStandings)
+// One scripted poll after another, in order.
+export const mockStandingsSequence: ShowcaseFrame[] = FRAMES.map(buildFrame)
 
 // Troop movements (provisional, see TroopMovement in types.ts).
 // Who tends to strike whom, roughly by geography, keyed by team_id.
@@ -129,7 +113,7 @@ function buildMovements(index: number): TroopMovement[] {
   const frame = FRAMES[index]
   const next = FRAMES[index + 1]
   const isActive = (id: number) => frame[id][1] === 'active'
-  const pollStart = Date.parse(mockStandingsSequence[index].server_time)
+  const pollStart = mockStandingsSequence[index].serverTime
   const troops = (min: number, max: number) => Math.round((min + rand() * (max - min)) / 50) * 50
   const moves: { from: number; to: number; troops: number }[] = []
 
