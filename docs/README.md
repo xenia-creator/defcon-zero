@@ -1,0 +1,1 @@
+rules.md: final rules for all three rounds (Prisoner’s Dilemma, Theatre of War, Foreign Aid) and the tie break.

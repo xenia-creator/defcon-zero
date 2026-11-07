@@ -2,7 +2,7 @@
 
 The engine provides reusable game, match, bot registry, tournament, and
 submission-sandbox components. The current implemented behavior and unresolved
-game-rule changes are recorded in [rules.md](./rules.md).
+game-rule changes are recorded in [rules.md](../docs/rules.md).
 
 ## Architecture
 
@@ -31,7 +31,7 @@ turn-count information.
 ### Round 1 — Prisoner's Dilemma
 
 Actions are `"C"` and `"D"`. The existing payoff matrix and ten built-in
-strategies are preserved. See [rules.md](./rules.md).
+strategies are preserved. See [rules.md](../docs/rules.md).
 
 ### Round 2 — Theatre of War
 
@@ -44,7 +44,7 @@ on a tie). Built-ins are `even_split`, `all_in`, `random`,
 
 The sender/receiver roles alternate. Send and return ranges, tripling, exact
 payoffs, and role detection through the existing two-history bot interface are
-specified in [rules.md](./rules.md). Built-ins are
+specified in [rules.md](../docs/rules.md). Built-ins are
 `always_send_10_return_half`, `always_send_0_return_0`, `tit_for_tat`, and
 `random`.
 
