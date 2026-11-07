@@ -125,10 +125,10 @@ Gating lives in `src/app/views.ts`: `viewsFor(session)` says which views a role 
 - **S5 Round gating — done (#25).** Verified workspace handling of `waiting`/`running`/`review`/`published` and "no round yet", surfaced `BAD_RESPONSE` alert when a round has an unknown `game`, and updated the Playwright test `a game this client has never heard of reports a could-not-read error`.
 
 ### Playwright (`e2e/team.spec.ts`) is stale. Split by area:
-- **S, login/session:** `hammering Enter logs in once` and `an expired token…` (the button is now "Request Clearance"); `an organiser account gets a message…` (organisers now get the War map + Command Console, not a message); `a gateway error at login reads plainly`; `logging out returns to login…`.
-- **S, claim:** every test in `claiming a country` (unknown territory is now 400; check the copy and button names).
-- **S, workspace:** `submitting`, `the timer`, `the three rounds`, `blocks*`, `during the window`, `layout and wording`. Re-check selectors against the current UI. `a fallen team sees why` still uses `/__mock/team`.
-- **S, contract guard:** `routes outside the contract are never called…`. Update its allow-list for `/standings`, `/rounds` and `/admin/*` if it runs as an organiser.
+- **S, login/session — done (#25, S3):** `hammering Enter logs in once` and `an expired token…` (the button is now "Request Clearance"); `an organiser account gets the war map and command console, not a team screen`; `a gateway error at login reads plainly`; `logging out returns to login…`; spectator button session test.
+- **S, claim — done (#25, S3):** every test in `claiming a country` updated for "Lock in", `NAME_TAKEN` focus, and `ALREADY_CLAIMED` `/me` recovery.
+- **S, workspace — done (#25, S3):** `submitting`, `the timer`, `the three rounds` (Round 2 troop map, Round 3 trust game, strict unknown-game error), `blocks for round 1`, `during the window`, `layout and wording` all green (67/67 passed).
+- **S, contract guard — done (#25, S3):** `routes outside the contract are never called…` passes.
 - **Knock-on effects of the Session 0 mock rewrite** (not yet run, expected to show up when the suite is revived):
   - `/__mock/take` now creates a real other team (`taker_<code>`), which appears in `/admin/overview` and on the map.
   - `/__mock/round {game: 'surprise'}` gives "could not read" (strict `game`, see S5).
