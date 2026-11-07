@@ -1,9 +1,10 @@
 # DEFCON Zero API Contract
 
-Status: draft v5.1. Changes in v5.1 are marked **[v5.1]**, and changes in v5 are marked **[v5]**. Older **[v4]** markers are from v4, and **[NEW]** and **[CHANGED]** markers are from v3.
+Status: draft v5.2. Changes in v5.2 are marked **[v5.2]**, changes in v5.1 are marked **[v5.1]**, and changes in v5 are marked **[v5]**. Older **[v4]** markers are from v4, and **[NEW]** and **[CHANGED]** markers are from v3.
 Owner: Sumedh (backend). Engine signatures owned by Shashwat.
 
 Changelog:
+- v5.2: `POST /admin/rounds/{id}/retry` added, to rerun a round's matches after a failed run. `start` now plays the matches in the background, and the round moves to `review` when they are stored. `GET /standings` only shows published results, and its ranking rules are written down in section 6.
 - v5.1: The engine now supports all three games, so `not available yet` is gone. `check.test_results` has one entry per sample bot, and a bot that fails during a match is `rejected` with its `test_results` still included. Example `opponent` values corrected.
 - v5: Final rules for all three games in section 8. `config.moves` is empty for `theatre_of_war` and `foreign_aid`. `config` gains `troops` and `regions` for `theatre_of_war`, and `endowment` and `multiplier` for `foreign_aid`. Scoring for Theatre of War and Foreign Aid added. All scores are floats. `POST /admin/rounds/{id}/open` takes `minutes` instead of `closes_at`, `minutes` must be 1 to 240, and rounds must open in order. `POST /submissions` limits `code`, `blocks` and `Idempotency-Key` sizes and lists more errors. The server checks `max_modules` but not `block_limit`. `check.test_results` stays empty until the new engine version lands.
 - v4: `GET /territories` returns a `name` for each territory. Nation name rules added to `POST /teams/claim`. `team_id` is also `null` for teams that have not claimed yet. `GET /me` gains `team_id`, and its `id` is confirmed as the user id. Usernames are case-insensitive.
@@ -185,11 +186,14 @@ Response `200`: a single Round object, or `404 NOT_FOUND` if no round has starte
 | `POST /admin/rounds/{id}/open` | `waiting` | `{ "minutes": 45 }` **[v5]** |
 | `POST /admin/rounds/{id}/extend` | `open` | `{ "minutes": 10 }` |
 | `POST /admin/rounds/{id}/start` | `open` | none |
+| `POST /admin/rounds/{id}/retry` **[v5.2]** | `running` | none |
 | `POST /admin/rounds/{id}/publish` | `review` | none |
 
 All return the updated Round object. Invalid transitions return `409 INVALID_ROUND_TRANSITION`.
 
 **[v5]** `open` sets `opens_at` to now and `closes_at` to now plus `minutes`. `extend` adds `minutes` to `closes_at`. `start` sets `closes_at` to now, which closes the window.
+
+**[v5.2]** After `start`, the matches play in the background and the round stays `running` until every match is stored, then moves to `review` by itself. Poll `GET /rounds/current` to see it change. If the run fails, the round stays `running`, and `retry` plays the matches again from the beginning. `retry` returns `409 INVALID_ROUND_TRANSITION` if the round is not `running`, or if its matches are still being played.
 
 **[v5]** `minutes` must be 1 to 240, otherwise `400 VALIDATION_ERROR`.
 
@@ -308,6 +312,18 @@ Polled by the war map every 2 seconds. WebSockets will replace polling later wit
 ```
 
 `status` drives the map: `active` shows normally, `eliminated` fades out, `disqualified` is shown as disqualified.
+
+**[v5.2]** Rules:
+- `round_id` and `round_status` are the current round, the same one as `GET /rounds/current`. Before any round has started, this returns `404 NOT_FOUND`.
+- **Results stay private until published.** `score` and `rank` only ever come from `published` rounds. While a round is `running` or in `review`, `nations` keeps showing the last published results. Organisers see the new scores through `GET /admin/overview`.
+- Each nation shows its result from the latest published round it played. A nation knocked out in round 1 keeps its round 1 `score` and `rank`. A nation with no published result yet is left out, so `nations` is `[]` until the first round is published.
+- `status` is always the team's status now, so a disqualification shows at once.
+- `nations` is sorted by `rank`, best first.
+- `rank` is a position, 1 to N, with no equal ranks. Within a round:
+  1. Teams that played, by total score. Teams on the same score are ordered by head-to-head wins against each other, then by a seeded draw.
+  2. Teams with no accepted submission, with score 0.
+  3. Teams disqualified during the round, with score 0.
+- A round's score is the sum of the team's match scores. Matches with a bot that failed during the round do not count, so every remaining team is scored on the same opponents.
 
 ---
 

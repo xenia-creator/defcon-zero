@@ -11,6 +11,7 @@ from app.core.rounds import ROUND_DEFINITIONS, RoundDefinition
 from app.models.round import Round as RoundRow
 from app.repositories import rounds as rounds_repository
 from app.schemas.rounds import Round, RoundsResponse
+from app.services import round_runs
 
 
 async def create_missing_rounds(
@@ -139,11 +140,40 @@ async def start_round(db: AsyncSession, round_id: int) -> Round:
 
     closes_at moves to now because the contract plays the latest submission
     created before closes_at, so it must stay true when a round starts early.
-    The matches themselves are not started here. That comes in Session 4.
+
+    The seed is chosen here, once, and saved with the status change, so every
+    retry or resume of this round plays the same matches. The matches are not
+    played here: the router starts round_runs.run_round once this has committed.
     """
     row = await lock_round_in_status(db, round_id, "open")
     now = datetime.now(UTC)
     row.status = "running"
     row.closes_at = now
+    row.seed = round_runs.new_seed()
     await db.commit()
     return build_round(row, now)
+
+
+async def retry_round(db: AsyncSession, round_id: int) -> Round:
+    """Accept a retry of a running round whose run crashed. Changes nothing itself.
+
+    The router starts the run again once this returns. The lock makes a retry
+    that arrives as the run finishes wait, and then see review and get a 409.
+
+    A round being run right now also gets a 409. That check is the polite answer
+    for the organiser. Two retries a moment apart could both pass it, as the run
+    starts after the response, and round_runs.run_round is what makes the second
+    one do nothing.
+    """
+    row = await lock_round_in_status(db, round_id, "running")
+    if round_runs.is_in_progress(round_id):
+        raise AppError(
+            "INVALID_ROUND_TRANSITION",
+            "This round's matches are still being played.",
+            409,
+        )
+    # Nothing changed, but the transaction must still end here to release the
+    # lock. FastAPI runs background tasks before it closes the request's session,
+    # so a lock left open would make the run's own save wait on it forever.
+    await db.commit()
+    return build_round(row, datetime.now(UTC))

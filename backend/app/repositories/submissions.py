@@ -1,12 +1,14 @@
 """Database queries for the submissions table. All queries live in repositories."""
 
 from collections.abc import Sequence
+from datetime import datetime
 from typing import Any
 
-from sqlalchemy import Row, func, select
+from sqlalchemy import Row, exists, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.submission import Submission
+from app.models.team import Team
 
 
 async def get_by_id(db: AsyncSession, submission_id: int) -> Submission | None:
@@ -96,3 +98,44 @@ async def create_submission(
     db.add(submission)
     await db.flush()
     return submission
+
+
+async def has_unfinished_in_round(db: AsyncSession, round_id: int) -> bool:
+    """Return True if any submission in this round is still pending or running."""
+    result = await db.execute(
+        select(
+            exists().where(
+                Submission.round_id == round_id,
+                Submission.status.in_(("pending", "running")),
+            )
+        )
+    )
+    return result.scalar_one()
+
+
+async def get_playing_codes(
+    db: AsyncSession, round_id: int, closes_at: datetime
+) -> dict[int, str]:
+    """Return the bot that plays for each active team, as team id to code.
+
+    The contract's rule: the latest accepted submission created before closes_at.
+    DISTINCT ON (team_id) is a Postgres feature that keeps the first row of each
+    team in the ORDER BY, which here is the highest version. That picks one
+    submission per team in a single query, instead of one query per team.
+
+    Only active teams play, so an eliminated or disqualified team's last bot from
+    this round is left out. A team with no accepted submission is simply absent.
+    """
+    result = await db.execute(
+        select(Submission.team_id, Submission.code)
+        .join(Team, Team.id == Submission.team_id)
+        .where(
+            Submission.round_id == round_id,
+            Submission.status == "accepted",
+            Submission.created_at < closes_at,
+            Team.status == "active",
+        )
+        .distinct(Submission.team_id)
+        .order_by(Submission.team_id, Submission.version.desc())
+    )
+    return {row.team_id: row.code for row in result}

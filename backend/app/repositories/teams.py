@@ -1,6 +1,6 @@
 """Database queries for the teams table. All queries live in repositories."""
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.team import Team
@@ -39,3 +39,21 @@ async def get_team_by_id(db: AsyncSession, team_id: int) -> Team | None:
     """Return the team with this id, or None if there is no such team."""
     result = await db.execute(select(Team).where(Team.id == team_id))
     return result.scalar_one_or_none()
+
+
+async def set_status_for_teams(db: AsyncSession, team_ids: list[int], status: str) -> None:
+    """Give every team in the list this status, in one UPDATE, without committing."""
+    if not team_ids:
+        return
+    await db.execute(update(Team).where(Team.id.in_(team_ids)).values(status=status))
+
+
+async def list_active_team_ids(db: AsyncSession) -> list[int]:
+    """Return the ids of every active team, in id order.
+
+    A team row only exists once a territory is claimed, so every team here has one.
+    """
+    result = await db.execute(
+        select(Team.id).where(Team.status == "active").order_by(Team.id)
+    )
+    return list(result.scalars())

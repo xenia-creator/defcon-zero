@@ -12,7 +12,6 @@ from datetime import UTC, datetime
 
 from app.schemas.auth import LoginResponse
 from app.schemas.rounds import Round, RoundConfig
-from app.schemas.standings import NationStanding, StandingsResponse
 from app.schemas.teams import TeamProfile
 
 # One frozen clock for every response. It never ticks, so a frontend timer will
@@ -58,19 +57,3 @@ FAKE_OPEN_ROUND = Round(
 
 # model_copy reuses the round above and changes only what publishing changes.
 FAKE_PUBLISHED_ROUND = FAKE_OPEN_ROUND.model_copy(update={"status": "published"})
-
-FAKE_STANDINGS = StandingsResponse(
-    round_id=1,
-    round_status="published",
-    nations=[
-        NationStanding(
-            team_id=7,
-            nation_name="Red Dawn",
-            territory_code="RU",
-            status="active",
-            score=3120,
-            rank=1,
-        )
-    ],
-    server_time=FAKE_SERVER_TIME,
-)

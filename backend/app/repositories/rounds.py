@@ -97,3 +97,11 @@ async def get_latest_started_round(db: AsyncSession) -> Round | None:
         .limit(1)
     )
     return result.scalar_one_or_none()
+
+
+async def list_running_ids(db: AsyncSession) -> list[int]:
+    """Return the ids of rounds left running, in event order."""
+    result = await db.execute(
+        select(Round.id).where(Round.status == "running").order_by(Round.number)
+    )
+    return list(result.scalars())

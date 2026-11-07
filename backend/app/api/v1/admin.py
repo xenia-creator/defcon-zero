@@ -1,7 +1,7 @@
 """Organiser routes (docs/api.md sections 4 and 7).
 
-Opening, extending and starting a round are real. Publishing a round and changing
-a team's status are still stubs, but they already require an organiser.
+Opening, extending, starting and retrying a round are real. Publishing a round
+and changing a team's status are still stubs, but they already require an organiser.
 
 The contract writes these paths with {id}. Naming it round_id or team_id changes
 nothing in the URL and avoids shadowing Python's built-in id().
@@ -9,7 +9,7 @@ nothing in the URL and avoids shadowing Python's built-in id().
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, BackgroundTasks, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.dependencies import CurrentOrganiser, PathId
@@ -17,6 +17,7 @@ from app.api.v1.stub_data import FAKE_DISQUALIFIED_TEAM, FAKE_PUBLISHED_ROUND
 from app.core.database import get_db
 from app.schemas.rounds import ExtendRoundRequest, OpenRoundRequest, Round
 from app.schemas.teams import TeamProfile, TeamStatusUpdate
+from app.services import round_runs
 from app.services import rounds as rounds_service
 
 router = APIRouter(prefix="/admin", tags=["admin"])
@@ -47,8 +48,25 @@ async def start_round(
     round_id: PathId,
     organiser: CurrentOrganiser,
     db: Annotated[AsyncSession, Depends(get_db)],
+    background_tasks: BackgroundTasks,
 ) -> Round:
-    return await rounds_service.start_round(db, round_id)
+    started = await rounds_service.start_round(db, round_id)
+    # As with submission checks: the run is added only after the service has
+    # committed, so it always finds the round running with its seed saved.
+    background_tasks.add_task(round_runs.run_round, round_id)
+    return started
+
+
+@router.post("/rounds/{round_id}/retry")
+async def retry_round(
+    round_id: PathId,
+    organiser: CurrentOrganiser,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    background_tasks: BackgroundTasks,
+) -> Round:
+    retried = await rounds_service.retry_round(db, round_id)
+    background_tasks.add_task(round_runs.run_round, round_id)
+    return retried
 
 
 @router.post("/rounds/{round_id}/publish")
