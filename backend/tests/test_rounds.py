@@ -10,7 +10,12 @@ import pytest
 from app.core.database import SessionLocal
 from app.repositories import rounds as rounds_repository
 from app.services.rounds import create_missing_rounds
-from tests.conftest import assert_error, run_sql, wait_until_a_query_is_blocked
+from tests.conftest import (
+    assert_error,
+    bearer,
+    run_sql,
+    wait_until_a_query_is_blocked,
+)
 
 SHARED_CONFIG_KEYS = {
     "moves",
@@ -65,11 +70,32 @@ async def test_creating_rounds_twice_leaves_existing_rounds_alone(
 # --- GET /rounds and GET /rounds/current ---
 
 
-@pytest.mark.parametrize("path", ["/rounds", "/rounds/current"])
-async def test_reading_rounds_needs_a_token(
-    client: httpx.AsyncClient, path: str
+async def test_listing_rounds_needs_a_token(client: httpx.AsyncClient) -> None:
+    assert_error(await client.get("/rounds"), 401, "UNAUTHENTICATED")
+
+
+async def test_current_round_works_without_a_token(
+    client: httpx.AsyncClient, organiser: dict[str, str], round_ids: dict[int, int]
 ) -> None:
-    assert_error(await client.get(path), 401, "UNAUTHENTICATED")
+    """Public, like /standings: the spectator war map reads it without logging in."""
+    await open_round(client, organiser, round_ids[1])
+
+    response = await client.get("/rounds/current")
+
+    assert response.status_code == 200
+    assert response.json()["id"] == round_ids[1]
+
+
+async def test_current_round_ignores_a_bad_token(
+    client: httpx.AsyncClient, organiser: dict[str, str], round_ids: dict[int, int]
+) -> None:
+    """A public route never reads the header, so a stale token is not a 401."""
+    await open_round(client, organiser, round_ids[1])
+
+    response = await client.get("/rounds/current", headers=bearer("not.a.token"))
+
+    assert response.status_code == 200
+    assert response.json()["id"] == round_ids[1]
 
 
 async def test_list_shows_three_waiting_rounds_with_their_config(

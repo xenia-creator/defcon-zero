@@ -1,9 +1,10 @@
 # DEFCON Zero API Contract
 
-Status: draft v5.2. Changes in v5.2 are marked **[v5.2]**, changes in v5.1 are marked **[v5.1]**, and changes in v5 are marked **[v5]**. Older **[v4]** markers are from v4, and **[NEW]** and **[CHANGED]** markers are from v3.
+Status: draft v5.3. Changes in v5.3 are marked **[v5.3]**, changes in v5.2 are marked **[v5.2]**, changes in v5.1 are marked **[v5.1]**, and changes in v5 are marked **[v5]**. Older **[v4]** markers are from v4, and **[NEW]** and **[CHANGED]** markers are from v3.
 Owner: Sumedh (backend). Engine signatures owned by Shashwat.
 
 Changelog:
+- v5.3: `GET /rounds/current` is public, like `GET /territories` and `GET /standings`. It never shows scores. `GET /rounds` still needs a token.
 - v5.2: `POST /admin/rounds/{id}/retry` added, to rerun a round's matches after a failed run. `start` now plays the matches in the background, and the round moves to `review` when they are stored. `GET /standings` only shows published results, and its ranking rules are written down in section 6. `GET /territories` and `GET /standings` are public. `publish` applies the cut (top 15, then 8, then 2). `PATCH /admin/teams/{id}` is real. Disqualifying a team before publish moves it to the bottom of its round, and restoring it in `review` gives back its place. `GET /admin/overview` added.
 - v5.1: The engine now supports all three games, so `not available yet` is gone. `check.test_results` has one entry per sample bot, and a bot that fails during a match is `rejected` with its `test_results` still included. Example `opponent` values corrected.
 - v5: Final rules for all three games in section 8. `config.moves` is empty for `theatre_of_war` and `foreign_aid`. `config` gains `troops` and `regions` for `theatre_of_war`, and `endowment` and `multiplier` for `foreign_aid`. Scoring for Theatre of War and Foreign Aid added. All scores are floats. `POST /admin/rounds/{id}/open` takes `minutes` instead of `closes_at`, `minutes` must be 1 to 240, and rounds must open in order. `POST /submissions` limits `code`, `blocks` and `Idempotency-Key` sizes and lists more errors. The server checks `max_modules` but not `block_limit`. `check.test_results` stays empty until the new engine version lands.
@@ -13,7 +14,7 @@ Changelog:
 
 ## 1. Conventions
 
-- **Auth:** every route except `POST /auth/login`, `GET /health`, `GET /territories` and `GET /standings` needs `Authorization: Bearer <token>`. **[v5.2]** `GET /territories` and `GET /standings` are public so the spectator war map works without logging in. A public route ignores the `Authorization` header, so a missing, invalid or expired token is never a 401 there.
+- **Auth:** every route except `POST /auth/login`, `GET /health`, `GET /territories`, `GET /standings` and `GET /rounds/current` needs `Authorization: Bearer <token>`. **[v5.2]** `GET /territories` and `GET /standings` are public, and **[v5.3]** so is `GET /rounds/current`, so the spectator war map works without logging in. A public route ignores the `Authorization` header, so a missing, invalid or expired token is never a 401 there.
 - **Timestamps:** ISO 8601, UTC, for example `2026-11-12T10:30:00Z`.
 - **server_time:** every round and submission response includes `server_time`. Timers on the frontend must be computed as `closes_at - server_time`, never from the client clock.
 - **IDs:** integers.
@@ -178,6 +179,8 @@ Response `200`:
 Response `200`: `{ "rounds": [Round, ...], "server_time": "..." }`
 
 ### `GET /rounds/current`
+
+**[v5.3]** Public route: no token needed. A Round never includes scores, so it is safe to show spectators. `GET /rounds` still needs a token.
 
 Response `200`: a single Round object, or `404 NOT_FOUND` if no round has started.
 

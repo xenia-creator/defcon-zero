@@ -22,9 +22,12 @@ async def list_rounds(
     return await rounds_service.list_rounds(db)
 
 
+# Public, like /standings and /territories: no CurrentUser, so no token is
+# needed and a stale or invalid token is ignored rather than a 401. The
+# spectator war map uses it for the round timer. That is safe because a Round
+# never carries scores, only its number, game, status, window and config.
 @router.get("/current")
 async def get_current_round(
-    user: CurrentUser,
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> Round:
     return await rounds_service.get_current_round(db)
