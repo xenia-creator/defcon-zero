@@ -27,6 +27,8 @@ TERRITORIES: dict[str, str] = {
     "NL": "Netherlands",
     "SE": "Sweden",
     "NO": "Norway",
+    "DK": "Denmark",
+    "FI": "Finland",
     "PL": "Poland",
     "GR": "Greece",
     "UA": "Ukraine",
