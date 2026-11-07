@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useServerNow } from '../lib/clock'
 import { useCurrentRound, useStandings, useTerritoryList } from '../lib/queries'
-import { boardEmptyText, connection, liveNotice } from './liveState'
+import { boardState, connection, liveNotice } from './liveState'
 import type { MapRound, MapTerritory, StandingsNation } from './types'
 import { useMockFeed } from './useMockFeed'
 import { WarMap, WarMapFault } from './WarMap'
@@ -92,7 +92,7 @@ function LiveWarMap({ showStandings }: { showStandings: boolean }) {
       showStandings={showStandings}
       notice={liveNotice({ conn, round, ranked: nations.length })}
       signalLost={conn === 'degraded'}
-      boardEmpty={boardEmptyText(round)}
+      board={boardState(round, nations.length)}
     />
   )
 }
@@ -108,6 +108,8 @@ function ShowcaseWarMap({ showStandings }: { showStandings: boolean }) {
       serverTime={frame.serverTime}
       movements={movements}
       showStandings={showStandings}
+      // The scripted loop ranks round 1 as it plays; it is labelled Demo, never live.
+      board={{ kind: 'results', resultsRound: round.number, current: { number: round.number, status: frame.roundStatus } }}
       demo
     />
   )

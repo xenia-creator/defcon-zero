@@ -3,39 +3,10 @@ import { COUNTRIES, LAT_BOTTOM, LAT_TOP, MAP_HEIGHT, MAP_WIDTH, projectX, projec
 import { defconLevel, gameName, roundByGame } from '../lib/rounds'
 import { AmbientBackground } from './AmbientBackground'
 import { TroopLayer } from './TroopLayer'
+import { boardHeading, type BoardState } from './liveState'
+import { nationColour } from './palette'
 import type { MapNotice, MapRound, MapTerritory, StandingsNation, TeamStatus, TroopMovement } from './types'
 import './WarMap.css'
-
-// Pinned colours per nation name. Chosen so bordering territories get far-apart
-// hues: RU red / CN jade / KZ violet / JP gold, US blue / CA orange, IN rose vs CN jade.
-const NATION_COLOUR_BY_NAME: Record<string, string> = {
-  'Red Dawn': '#E5253C', // red
-  'Jade Dynasty': '#00C27A', // jade
-  'Liberty Bloc': '#3D7BFF', // blue
-  'Amazon Pact': '#FF2BD6', // magenta
-  'Sahara Front': '#F5A526', // amber
-  'Maple Accord': '#FF6A1A', // orange
-  'Iron Steppe': '#A855F7', // violet
-  'Rising Sun': '#FFE53B', // gold
-  'Monsoon Union': '#FF5C93', // rose
-  'Southern Cross': '#00E5FF', // cyan
-}
-
-// Fallback for unmapped nations: a fixed colour per territory code (see fallbackColour), so a
-// nation's colour never depends on who else has claimed, and stays the same from claim to ranked.
-// Neighbouring nations may share a colour; a neighbour-aware palette is N2.
-const FALLBACK_COLOURS = [
-  '#00E5FF', // cyan
-  '#20C95E', // green
-  '#FF2BD6', // magenta
-  '#F5A526', // amber
-  '#3D7BFF', // electric blue
-  '#FF6A1A', // orange
-  '#A855F7', // violet
-  '#D4FF2B', // lime
-  '#FFE53B', // gold
-  '#E5253C', // red
-]
 
 const STATUS_LABELS: Record<TeamStatus, string> = {
   active: 'Active',
@@ -71,8 +42,8 @@ interface WarMapProps {
   notice?: MapNotice | null
   /** A poll failed but the last good data is still on screen. */
   signalLost?: boolean
-  /** What the leaderboard says when there are no published results. */
-  boardEmpty?: string
+  /** The public leaderboard: the latest published standings, or why there are none (liveState boardState). */
+  board: BoardState
 }
 
 export function WarMap({
@@ -85,7 +56,7 @@ export function WarMap({
   demo = false,
   notice = null,
   signalLost = false,
-  boardEmpty = 'No published results yet',
+  board,
 }: WarMapProps) {
   // Claimed territories with their nation name, from /territories; ranked nations fill any gap.
   const claimedByCode = useMemo(() => {
@@ -95,8 +66,9 @@ export function WarMap({
     return named
   }, [territories, nations])
 
+  // One fixed colour per territory code, neighbours always apart (palette.ts); never by nation name.
   const colourByCode = useMemo(
-    () => new Map([...claimedByCode].map(([code, name]) => [code, NATION_COLOUR_BY_NAME[name] ?? fallbackColour(code)])),
+    () => new Map([...claimedByCode.keys()].map((code) => [code, nationColour(code)])),
     [claimedByCode],
   )
 
@@ -113,7 +85,11 @@ export function WarMap({
   const claimedCount = territories.filter((t) => t.claimed).length
   const topScore = Math.max(1, ...nations.map((n) => n.score))
 
-  // Stable DOM order so rank changes animate as a slide rather than a re-render.
+  // Each row's slot is its position in the server's list (sorted by rank, api.md §6), not its rank:
+  // ranks are only unique within a round, and a nation knocked out earlier keeps its old round's
+  // rank, so two rows can share one. The DOM order stays by team_id so moves animate as a slide.
+  const heading = board.kind === 'results' && nations.length > 0 ? boardHeading(board) : null
+  const slotByTeam = useMemo(() => new Map(nations.map((n, i) => [n.team_id, i])), [nations])
   const rows = useMemo(() => [...nations].sort((a, b) => a.team_id - b.team_id), [nations])
 
   // Draw nations last so their glow and borders sit above neighbouring land.
@@ -259,19 +235,50 @@ export function WarMap({
         </section>
 
         {showStandings && (
-          <aside className="warmap__board" aria-label="Leaderboard">
-            <h2 className="warmap__board-title">Standings</h2>
-            {rows.length === 0 && <p className="warmap__board-empty">{boardEmpty}</p>}
-            <ol className="warmap__rows" style={{ height: rows.length * ROW_HEIGHT }}>
-              {rows.map((n) => (
-                <LeaderRow
-                  key={n.team_id}
-                  nation={n}
-                  colour={colourByCode.get(n.territory_code) ?? '#5A6472'}
-                  share={n.score / topScore}
-                />
-              ))}
-            </ol>
+          <aside className="warmap__board" aria-label={heading ? `Leaderboard: ${heading.title}` : 'Leaderboard'}>
+            <header className="warmap__board-head">
+              <h2 className="warmap__board-title">Standings</h2>
+              {heading && (
+                <>
+                  <p className="warmap__board-round">{heading.title}</p>
+                  {heading.sub && (
+                    <p className="warmap__board-pending" role="status">
+                      <span className="warmap__await-dot" /> {heading.sub}
+                    </p>
+                  )}
+                </>
+              )}
+            </header>
+            {board.kind === 'awaiting' || rows.length === 0 ? (
+              <div className="warmap__await" role="status">
+                <span className="warmap__await-title">
+                  <span className="warmap__await-dot" /> {board.kind === 'awaiting' ? board.title : 'Awaiting results'}
+                </span>
+                {board.kind === 'awaiting' && <span className="warmap__await-detail">{board.detail}</span>}
+              </div>
+            ) : (
+              <>
+                <div className="warmap__cols" aria-hidden="true">
+                  <span>Rank</span>
+                  <span>Nation</span>
+                  <span>Score</span>
+                </div>
+                <ol className="warmap__rows" style={{ height: rows.length * ROW_HEIGHT }}>
+                  {rows.map((n) => (
+                    <LeaderRow
+                      key={n.team_id}
+                      nation={n}
+                      slot={slotByTeam.get(n.team_id) ?? 0}
+                      colour={colourByCode.get(n.territory_code) ?? '#5A6472'}
+                      share={Math.max(0, n.score) / topScore}
+                    />
+                  ))}
+                </ol>
+                <p className="warmap__board-foot">
+                  <strong>{activeCount}</strong> standing · {nations.length} ranked
+                </p>
+              </>
+            )}
           </aside>
         )}
       </main>
@@ -298,12 +305,14 @@ export function WarMapFault({ onRetry, retrying }: { onRetry: () => void; retryi
   )
 }
 
-function LeaderRow({ nation, colour, share }: { nation: StandingsNation; colour: string; share: number }) {
+function LeaderRow({ nation, slot, colour, share }: { nation: StandingsNation; slot: number; colour: string; share: number }) {
   return (
     <li
-      className={`warmap__row is-${nation.status} ${nation.rank === 1 ? 'is-leader' : ''}`}
-      style={{ transform: `translateY(${(nation.rank - 1) * ROW_HEIGHT}px)`, ['--nation' as string]: colour }}
+      className={`warmap__row is-${nation.status} ${slot === 0 ? 'is-leader' : ''}`}
+      style={{ transform: `translateY(${slot * ROW_HEIGHT}px)`, ['--nation' as string]: colour }}
+      aria-label={`Rank ${nation.rank}: ${nation.nation_name} (${nation.territory_code}), ${formatScore(nation.score)} points, ${STATUS_LABELS[nation.status]}`}
     >
+      {/* The server's rank, shown as sent; never recomputed from the score. */}
       <span className="warmap__rank">{String(nation.rank).padStart(2, '0')}</span>
       <span className="warmap__swatch" />
       <span className="warmap__name">
@@ -311,7 +320,7 @@ function LeaderRow({ nation, colour, share }: { nation: StandingsNation; colour:
         <span className="warmap__code">{nation.territory_code}</span>
       </span>
       <span className="warmap__score">
-        {nation.score.toLocaleString()}
+        {formatScore(nation.score)}
         {nation.status !== 'active' && <span className="warmap__tag">{STATUS_LABELS[nation.status]}</span>}
       </span>
       <span className="warmap__bar" style={{ transform: `scaleX(${share})` }} />
@@ -395,11 +404,11 @@ function useStatusEvents(nations: StandingsNation[]): WarEvent[] {
   return events
 }
 
-/** Deterministic (FNV-1a of the code): the same territory always gets the same fallback colour. */
-function fallbackColour(code: string) {
-  let h = 0x811c9dc5
-  for (const ch of code) h = Math.imul(h ^ ch.charCodeAt(0), 0x01000193) >>> 0
-  return FALLBACK_COLOURS[h % FALLBACK_COLOURS.length]
+// Scores are floats (Theatre of War gives half points, api.md §8). Fixed locale so the projector
+// reads the same whatever machine drives it; up to two decimals, so nothing the server sent is hidden.
+const SCORE_FORMAT = new Intl.NumberFormat('en-GB', { maximumFractionDigits: 2 })
+function formatScore(score: number) {
+  return SCORE_FORMAT.format(score)
 }
 
 function formatClock(ms: number) {
