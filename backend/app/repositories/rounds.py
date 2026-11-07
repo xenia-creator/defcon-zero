@@ -97,3 +97,35 @@ async def get_latest_started_round(db: AsyncSession) -> Round | None:
         .limit(1)
     )
     return result.scalar_one_or_none()
+
+
+async def list_running_ids(db: AsyncSession) -> list[int]:
+    """Return the ids of rounds left running, in event order."""
+    result = await db.execute(
+        select(Round.id).where(Round.status == "running").order_by(Round.number)
+    )
+    return list(result.scalars())
+
+
+async def get_latest_started_round_for_share(db: AsyncSession) -> Round | None:
+    """Like get_latest_started_round, but holding a shared lock until the transaction ends.
+
+    For a team status change, which must not run alongside a publish or the end
+    of a run, as both of those read team statuses. FOR SHARE blocks their
+    FOR UPDATE but not other readers, so submits do not queue behind it.
+    """
+    result = await db.execute(
+        select(Round)
+        .where(Round.status != "waiting")
+        .order_by(Round.number.desc())
+        .limit(1)
+        .with_for_update(read=True)
+        .execution_options(populate_existing=True)
+    )
+    return result.scalar_one_or_none()
+
+
+async def get_first_round(db: AsyncSession) -> Round | None:
+    """Return the lowest-numbered round, or None if no rounds exist yet."""
+    result = await db.execute(select(Round).order_by(Round.number).limit(1))
+    return result.scalar_one_or_none()

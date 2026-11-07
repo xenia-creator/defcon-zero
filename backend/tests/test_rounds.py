@@ -314,11 +314,13 @@ async def test_minutes_limits_are_inclusive(
 
 # --- Organiser only ---
 
-# The stubs are listed too: publish and PATCH must already refuse teams.
+# Every admin route that takes an id. GET /admin/overview has none, so its
+# auth is tested in test_admin_overview.py.
 ADMIN_CALLS = [
     ("POST", "/admin/rounds/{id}/open", {"minutes": 5}),
     ("POST", "/admin/rounds/{id}/extend", {"minutes": 5}),
     ("POST", "/admin/rounds/{id}/start", None),
+    ("POST", "/admin/rounds/{id}/retry", None),
     ("POST", "/admin/rounds/{id}/publish", None),
     ("PATCH", "/admin/teams/{id}", {"status": "disqualified"}),
 ]
@@ -373,7 +375,7 @@ async def test_admin_ids_out_of_range_are_a_400_not_a_crash(
     assert_error(response, 400, "VALIDATION_ERROR")
 
 
-@pytest.mark.parametrize("method,path,body", ADMIN_CALLS[:3])
+@pytest.mark.parametrize("method,path,body", ADMIN_CALLS)
 async def test_highest_possible_id_is_a_clean_404(
     client: httpx.AsyncClient,
     organiser: dict[str, str],

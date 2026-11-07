@@ -21,5 +21,7 @@ class Standing(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     round_id: Mapped[int] = mapped_column(ForeignKey("rounds.id"))
     team_id: Mapped[int] = mapped_column(ForeignKey("teams.id"))
-    score: Mapped[int]
+    # A float because Theatre of War gives half points for a tied turn, and
+    # docs/api.md section 8 makes every score a float in every game.
+    score: Mapped[float]
     rank: Mapped[int]

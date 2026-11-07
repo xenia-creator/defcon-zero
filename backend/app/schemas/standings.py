@@ -11,7 +11,8 @@ class NationStanding(BaseModel):
     nation_name: str
     territory_code: str
     status: TeamStatus
-    score: int
+    # A float in every game, per docs/api.md section 8.
+    score: float
     rank: int
 
 

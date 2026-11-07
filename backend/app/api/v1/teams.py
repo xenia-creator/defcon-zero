@@ -24,11 +24,13 @@ async def claim_territory(
     )
 
 
+# Public, like /health: no CurrentUser, so no token is needed. The war map's
+# spectator view shows it without logging in, and it only reveals which
+# territories are claimed and the nation names, which the map shows anyway.
+# Without the dependency the Authorization header is never read, so a stale
+# token from a logged-in browser is ignored rather than answered with 401.
 @router.get("/territories")
 async def list_territories(
-    user: CurrentUser,
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> TerritoriesResponse:
-    # `user` is unused in the body. Declaring it is what requires a valid token,
-    # because the contract only leaves login and /health public.
     return await teams_service.list_territories(db)

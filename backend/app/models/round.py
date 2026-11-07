@@ -1,12 +1,13 @@
 """The rounds table: one stage of the event (docs/api.md section 4).
 
 server_time is not stored: it is the current time, added to each response.
+seed is stored but never returned: see the column below.
 """
 
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import DateTime, UniqueConstraint
+from sqlalchemy import BigInteger, DateTime, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -34,3 +35,9 @@ class Round(Base):
     # JSONB because the app always reads config as a whole and its keys belong
     # to the API schema, so separate columns would only add migrations.
     config: Mapped[dict[str, Any]] = mapped_column(JSONB)
+    # Chosen at random when the round starts, and null before. It decides the
+    # number of turns and seeds every match, so a retried run replays the same
+    # matches. It must stay secret: a team that knew it could work out the last
+    # turn and betray on it. The Round schema has no seed field, so it never
+    # reaches a response. BigInteger because it is a 63-bit number.
+    seed: Mapped[int | None] = mapped_column(BigInteger)

@@ -52,3 +52,10 @@ ROUND_DEFINITIONS: list[RoundDefinition] = [
         config=ForeignAidConfig(moves=[], endowment=10, multiplier=3, **SHARED_LIMITS),
     ),
 ]
+
+
+# How many teams each round keeps when it is published, by round number. Every
+# team ranked below goes out. The last round keeps two: its rank 1 is the winner
+# of the event and its rank 2 the runner-up. Kept here, not in config, because
+# config is sent to the frontend and this is a rule of the event, not of a game.
+TEAMS_KEPT_BY_ROUND_NUMBER = {1: 15, 2: 8, 3: 2}

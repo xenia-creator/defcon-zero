@@ -1,4 +1,5 @@
-"""Business rules for teams: the GET /me profile, the territory list and claiming."""
+"""Business rules for teams: the GET /me profile, the territory list, claiming,
+and an organiser changing a team's status."""
 
 import re
 
@@ -9,9 +10,11 @@ from app.core.errors import AppError
 from app.core.territories import TERRITORIES
 from app.models.team import Team
 from app.models.user import User
+from app.repositories import rounds as rounds_repository
 from app.repositories import teams as teams_repository
 from app.repositories import users as users_repository
-from app.schemas.teams import TeamProfile, TerritoriesResponse, Territory
+from app.schemas.teams import TeamProfile, TeamStatus, TerritoriesResponse, Territory
+from app.services import standings as standings_service
 from app.services.auth import ensure_team_account
 
 NATION_NAME_MIN_LENGTH = 3
@@ -159,3 +162,47 @@ async def claim_territory(
     # The team and the link are saved together or not at all.
     await db.commit()
     return build_profile(locked_user, team)
+
+
+async def set_team_status(db: AsyncSession, team_id: int, status: TeamStatus) -> TeamProfile:
+    """Set a team's status for PATCH /admin/teams/{id}, and return its GET /me body.
+
+    Any status can be set from any other, so an organiser can also undo a
+    mistake, for example putting a wrongly eliminated team back to active.
+
+    Disqualifying a team while its round is in review moves it to the bottom of
+    that round, so the cut at publish keeps exactly N teams that are not
+    disqualified. A team disqualified while its round is running is moved when
+    the run saves its results (see round_runs.save_results).
+
+    Setting a disqualified team back to active in review re-ranks the whole
+    round from its stored matches, by the run's own rules, so the team returns
+    to the place it earned. Other changes, such as eliminating a team by hand,
+    leave the ranks as they are.
+
+    Locks are taken in the same order as publish and the end of a run, round
+    first and team second. The opposite order could deadlock against them: each
+    side would hold the lock the other is waiting for. The round lock is shared,
+    so a submit, which also takes a shared lock on its round, never waits for it.
+    """
+    current_round = await rounds_repository.get_latest_started_round_for_share(db)
+    team = await teams_repository.get_team_for_update(db, team_id)
+    if team is None:
+        raise AppError("NOT_FOUND", "This team does not exist.", 404)
+
+    previous_status = team.status
+    team.status = status
+    if current_round is not None and current_round.status == "review":
+        if status == "disqualified" and previous_status != "disqualified":
+            await standings_service.drop_to_bottom(db, current_round.id, team.id)
+        elif status == "active" and previous_status == "disqualified":
+            # The re-rank reads team statuses, and autoflush sends this team's new
+            # status to the database before that query runs, so it counts as
+            # active there.
+            await standings_service.rerank_round(db, current_round.id, current_round.seed)
+
+    # The status and the new ranks are saved together, so a publish can never
+    # see one without the other.
+    await db.commit()
+    user = await users_repository.get_user_by_team_id(db, team.id)
+    return build_profile(user, team)
