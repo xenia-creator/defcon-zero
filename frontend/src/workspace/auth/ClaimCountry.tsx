@@ -1,17 +1,22 @@
 import { useQueryClient } from '@tanstack/react-query'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Badge, Button, Empty, LoadFailed, Panel, inputClass, useConfirm } from '../../components/ui'
-import { ApiError, errorMessage, request } from '../../lib/api'
+import { ApiError, errorMessage, hasCode, request } from '../../lib/api'
 import { useAuth } from '../../lib/auth'
-import { Team } from '../../lib/contract'
-import { useTerritories } from '../../lib/queries'
+import { Team, isClaimed } from '../../lib/contract'
+import { keys, useTerritories } from '../../lib/queries'
 
 const NAME_RULE = /^[A-Za-z0-9 ]{3,24}$/
 const HAS_LETTER = /[A-Za-z]/
 
+/** Trims spaces from both ends and collapses repeated spaces into one (docs/api.md section 3). */
+export function cleanNationName(raw: string): string {
+  return raw.trim().replace(/\s+/g, ' ')
+}
+
 /** What's wrong with a nation name, or null. Follows docs/api.md v4 rules. */
 export function nationNameProblem(raw: string): string | null {
-  const name = raw.replace(/\s+/g, ' ')
+  const name = cleanNationName(raw)
   if (name.length === 0) return 'Choose a nation name.'
   if (name.length < 3 || name.length > 24) return 'A nation name is 3 to 24 characters.'
   if (!NAME_RULE.test(name)) return 'A nation name can only use letters, numbers and spaces.'
@@ -33,7 +38,7 @@ const EMBLEM_SHAPES: ShapeRenderer[] = [
   (c) =>
     `<polygon points="27,4 50,27 27,50 4,27" fill="none" stroke="${c}" stroke-width="3"/><polygon points="27,16 38,27 27,38 16,27" fill="${c}"/>`,
   (c) =>
-    `<circle cx="27" cy="27" r="22" fill="none" stroke="${c}" stroke-width="3"/><circle cx="27" cy="27" r="8" fill="${c}"/>`,
+    `<circle cx="27" cy="27" r="22" fill="none" stroke="${c}" stroke-width="3"/><circle cx="27,27" r="8" fill="${c}"/>`.replace('cx="27,27"', 'cx="27" cy="27"'),
   (c) =>
     `<polygon points="27,5 50,47 4,47" fill="none" stroke="${c}" stroke-width="3"/><polygon points="27,24 36,41 18,41" fill="${c}"/>`,
   (c) =>
@@ -75,6 +80,7 @@ export function ClaimCountry({ username }: { username: string }) {
   const [busy, setBusy] = useState(false)
   const [justClaimed, setJustClaimed] = useState(false)
   const sending = useRef(false)
+  const nameInputRef = useRef<HTMLInputElement>(null)
   const { dialog, ask } = useConfirm()
 
   const search = filter.trim().toLowerCase()
@@ -84,16 +90,16 @@ export function ClaimCountry({ username }: { username: string }) {
   )
   const chosen = territories.find((t) => t.code === selected)
   const freeCount = territories.filter((t) => !t.claimed).length
-  const name = nationName.trim()
+  const name = cleanNationName(nationName)
   const nameProblem = nationNameProblem(name)
 
   // Another team can take it while this one is deciding
   useEffect(() => {
-    if (chosen?.claimed) {
+    if (!sending.current && !justClaimed && chosen?.claimed) {
       setSelected(null)
       setError(`${chosen.name} was just claimed by another team. Pick another.`)
     }
-  }, [chosen])
+  }, [chosen, justClaimed])
 
   async function claim(code: string) {
     if (sending.current) return
@@ -103,15 +109,30 @@ export function ClaimCountry({ username }: { username: string }) {
     try {
       const team = await request('POST', '/teams/claim', Team, { territory_code: code, nation_name: name })
       setJustClaimed(true)
-      setTimeout(() => setTeam(team), 1200) // let the stamp animation play
+      void queries.invalidateQueries({ queryKey: keys.territories })
+      setTimeout(() => setTeam(team), 400) // let the stamp animation land, then enter workspace
     } catch (err) {
+      if (hasCode(err, 'ALREADY_CLAIMED')) {
+        try {
+          const me = await request('GET', '/me', Team)
+          if (isClaimed(me)) {
+            setTeam(me)
+            return
+          }
+        } catch {
+          // Fall through to show the server's error message if /me could not be read
+        }
+      }
       setError(errorMessage(err, 'Could not reach the server, so nothing was claimed. Try again.'))
       if (err instanceof ApiError) {
-        if (err.code === 'TERRITORY_TAKEN') setSelected(null)
-        queries.invalidateQueries({ queryKey: ['territories'] })
-        queries.invalidateQueries({ queryKey: ['team'] })
+        if (hasCode(err, 'TERRITORY_TAKEN')) {
+          setSelected(null)
+        } else if (hasCode(err, 'NAME_TAKEN')) {
+          nameInputRef.current?.focus()
+        }
+        void queries.invalidateQueries({ queryKey: keys.territories })
+        void queries.invalidateQueries({ queryKey: keys.me })
       }
-    } finally {
       sending.current = false
       setBusy(false)
     }
@@ -186,6 +207,7 @@ export function ClaimCountry({ username }: { username: string }) {
           <label className="flex flex-col gap-1">
             <span className="label tracking-[0.2em]">Nation name</span>
             <input
+              ref={nameInputRef}
               className={inputClass}
               placeholder="Red Fox Republic"
               maxLength={24}

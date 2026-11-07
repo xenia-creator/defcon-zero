@@ -4,6 +4,7 @@
  */
 import { get, set } from 'idb-keyval'
 import { z } from 'zod'
+import { BLOCKS_MAX_BYTES, CODE_MAX_BYTES } from '../../lib/contract'
 import type { Layout } from '../blocks/layout'
 
 /** What a team builds: hand-written code that defines strategy, plus block modules. */
@@ -75,4 +76,10 @@ export async function saveDraft(teamId: number, game: string, agent: Agent): Pro
   return saved
 }
 
-export const MAX_CODE_LENGTH = 50_000
+/** POST /submissions limits (docs/api.md section 5): 64 KB code, 256 KB blocks JSON, measured in UTF-8 bytes. */
+export const MAX_CODE_LENGTH = CODE_MAX_BYTES
+export const MAX_BLOCKS_BYTES = BLOCKS_MAX_BYTES
+
+const encoder = new TextEncoder()
+export const utf8Bytes = (text: string): number => encoder.encode(text).byteLength
+export const blocksBytes = (modules: Layout[]): number => utf8Bytes(JSON.stringify({ modules }))
