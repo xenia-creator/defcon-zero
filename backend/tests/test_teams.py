@@ -297,7 +297,7 @@ async def test_one_user_claiming_many_territories_at_once(client, log_in_new_use
     # The row lock is what passes this test. The two tables' unique constraints
     # cannot, because every claim here has a different territory and name.
     headers = await log_in_new_user()
-    codes = ["AR", "AU", "BR", "CA", "CL", "DK", "EG", "FI"]
+    codes = ["AR", "AU", "BR", "CA", "CL", "CO", "EG", "GB"]
 
     responses = await asyncio.gather(
         *[
