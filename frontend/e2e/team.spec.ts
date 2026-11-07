@@ -25,14 +25,14 @@ async function login(page: Page, user = 'team1') {
   await page.goto('/')
   await page.getByLabel('Username').fill(user)
   await page.getByLabel('Password').fill('demo')
-  await page.getByRole('button', { name: 'Enter' }).click()
+  await page.getByRole('button', { name: 'Request Clearance' }).click()
 }
 
 async function claim(page: Page, country = 'India', nation = 'Red Fox Republic') {
   await page.getByLabel('Nation name').fill(nation)
   await page.getByRole('button', { name: country }).click()
-  await page.getByRole('button', { name: 'Claim this nation' }).click()
-  await page.getByRole('button', { name: 'Claim nation' }).click()
+  await page.getByRole('button', { name: 'Lock in' }).click()
+  await page.getByRole('dialog').getByRole('button', { name: 'Lock in' }).click()
   await expect(page.getByRole('tab', { name: 'strategy.py' })).toBeVisible()
 }
 
@@ -108,16 +108,18 @@ test.describe('login', () => {
     await page.goto('/')
     await page.getByLabel('Username').fill('team1')
     await page.getByLabel('Password').fill('wrong')
-    await page.getByRole('button', { name: 'Enter' }).click()
+    await page.getByRole('button', { name: 'Request Clearance' }).click()
+    await expect(page.getByText('> CLEARANCE DENIED')).toBeVisible()
     await expect(page.getByRole('alert')).toHaveText('Wrong username or password.')
 
     await mock(page, 'fail', { '/auth/login': 502 })
-    await page.getByRole('button', { name: 'Enter' }).click()
+    await page.getByRole('button', { name: 'Request Clearance' }).click()
+    await expect(page.getByText('> CLEARANCE DENIED')).toHaveCount(0)
     await expect(page.getByRole('alert')).toContainText('Could not reach the server')
     await mock(page, 'fail', {})
 
     await page.route('**/auth/login', (r) => r.abort())
-    await page.getByRole('button', { name: 'Enter' }).click()
+    await page.getByRole('button', { name: 'Request Clearance' }).click()
     await expect(page.getByRole('alert')).toContainText('Cannot reach')
   })
 
@@ -132,14 +134,22 @@ test.describe('login', () => {
     await page.getByLabel('Password').press('Enter')
     // The first Enter may already have logged in and removed this field
     await page.getByLabel('Password').press('Enter', { timeout: 1000 }).catch(() => {})
-    await expect(page.getByRole('button', { name: 'Claim this nation' })).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Lock in' })).toBeVisible()
     expect(calls).toBe(1)
+  })
+
+  test('spectator button opens the war map with a token-less spectator session', async ({ page }) => {
+    await page.goto('/')
+    await page.getByRole('button', { name: /View Big Board/ }).click()
+    const saved = await page.evaluate(() => JSON.parse(localStorage.getItem('ic.session') ?? 'null'))
+    expect(saved).toEqual({ access: '', username: 'spectator', role: 'spectator', team: null })
   })
 })
 
 test.describe('claiming a country', () => {
   const nation = (page: Page) => page.getByLabel('Nation name')
-  const claimButton = (page: Page) => page.getByRole('button', { name: 'Claim this nation' })
+  const claimButton = (page: Page) => page.getByRole('button', { name: 'Lock in' })
+  const confirmButton = (page: Page) => page.getByRole('dialog').getByRole('button', { name: 'Lock in' })
 
   test('search with no match, and the confirm can be cancelled', async ({ page }) => {
     await login(page)
@@ -158,17 +168,20 @@ test.describe('claiming a country', () => {
     await login(page)
     await page.getByRole('button', { name: 'Brazil' }).click()
     await expect(claimButton(page)).toBeDisabled()
-    await nation(page).fill('ab')
+    await nation(page).fill('  ab  ')
     await expect(page.getByText('A nation name is 3 to 24 characters.')).toBeVisible()
     await expect(claimButton(page)).toBeDisabled()
     await nation(page).fill('Red-Fox')
     await expect(page.getByText('can only use letters, numbers and spaces')).toBeVisible()
     await expect(claimButton(page)).toBeDisabled()
+    await nation(page).fill('12345')
+    await expect(page.getByText('must include at least one letter')).toBeVisible()
+    await expect(claimButton(page)).toBeDisabled()
     await nation(page).fill('Red Fox')
     await expect(claimButton(page)).toBeEnabled()
   })
 
-  test('a name already taken keeps the country selected, so only the name changes', async ({ page }) => {
+  test('a name already taken keeps the country selected and focuses the name input', async ({ page }) => {
     await login(page, 'team2')
     await claim(page, 'Japan', 'Frost Union')
     await page.getByRole('button', { name: 'Log out' }).click()
@@ -176,14 +189,39 @@ test.describe('claiming a country', () => {
     await nation(page).fill('FROST UNION')
     await page.getByRole('button', { name: 'Brazil' }).click()
     await claimButton(page).click()
-    await page.getByRole('button', { name: 'Claim nation' }).click()
+    await confirmButton(page).click()
     await expect(page.getByRole('alert')).toContainText('already claimed')
     await expect(page.locator('p', { hasText: 'BRAZIL' })).toBeVisible()
+    await expect(nation(page)).toBeFocused()
     await nation(page).fill('Red Fox')
     await claimButton(page).click()
-    await page.getByRole('button', { name: 'Claim nation' }).click()
+    await confirmButton(page).click()
     await expect(page.getByRole('tab', { name: 'strategy.py' })).toBeVisible()
     await expect(page.locator('header').getByText('Red Fox')).toBeVisible()
+  })
+
+  test('ALREADY_CLAIMED re-reads /me and goes to the workspace', async ({ page }) => {
+    await login(page)
+    await nation(page).fill('Red Fox')
+    await page.getByRole('button', { name: 'Brazil' }).click()
+    await claimButton(page).click()
+    let intercepted = false
+    await page.route('**/teams/claim', async (r) => {
+      if (!intercepted) {
+        intercepted = true
+        // Let the real claim succeed on the server, then return 409 ALREADY_CLAIMED to the client
+        await r.fetch()
+        await r.fulfill({
+          status: 409,
+          contentType: 'application/json',
+          body: JSON.stringify({ error: { code: 'ALREADY_CLAIMED', message: 'Your team has already claimed a territory.' } }),
+        })
+        return
+      }
+      await r.continue()
+    })
+    await confirmButton(page).click()
+    await expect(page.getByRole('tab', { name: 'strategy.py' })).toBeVisible()
   })
 
   test('another team taking the selected country clears it', async ({ page }) => {
@@ -203,7 +241,7 @@ test.describe('claiming a country', () => {
     await page.route('**/teams/claim', (r) =>
       r.fulfill({ status: 409, contentType: 'application/json', body: JSON.stringify({ error: { code: 'TERRITORY_TAKEN', message: 'This territory has already been claimed.' } }) }),
     )
-    await page.getByRole('button', { name: 'Claim nation' }).click()
+    await confirmButton(page).click()
     await expect(page.getByRole('alert')).toContainText('already been claimed')
   })
 
@@ -230,7 +268,7 @@ test.describe('submitting', () => {
     await login(page)
     await claim(page)
     await page.evaluate(() =>
-      localStorage.setItem('draft:1:prisoners_dilemma', JSON.stringify({ saved_at: Date.now() + 100000, agent: { hand_code: 'def strategy(m,o):\n' + '#'.repeat(60000), modules: [] } })),
+      localStorage.setItem('draft:1:prisoners_dilemma', JSON.stringify({ saved_at: Date.now() + 100000, agent: { hand_code: 'def strategy(m,o):\n' + '#'.repeat(70000), modules: [] } })),
     )
     await page.reload()
     await expect(page.getByTestId('check')).toHaveText('Code is too long')
@@ -430,13 +468,14 @@ test.describe('the session', () => {
     await expect(page.getByText('Your session ended')).toBeVisible({ timeout: 8_000 })
     await page.getByLabel('Username').fill('team1')
     await page.getByLabel('Password').fill('demo')
-    await page.getByRole('button', { name: 'Enter' }).click()
+    await page.getByRole('button', { name: 'Request Clearance' }).click()
     await expect(page.locator('.monaco-editor').first()).toContainText('#keepme')
   })
 
-  test('an organiser account gets a message, not a broken team screen', async ({ page }) => {
+  test('an organiser account gets the war map and command console, not a team screen', async ({ page }) => {
     await login(page, 'admin')
-    await expect(page.getByText('This account (organiser) has no team')).toBeVisible()
+    await expect(page.getByRole('navigation', { name: 'Views' }).getByRole('button', { name: /War Map/ })).toBeVisible()
+    await expect(page.getByRole('navigation', { name: 'Views' }).getByRole('button', { name: /Command Console/ })).toBeVisible()
     await page.waitForTimeout(2_500)
     await expect(page.getByLabel('Username')).toHaveCount(0)
   })
@@ -545,13 +584,17 @@ test.describe('the three rounds', () => {
 
     await round(page, 2)
     await expect(page.getByText('Round 2 of 3')).toBeVisible()
-    await expect(page.getByText('attack, defend or expand')).toBeVisible()
-    await expect(editor(page)).toContainText('ATTACK')
-    await expect(page.getByRole('button', { name: '+ Block module' })).toBeEnabled()
+    await expect(page.getByText('split 100 troops across 5 regions')).toBeVisible()
+    await expect(page.getByTestId('troops-placed')).toContainText('0 / 100 troops placed')
+    await page.getByRole('button', { name: 'Spread evenly' }).click()
+    await expect(page.getByTestId('troops-placed')).toContainText('100 / 100 troops placed')
+    await page.getByRole('tab', { name: /Write code/ }).click()
+    await expect(editor(page)).toContainText('[20, 20, 20, 20, 20]')
+    await expect(page.getByRole('button', { name: '+ Block module' })).toHaveCount(0)
 
     await round(page, 3)
-    await expect(page.getByText('aid or withhold')).toBeVisible()
-    await expect(editor(page)).toContainText('WITHHOLD')
+    await expect(page.getByText('Nations take turns as sender and receiver')).toBeVisible()
+    await expect(editor(page)).toContainText('received = 3 * opp_history[-1]')
 
     await round(page, 1)
     await expect(editor(page)).toContainText('roundonework')
@@ -565,16 +608,15 @@ test.describe('the three rounds', () => {
     await expect(page.getByText('You have no accepted strategy yet.')).toBeVisible()
     await expect(page.getByText('No submissions yet.')).toBeVisible()
     await page.reload()
-    await expect(editor(page)).toContainText('ATTACK')
+    await page.getByRole('tab', { name: /Write code/ }).click()
+    await expect(editor(page)).toContainText('[20, 20, 20, 20, 20]')
   })
 
-  test('a game this client has never heard of still gives a working editor', async ({ page }) => {
+  test('a game this client has never heard of reports a could-not-read error', async ({ page }) => {
     await readyWorkspace(page)
     await mock(page, 'round', { game: 'surprise' })
-    await expect(page.getByText('surprise').first()).toBeVisible()
+    await expect(page.getByRole('alert')).toContainText('could not read')
     await expect(editor(page)).toContainText('def strategy')
-    await expect(submitButton(page)).toBeEnabled()
-    await expect(page.getByRole('button', { name: '+ Block module' })).toBeDisabled()
   })
 })
 
@@ -681,68 +723,33 @@ for h in (["C", "C", "C"], ["D", "D", "C"], ["C", "C", "D"], []):
   })
 })
 
-test.describe('blocks for each round', () => {
-  const run = (program: string) => execFileSync('python3', ['-c', program]).toString().trim().split(/\s+/)
+test.describe('blocks for round 1', () => {
   const ifElse = (condition: unknown, then: unknown, otherwise: unknown) => ({ type: 'controls_ifelse', inputs: { IF0: { block: condition }, DO0: { block: then }, ELSE: { block: otherwise } } })
   const play = (MOVE: string) => ({ type: 'ic_play', fields: { MOVE } })
-  const flyout = (page: Page) => page.locator('.blocklyFlyout .blocklyWorkspace > .blocklyBlockCanvas > .blocklyDraggable')
 
-  async function open(page: Page, index: number, game: string, body: unknown) {
+  async function open(page: Page, body: unknown) {
     await login(page)
     await claim(page)
-    await mock(page, 'goto', { index })
     await page.evaluate(
-      ([key, b]) => {
+      (b) => {
         const module = { type: 'ic_module', x: 24, y: 24, deletable: false, fields: { NAME: 'plan' }, inputs: { BODY: { block: b } } }
-        localStorage.setItem(key as string, JSON.stringify({ saved_at: Date.now() + 100000, agent: { hand_code: 'def strategy(m, o):\n    return plan(m, o)\n', modules: [{ blocks: { languageVersion: 0, blocks: [module] } }] } }))
+        localStorage.setItem('draft:1:prisoners_dilemma', JSON.stringify({ saved_at: Date.now() + 100000, agent: { hand_code: 'def strategy(m, o):\n    return plan(m, o)\n', modules: [{ blocks: { languageVersion: 0, blocks: [module] } }] } }))
       },
-      [`draft:1:${game}`, body],
+      body,
     )
     await page.reload()
     await page.getByRole('tab', { name: /plan/ }).click()
     await expect(page.locator('.blocklySvg').first()).toBeVisible()
   }
 
-  const toolboxTotal = async (page: Page) => {
-    let total = 0
-    for (const name of ['Moves', 'Logic', 'Opponent', 'Chance']) {
-      await page.getByRole('treeitem', { name }).click()
-      await expect(flyout(page).first()).toBeVisible()
-      total += await flyout(page).count()
-    }
-    return total
-  }
-
-  test('round 2 offers its own moves, and its Python plays', async ({ page }) => {
-    await open(page, 2, 'theatre_of_war', ifElse({ type: 'ic_first_turn' }, play('EXPAND'), ifElse({ type: 'ic_opp_rate', fields: { MOVE: 'ATTACK', OP: 'GT', PERCENT: 50 } }, play('ATTACK'), ifElse({ type: 'ic_opp_last', fields: { MOVE: 'ATTACK' } }, play('DEFEND'), play('EXPAND')))))
-    expect(await toolboxTotal(page)).toBe(6)
-    await page.getByRole('treeitem', { name: 'Moves' }).click()
-    await expect(flyout(page).first()).toContainText('attack')
-    await expect(submitButton(page)).toBeEnabled()
-    const code = await page.getByTestId('generated').innerText()
-    expect(run(`${code}
-print(plan([], []), plan([1, 1], ["ATTACK", "ATTACK"]), plan([1, 1, 1], ["EXPAND", "EXPAND", "ATTACK"]), plan([1], ["DEFEND"]))`)).toEqual(['EXPAND', 'ATTACK', 'DEFEND', 'EXPAND'])
-  })
-
-  test('round 3 offers its own moves, and its Python plays', async ({ page }) => {
-    await open(page, 3, 'foreign_aid', ifElse({ type: 'ic_first_turn' }, play('AID'), ifElse({ type: 'ic_opp_last', fields: { MOVE: 'WITHHOLD' } }, play('WITHHOLD'), play('AID'))))
-    expect(await toolboxTotal(page)).toBe(6)
-    await page.getByRole('treeitem', { name: 'Moves' }).click()
-    await expect(flyout(page).first()).toContainText('aid')
-    await expect(submitButton(page)).toBeEnabled()
-    const code = await page.getByTestId('generated').innerText()
-    expect(run(`${code}
-print(plan([], []), plan([1], ["WITHHOLD"]), plan([1], ["AID"]))`)).toEqual(['AID', 'WITHHOLD', 'AID'])
-  })
-
   test("a move from another round is reported, not sent", async ({ page }) => {
-    await open(page, 2, 'theatre_of_war', play('D'))
+    await open(page, play('ATTACK'))
     await expect(page.getByText("uses a move that isn't in this round")).toBeVisible()
     await expect(submitButton(page)).toBeDisabled()
   })
 
   test('limits come from the round: blocks in total and number of modules', async ({ page }) => {
-    await open(page, 2, 'theatre_of_war', ifElse({ type: 'ic_first_turn' }, play('EXPAND'), play('DEFEND')))
+    await open(page, ifElse({ type: 'ic_first_turn' }, play('C'), play('D')))
     await expect(page.getByText('of 40 blocks in total')).toBeVisible()
     await mock(page, 'round', { config: { block_limit: 3 } })
     await expect(page.getByText('This round allows 3 blocks in total')).toBeVisible()
@@ -755,34 +762,25 @@ print(plan([], []), plan([1], ["WITHHOLD"]), plan([1], ["AID"]))`)).toEqual(['AI
 
 test.describe('building a strategy with blocks only', () => {
   const picker = (page: Page) => page.getByLabel('Start from an example')
-  const checks: Record<number, string> = {
-    1: `for h in ([], ["C"], ["D"], ["D", "D", "C"]):
-    assert module1(["C"] * len(h), h) in ("C", "D")`,
-    2: `for h in ([], ["ATTACK"], ["EXPAND"], ["DEFEND"], ["ATTACK", "ATTACK", "EXPAND"]):
-    assert module1(["DEFEND"] * len(h), h) in ("ATTACK", "DEFEND", "EXPAND")`,
-    3: `for h in ([], ["AID"], ["WITHHOLD"], ["WITHHOLD", "AID", "WITHHOLD"]):
-    assert module1(["AID"] * len(h), h) in ("AID", "WITHHOLD")`,
-  }
+  const check = `for h in ([], ["C"], ["D"], ["D", "D", "C"]):
+    assert module1(["C"] * len(h), h) in ("C", "D")`
 
-  for (const index of [1, 2, 3]) {
-    test(`every round ${index} example builds Python that plays`, async ({ page }) => {
-      await readyWorkspace(page)
-      await mock(page, 'goto', { index })
-      await expect(page.getByText(`Round ${index} of 3`)).toBeVisible()
-      await page.getByRole('button', { name: '+ Block module' }).click()
-      const names = (await picker(page).locator('option').allTextContents()).slice(1)
-      expect(names.length).toBeGreaterThan(2)
-      for (const [i, name] of names.entries()) {
-        await picker(page).selectOption({ label: name })
-        if (i > 0) await page.getByRole('button', { name: 'Use example' }).click()
-        await expect(page.locator('.blocklySvg').first()).toBeVisible()
-        await expect(page.getByTestId('generated')).not.toContainText('return None')
-        await expect(page.getByText('Some situations reach no move')).toHaveCount(0)
-        const code = await page.getByTestId('generated').innerText()
-        execFileSync('python3', ['-c', `import random\n${code}\n${checks[index]}`])
-      }
-    })
-  }
+  test('every round 1 example builds Python that plays', async ({ page }) => {
+    await readyWorkspace(page)
+    await expect(page.getByText('Round 1 of 3')).toBeVisible()
+    await page.getByRole('button', { name: '+ Block module' }).click()
+    const names = (await picker(page).locator('option').allTextContents()).slice(1)
+    expect(names.length).toBeGreaterThan(2)
+    for (const [i, name] of names.entries()) {
+      await picker(page).selectOption({ label: name })
+      if (i > 0) await page.getByRole('button', { name: 'Use example' }).click()
+      await expect(page.locator('.blocklySvg').first()).toBeVisible()
+      await expect(page.getByTestId('generated')).not.toContainText('return None')
+      await expect(page.getByText('Some situations reach no move')).toHaveCount(0)
+      const code = await page.getByTestId('generated').innerText()
+      execFileSync('python3', ['-c', `import random\n${code}\n${check}`])
+    }
+  })
 
   test('one click makes a module the strategy, and it survives a reload and submits', async ({ page }) => {
     await readyWorkspace(page)
@@ -932,7 +930,7 @@ test.describe('layout and wording', () => {
     await mock(page, 'fail', { '/auth/login': 502 })
     await page.getByLabel('Username').fill('team1')
     await page.getByLabel('Password').fill('demo')
-    await page.getByRole('button', { name: 'Enter' }).click()
+    await page.getByRole('button', { name: 'Request Clearance' }).click()
     await expect(page.getByText('Could not reach the server')).toBeVisible()
     await expect(page.getByText('502')).toHaveCount(0)
   })

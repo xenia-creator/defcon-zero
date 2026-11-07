@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { Button, inputClass } from '../../components/ui'
-import { errorMessage, request } from '../../lib/api'
-import { useAuth } from '../../lib/auth'
+import { errorMessage, hasCode, request } from '../../lib/api'
+import { SPECTATOR_SESSION, useAuth } from '../../lib/auth'
 import { LoginOut, Team } from '../../lib/contract'
 
 const BOOT_LINES = [
@@ -56,9 +56,14 @@ export function Login() {
               Authorization: `Bearer ${answer.access_token}`,
             })
           : null
-      setSession({ access: answer.access_token, username: name, role: answer.role, team })
+      setSession({
+        access: answer.access_token,
+        username: team?.username ?? name.toLowerCase(),
+        role: answer.role,
+        team,
+      })
     } catch (err) {
-      setDenied(true)
+      setDenied(hasCode(err, 'INVALID_CREDENTIALS'))
       setError(
         errorMessage(err, 'Cannot reach the Command Server. Check your connection and try again.'),
       )
@@ -189,7 +194,7 @@ export function Login() {
                 />
               </label>
 
-              {error && !denied && (
+              {error && (
                 <p role="alert" className="text-sm text-alert">
                   {error}
                 </p>
@@ -213,7 +218,7 @@ export function Login() {
                 variant="ghost"
                 disabled={busy}
                 // View only: never signs in as anyone, so watching the board can't grant organiser access
-                onClick={() => setSession({ access: 'spectator_token', username: 'spectator', role: 'spectator', team: null })}
+                onClick={() => setSession(SPECTATOR_SESSION)}
                 className="tracking-[0.2em] border-steel text-muted hover:!text-amber hover:border-amber"
               >
                 👁️ View Big Board · War Map

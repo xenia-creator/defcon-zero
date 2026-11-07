@@ -8,14 +8,14 @@ import { newId } from '../../lib/ids'
 import { serverNow, windowRemaining } from '../../lib/clock'
 import { SubmissionDetail, Submitted, isChecked, type ClaimedTeam, type Round } from '../../lib/contract'
 import { useLive } from '../../lib/live'
-import { useCurrentRound, useSubmission, useSubmissions } from '../../lib/queries'
+import { keys, useCurrentRound, useStandings, useSubmission, useSubmissions } from '../../lib/queries'
 import { BlockEditor } from '../blocks/BlockEditor'
 import { MODULE_ARGS, TOOLBOX, moveLabel } from '../blocks/categories'
 import { exampleLayout, examplesFor } from '../blocks/examples'
-import { generateModules } from '../blocks/generate'
+import { assemble, generateModules } from '../blocks/generate'
 import { countBlocks, moduleName, newModule, type Layout } from '../blocks/layout'
 import { History, LatestResult, agentFromDetail, toSubmission } from './SidePanels'
-import { MAX_CODE_LENGTH, loadDraft, saveDraft, type Agent } from './drafts'
+import { MAX_BLOCKS_BYTES, MAX_CODE_LENGTH, blocksBytes, loadDraft, saveDraft, utf8Bytes, type Agent } from './drafts'
 import { DEFAULT_GAME, TOTAL_ROUNDS, UNTIL_ROUND_ARRIVES, gameInfo } from './games'
 import { TroopPlacement } from './TroopPlacement'
 import { allocationCode, allocationProblems, parseAllocation, regionNames } from './troops'
@@ -76,8 +76,23 @@ async function submitAgent(agent: Agent, moves: string[], roundId: number) {
 }
 
 function submitFailure(err: unknown): string {
-  if (!(err instanceof ApiError) || err.status >= 500) return 'Could not reach the server. Your draft is saved here, so try again.'
-  return err.message
+  if (!(err instanceof ApiError) || err.status >= 500 || err.code === 'INTERNAL_ERROR') {
+    return 'Could not reach the server. Your draft is saved here, so try again.'
+  }
+  switch (err.code) {
+    case 'ROUND_NOT_OPEN':
+      return err.message || 'The submission window is closed.'
+    case 'TEAM_DISQUALIFIED':
+      return err.message || 'Your team has been disqualified and cannot submit.'
+    case 'FORBIDDEN':
+      return err.message || 'Your team cannot submit in this round.'
+    case 'IDEMPOTENCY_KEY_REUSED':
+      return 'This submission conflicted with an earlier attempt. Please try submitting again.'
+    case 'VALIDATION_ERROR':
+      return err.message || 'Your submission did not pass server validation (check code and block limits).'
+    default:
+      return err.message
+  }
 }
 
 /** The server reports errors as "Line 3: ...". Where it names a line, mark it in the editor. */
@@ -156,8 +171,11 @@ export function Workspace({ team }: { team: ClaimedTeam }) {
 }
 
 function RoundWorkspace({ team, gameKey }: { team: ClaimedTeam; gameKey: string }) {
-  const { data: round, isError: roundFailed } = useCurrentRound()
+  const { data: round, isError: roundFailed, error: roundError } = useCurrentRound()
+  const { data: standings } = useStandings()
   const { data: submissions, isError: submissionsFailed } = useSubmissions(round?.id)
+  const ownStanding = standings?.nations.find((n) => n.team_id === team.team_id)
+  const ownScore = ownStanding?.score
   // Rounds 2 and 3 read their limits (troops, regions, endowment, multiplier) from the round's config
   const roundConfig = round?.config
   const game = useMemo(() => gameInfo(gameKey, roundConfig), [gameKey, roundConfig])
@@ -256,8 +274,13 @@ function RoundWorkspace({ team, gameKey }: { team: ClaimedTeam; gameKey: string 
   latest.current = agent
   const { dialog, ask } = useConfirm()
 
-  const tooLong = (agent?.hand_code.length ?? 0) > MAX_CODE_LENGTH
   const generated = useMemo(() => generateModules(agent?.modules ?? [], moves), [agent, moves])
+  const assembledBytes = useMemo(
+    () => (agent ? utf8Bytes(assemble(agent.hand_code, generated)) : 0),
+    [agent, generated],
+  )
+  const modulesBytes = useMemo(() => (agent ? blocksBytes(agent.modules) : 0), [agent])
+  const tooLong = assembledBytes > MAX_CODE_LENGTH || modulesBytes > MAX_BLOCKS_BYTES
 
   const maxModules = game.blocks ? (round?.config.max_modules ?? 3) : 0
   const blockLimit = round?.config.block_limit ?? 40
@@ -452,12 +475,12 @@ function RoundWorkspace({ team, gameKey }: { team: ClaimedTeam; gameKey: string 
       const s = await submitAgent(sent, moves, round.id)
       markSent(sent)
       toast('info', `Version ${s.version} received. Testing against the bots…`)
-      queries.invalidateQueries({ queryKey: ['submissions'] })
+      void queries.invalidateQueries({ queryKey: keys.submissions(round.id) })
     } catch (err) {
       toast('bad', submitFailure(err))
       // The window may have closed or the team fallen since the last update
-      queries.invalidateQueries({ queryKey: ['round'] })
-      queries.invalidateQueries({ queryKey: ['team'] })
+      void queries.invalidateQueries({ queryKey: keys.currentRound })
+      void queries.invalidateQueries({ queryKey: keys.me })
     } finally {
       sending.current = false
       setBusy(false)
@@ -562,7 +585,9 @@ function RoundWorkspace({ team, gameKey }: { team: ClaimedTeam; gameKey: string 
         {noStrategy && <p className="border-b border-alert-dim bg-alert/10 px-4 py-1.5 text-xs text-alert">strategy.py must define a strategy function.</p>}
         {tooLong && (
           <p className="border-b border-alert-dim bg-alert/10 px-4 py-1.5 text-xs text-alert">
-            Your code is {agent?.hand_code.length.toLocaleString()} characters and the limit is {MAX_CODE_LENGTH.toLocaleString()}. Shorten it to submit.
+            {modulesBytes > MAX_BLOCKS_BYTES
+              ? `Your block modules use ${modulesBytes.toLocaleString()} bytes and the limit is ${MAX_BLOCKS_BYTES.toLocaleString()} bytes. Remove some blocks to submit.`
+              : `Your code uses ${assembledBytes.toLocaleString()} bytes and the limit is ${MAX_CODE_LENGTH.toLocaleString()} bytes. Shorten it to submit.`}
           </p>
         )}
         <div className="relative min-h-0 flex-1">
@@ -656,13 +681,18 @@ function RoundWorkspace({ team, gameKey }: { team: ClaimedTeam; gameKey: string 
           {/* Stays in view, so Submit and the timer are always reachable while reading results below */}
           <Panel className="z-10 shrink-0 !bg-panel lg:sticky lg:top-0" title={round ? `Round ${round.number} of ${TOTAL_ROUNDS}` : 'Command'} right={round && <span className="label !text-amber">{game.name}</span>}>
             <div className="flex flex-col gap-3">
-              {/* Only this team's own score, from /me. Teams never see other teams' scores or the standings */}
+              {/* Only this team's own score, from public GET /standings (published rounds only). Teams never see other teams' scores or the leaderboard */}
               <div data-testid="own-score" className="flex items-baseline justify-between border border-steel bg-ink/60 px-3 py-2">
                 <span className="label">Your score</span>
                 <span className="text-xl font-bold tabular-nums text-paper">
-                  {typeof team.score === 'number' ? team.score.toLocaleString() : <span className="text-sm font-normal text-muted">Not scored yet</span>}
+                  {typeof ownScore === 'number' ? ownScore.toLocaleString(undefined, { maximumFractionDigits: 2 }) : <span className="text-sm font-normal text-muted">Not scored yet</span>}
                 </span>
               </div>
+              {roundFailed && roundError instanceof ApiError && roundError.code === 'BAD_RESPONSE' && (
+                <p role="alert" className="text-xs text-alert">
+                  {roundError.message}
+                </p>
+              )}
               {fallen ? (
                 <>
                   <p className="stamp self-start text-alert">{team.status === 'disqualified' ? 'Disqualified' : 'Nation fallen'}</p>

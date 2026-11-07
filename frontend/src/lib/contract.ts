@@ -85,14 +85,7 @@ export const Me = z.object({
   status: TeamStatus,
 })
 export const Team = Me
-export type Team = z.infer<typeof Me> & {
-  /**
-   * TEMPORARY, remove with S1 (frontend/PLAN.md). /me has no score in docs/api.md and the
-   * schema above never fills this in. It exists only so Workspace.tsx keeps compiling until
-   * it reads the team's own score from the public GET /standings.
-   */
-  score?: number | null
-}
+export type Team = z.infer<typeof Me>
 
 /**
  * A team that has claimed its nation. The server sends team_id: null until then, so only a

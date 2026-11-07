@@ -116,9 +116,9 @@ export function LatestResult({
             {detail?.error && (
               <p className="mt-1 break-words text-xs text-alert">{detail.error}</p>
             )}
-            {!detail?.error && (
-              <p className="mt-1 text-xs text-muted">Submit a new version.</p>
-            )}
+            <p className="mt-1 text-xs text-muted">
+              This version won&apos;t play. Fix the problem and submit again.
+            </p>
           </div>
         )}
 
