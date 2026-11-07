@@ -1,7 +1,8 @@
 /**
  * The organiser's Command Console against the mock: only the transitions the contract allows
- * (docs/api.md section 4), the confirms, errors by code, and every loading state. Every test
- * also fails if the page throws an uncaught error at any point.
+ * (docs/api.md section 4), the confirms, errors by code, and every loading state; and the team
+ * roster (section 7): labels, order, search, unclaimed accounts, disqualify and restore. Every
+ * test also fails if the page throws an uncaught error at any point.
  */
 import { expect, test as base, type Page } from '@playwright/test'
 
@@ -215,5 +216,186 @@ test.describe('states', () => {
     await expect(page.getByTestId('console-timer')).toBeVisible()
     await mock(page, 'fail', {})
     await expect(page.getByText('Lost contact with the server.')).toHaveCount(0, { timeout: 6_000 })
+  })
+})
+
+test.describe('roster', () => {
+  const row = (page: Page, username: string) => page.getByTestId('roster-row').filter({ hasText: username })
+  const usernames = (page: Page) => page.getByTestId('roster-row').locator('td:nth-child(3)').allInnerTexts()
+  /** Changes the real overview on its way to the page. The test runner can't resolve lab.test, so it fetches via localhost. */
+  const editOverview = (page: Page, edit: (overview: { teams: Record<string, unknown>[]; unclaimed: string[] }) => void) =>
+    page.route('**/admin/overview', async (r) => {
+      const response = await r.fetch({ url: r.request().url().replace('lab.test', 'localhost') })
+      const json = await response.json()
+      edit(json)
+      await r.fulfill({ response, json })
+    })
+
+  test.beforeEach(async ({ page }) => {
+    await mock(page, 'demo')
+  })
+
+  test('shows each submission state, never a false "rejected" or "0 / 0"', async ({ page }) => {
+    await editOverview(page, ({ teams }) => {
+      const at = '2026-11-12T10:20:11Z'
+      teams[0].submission = { version: 2, status: 'pending', passed: 0, total: 0, submitted_at: at }
+      teams[1].submission = { version: 3, status: 'running', passed: 0, total: 0, submitted_at: at }
+      teams[2].submission = { version: 1, status: 'rejected', passed: 0, total: 0, submitted_at: at }
+      teams[3].submission = { version: 5, status: 'rejected', passed: 3, total: 9, submitted_at: at }
+      teams[4].submission = null
+      teams[5].score = 1.333333
+    })
+    await openConsole(page)
+    await expect(row(page, 'demo01')).toContainText('Checking…')
+    await expect(row(page, 'demo02')).toContainText('Checking…')
+    await expect(row(page, 'demo03')).toContainText(/rejected · v1 · \d\d:\d\d:\d\d/)
+    await expect(row(page, 'demo03')).not.toContainText('passed')
+    await expect(row(page, 'demo04')).toContainText(/rejected · v5 · passed 3 \/ 9 · \d\d:\d\d:\d\d/)
+    await expect(row(page, 'demo05')).toContainText('No submission')
+    await expect(row(page, 'demo06')).toContainText('1.33')
+    await expect(row(page, 'demo07')).toContainText(/accepted · v1 · passed \d+ \/ \d+ · \d\d:\d\d:\d\d/)
+    await expect(page.getByTestId('roster-row').filter({ hasText: '0 / 0' })).toHaveCount(0)
+  })
+
+  test('server order while open; by score in review, disqualified at the bottom', async ({ page }) => {
+    await openConsole(page)
+    await expect(page.getByTestId('roster-order')).toHaveText('Sorted by username')
+    expect(await usernames(page)).toEqual(['demo01', 'demo02', 'demo03', 'demo04', 'demo05', 'demo06', 'demo07', 'demo08'])
+    await mock(page, 'team', { username: 'demo01', change: { status: 'disqualified' } })
+    await expect(page.getByTestId('roster-row').last()).toContainText('demo01')
+
+    await startRound(page, 1)
+    await expect(page.getByRole('button', { name: 'Publish Results' })).toBeVisible({ timeout: 10_000 })
+    await expect(page.getByTestId('roster-order')).toHaveText('Sorted by score')
+    await expect(page.getByTestId('roster-order')).not.toContainText(/rank/i)
+    const rows = page.getByTestId('roster-row')
+    const scores = (await rows.locator('td:nth-child(6)').allInnerTexts()).slice(0, -1).map(Number)
+    expect(scores).toEqual([...scores].sort((a, b) => b - a))
+    await expect(rows.last()).toContainText('demo01')
+  })
+
+  test('search by nation or username, filter by status, with a count', async ({ page }) => {
+    await mock(page, 'team', { username: 'demo02', change: { status: 'eliminated' } })
+    await mock(page, 'team', { username: 'demo03', change: { status: 'disqualified' } })
+    await openConsole(page)
+    const count = page.getByTestId('roster-count')
+    await expect(count).toHaveText('8 teams')
+    await page.getByLabel('Search teams').fill('red dawn')
+    expect(await usernames(page)).toEqual(['demo01'])
+    await expect(count).toHaveText('1 of 8 teams')
+    await page.getByLabel('Search teams').fill('DEMO04')
+    expect(await usernames(page)).toEqual(['demo04'])
+    await page.getByLabel('Search teams').fill('')
+    await page.getByLabel('Status filter').selectOption('eliminated')
+    expect(await usernames(page)).toEqual(['demo02'])
+    await page.getByLabel('Status filter').selectOption('disqualified')
+    expect(await usernames(page)).toEqual(['demo03'])
+    await page.getByLabel('Status filter').selectOption('active')
+    await expect(count).toHaveText('6 of 8 teams')
+    await page.getByLabel('Search teams').fill('zzz')
+    await expect(page.getByText('No teams match.')).toBeVisible()
+  })
+
+  test('unclaimed accounts: count and list, or "All accounts claimed"', async ({ page }) => {
+    await openConsole(page)
+    const panel = page.getByTestId('unclaimed')
+    await expect(panel).toContainText('4 accounts not claimed')
+    await expect(panel.getByRole('listitem')).toHaveText(['demo09', 'demo10', 'team1', 'team2'])
+    await expect(panel.getByRole('button')).toHaveCount(0)
+    await editOverview(page, (overview) => {
+      overview.unclaimed = []
+    })
+    await expect(panel).toHaveText('All accounts claimed', { timeout: 5_000 })
+    await expect(panel.getByRole('list')).toHaveCount(0)
+  })
+
+  test('each status gets its button, and each confirm says what happens in this round', async ({ page }) => {
+    await mock(page, 'team', { username: 'demo02', change: { status: 'eliminated' } })
+    await openConsole(page)
+    await expect(row(page, 'demo01').getByRole('button')).toHaveText('Disqualify')
+    await expect(row(page, 'demo02').getByRole('button')).toHaveCount(0)
+
+    // open
+    await row(page, 'demo01').getByRole('button', { name: 'Disqualify' }).click()
+    await expect(dialog(page)).toContainText("Disqualify Red Dawn? They can't submit any more.")
+    await dialog(page).getByRole('button', { name: 'Disqualify' }).click()
+    await expect(row(page, 'demo01').getByRole('button')).toHaveText('Restore')
+    await row(page, 'demo01').getByRole('button', { name: 'Restore' }).click()
+    await expect(dialog(page)).toContainText('Restore Red Dawn? They become active again.')
+    await dialog(page).getByRole('button', { name: 'Cancel' }).click()
+
+    // review
+    await startRound(page, 1)
+    await expect(page.getByRole('button', { name: 'Publish Results' })).toBeVisible({ timeout: 10_000 })
+    await row(page, 'demo03').getByRole('button', { name: 'Disqualify' }).click()
+    await expect(dialog(page)).toContainText('Disqualify Monsoon Union? They drop to the bottom of this round and the next team moves into the cut.')
+    await dialog(page).getByRole('button', { name: 'Cancel' }).click()
+    await row(page, 'demo01').getByRole('button', { name: 'Restore' }).click()
+    await expect(dialog(page)).toContainText('Restore Red Dawn? The round is re-ranked and they get back the place they earned.')
+    await dialog(page).getByRole('button', { name: 'Cancel' }).click()
+
+    // published
+    await publishRound(page, 1, 15)
+    await expect(page.getByRole('button', { name: 'Open Round 2' })).toBeVisible()
+    await row(page, 'demo03').getByRole('button', { name: 'Disqualify' }).click()
+    await expect(dialog(page).getByText('Disqualify Monsoon Union?', { exact: true })).toBeVisible()
+    await expect(dialog(page)).not.toContainText('drop to the bottom')
+    await dialog(page).getByRole('button', { name: 'Cancel' }).click()
+    await row(page, 'demo01').getByRole('button', { name: 'Restore' }).click()
+    await expect(dialog(page)).toContainText("Restore Red Dawn? This round's cut is already applied, so restoring makes them active for the next round.")
+    await dialog(page).getByRole('button', { name: 'Cancel' }).click()
+  })
+
+  test('a row error by code stays in its row, refetches at once, and clears on that row’s next success', async ({ page }) => {
+    await openConsole(page)
+    await page.route('**/admin/teams/*', (r) => r.fulfill(apiError(404, 'NOT_FOUND', 'This team does not exist.')))
+    let failedAt = 0
+    const overviewAfter: number[] = []
+    page.on('response', (r) => {
+      if (r.url().includes('/admin/teams/')) failedAt = Date.now()
+    })
+    page.on('request', (r) => {
+      if (failedAt && r.url().endsWith('/admin/overview')) overviewAfter.push(Date.now() - failedAt)
+    })
+    await row(page, 'demo01').getByRole('button', { name: 'Disqualify' }).click()
+    await dialog(page).getByRole('button', { name: 'Disqualify' }).click()
+    await expect(page.getByTestId('row-error')).toHaveText('Red Dawn: Team no longer exists, refresh')
+    await expect(toasts(page)).toContainText('Red Dawn: Team no longer exists, refresh')
+    await expect(toasts(page)).not.toContainText('This team does not exist.')
+    await expect.poll(() => overviewAfter.length).toBeGreaterThan(0)
+    expect(overviewAfter[0]).toBeLessThan(500)
+
+    await page.unroute('**/admin/teams/*')
+    await page.route('**/admin/teams/*', (r) => r.fulfill(apiError(403, 'FORBIDDEN', 'Organisers only.')))
+    await row(page, 'demo02').getByRole('button', { name: 'Disqualify' }).click()
+    await dialog(page).getByRole('button', { name: 'Disqualify' }).click()
+    await expect(page.getByTestId('row-error').filter({ hasText: 'Amazon Pact' })).toHaveText('Amazon Pact: Not an organiser')
+    await expect(page.getByTestId('row-error')).toHaveCount(2)
+
+    await page.unroute('**/admin/teams/*')
+    await row(page, 'demo01').getByRole('button', { name: 'Disqualify' }).click()
+    await dialog(page).getByRole('button', { name: 'Disqualify' }).click()
+    await expect(row(page, 'demo01').getByRole('button')).toHaveText('Restore')
+    await expect(page.getByTestId('row-error')).toHaveCount(1)
+    await expect(page.getByTestId('row-error')).toContainText('Amazon Pact')
+  })
+
+  test('only that row is busy while its request runs, and it sends once', async ({ page }) => {
+    await openConsole(page)
+    let sent = 0
+    await page.route('**/admin/teams/*', async (r) => {
+      sent++
+      await new Promise((done) => setTimeout(done, 1_500))
+      await r.continue()
+    })
+    await row(page, 'demo01').getByRole('button', { name: 'Disqualify' }).click()
+    await dialog(page).getByRole('button', { name: 'Disqualify' }).click()
+    const busy = row(page, 'demo01').getByRole('button', { name: 'Sending…' })
+    await expect(busy).toBeDisabled()
+    await busy.click({ force: true }).catch(() => {})
+    await expect(row(page, 'demo02').getByRole('button', { name: 'Disqualify' })).toBeEnabled()
+    await expect(page.getByRole('button', { name: 'Extend window' })).toBeEnabled()
+    await expect(row(page, 'demo01').getByRole('button', { name: 'Restore' })).toBeVisible({ timeout: 5_000 })
+    expect(sent).toBe(1)
   })
 })

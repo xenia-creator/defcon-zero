@@ -4,7 +4,7 @@ import { Badge, Button, Empty, LoadFailed, Panel, inputClass, useConfirm } from 
 import { errorMessage, request } from '../../lib/api'
 import { formatDuration, syncClock, useClock, useServerNow, windowRemaining } from '../../lib/clock'
 import { USE_MOCK_API } from '../../lib/config'
-import type { AdminTeamRow, RoundStatus } from '../../lib/contract'
+import type { RoundStatus } from '../../lib/contract'
 import { useLive } from '../../lib/live'
 import { admin, useAdminOverview, useRefreshAfterAdmin, useRounds } from '../../lib/queries'
 import { ROUNDS, gameName, roundByGame } from '../../lib/rounds'
@@ -20,9 +20,7 @@ import {
   nextRound,
   type RoundActionKind,
 } from './actions'
-
-/** How a team is named in actions and dialogs: its nation, or its login while it has none. */
-const nameOf = (t: AdminTeamRow) => t.nation_name ?? t.username
+import { Roster, UnclaimedPanel } from './RosterTable'
 
 const ROUND_ACTION_KINDS: readonly string[] = ['open', 'extend', 'start', 'retry', 'publish', 'open-next'] satisfies RoundActionKind[]
 const isRoundAction = (key: string): key is RoundActionKind => ROUND_ACTION_KINDS.includes(key)
@@ -97,8 +95,7 @@ export function OrganiserConsole() {
   const extendCheck = checkMinutes(extendMinutes)
 
   const teams = overview?.teams ?? []
-  const humanTeams = teams.filter((t) => !t.is_bot)
-  const readyCount = humanTeams.filter((t) => t.submission?.status === 'accepted').length
+  const readyCount = teams.filter((t) => t.submission?.status === 'accepted').length
 
   // Before the first good answer: loading, a failed load, or no rounds at all (404 → null)
   if (overview === undefined || overview === null) {
@@ -126,8 +123,8 @@ export function OrganiserConsole() {
           Lost contact with the server. Showing the last update; it will refresh when the connection returns.
         </p>
       )}
-      {/* Left column: Round Lifecycle & Window Controls */}
-      <div className="space-y-5 lg:col-span-5">
+      {/* Top row: round lifecycle and telemetry, side by side */}
+      <div className="grid grid-cols-1 items-start gap-5 lg:col-span-12 lg:grid-cols-2">
         <Panel title={round ? `Round ${round.number} Control` : 'Round Control'} right={round && <Badge status={round.status} />}>
           <div className="space-y-4">
             {roundError && (
@@ -316,99 +313,28 @@ export function OrganiserConsole() {
           </div>
         </Panel>
 
-        <Panel title="Organiser Telemetry">
-          <div className="grid grid-cols-3 gap-3 text-center">
-            <div className="border border-steel bg-ink/60 p-3">
-              <p className="label">Human Teams</p>
-              <p className="mono mt-1 text-2xl font-bold text-paper">{humanTeams.length}</p>
+        <div className="space-y-5">
+          <Panel title="Organiser Telemetry">
+            <div className="grid grid-cols-2 gap-3 text-center">
+              <div className="border border-steel bg-ink/60 p-3">
+                <p className="label">Teams</p>
+                <p className="mono mt-1 text-2xl font-bold text-paper">{teams.length}</p>
+              </div>
+              <div className="border border-steel bg-ink/60 p-3">
+                <p className="label">Orders Ready</p>
+                <p className="mono mt-1 text-2xl font-bold text-coop">
+                  {readyCount}/{teams.length}
+                </p>
+              </div>
             </div>
-            <div className="border border-steel bg-ink/60 p-3">
-              <p className="label">Orders Ready</p>
-              <p className="mono mt-1 text-2xl font-bold text-coop">
-                {readyCount}/{humanTeams.length}
-              </p>
-            </div>
-            <div className="border border-steel bg-ink/60 p-3">
-              <p className="label">Total Nations</p>
-              <p className="mono mt-1 text-2xl font-bold text-amber">{teams.length}</p>
-            </div>
-          </div>
-        </Panel>
+          </Panel>
+          <UnclaimedPanel usernames={overview.unclaimed} />
+        </div>
       </div>
 
-      {/* Right column: Competing Teams & Disqualification Roster */}
-      <div className="lg:col-span-7">
-        <Panel
-          title={`Competing Nations (${teams.length})`}
-          right={round && <span className="mono text-xs text-muted">LIVE ROSTER · ROUND {round.number}</span>}
-        >
-          <div className="divide-y divide-steel border border-steel bg-ink/60">
-            {teams.map((t) => {
-              const sub = t.submission
-              return (
-                <div key={t.team_id} className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 text-sm">
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2">
-                      <span className="mono text-xs font-bold text-alert">{t.territory_code ?? '--'}</span>
-                      {t.nation_name ? (
-                        <span className="truncate font-bold tracking-wider uppercase">{t.nation_name}</span>
-                      ) : (
-                        <span className="truncate tracking-wider text-muted uppercase italic" title="This team has not claimed a nation yet">
-                          Unclaimed
-                        </span>
-                      )}
-                      <Badge status={t.is_bot ? 'draft' : t.username} />
-                      {t.status !== 'active' && <Badge status={t.status} />}
-                    </div>
-                    <div className="mono mt-1 text-xs text-muted">
-                      {sub ? (
-                        sub.status === 'accepted' ? (
-                          <span className="text-coop">
-                            ● v{sub.version} accepted · won {sub.passed} / {sub.total} test matches
-                          </span>
-                        ) : (
-                          <span className="text-alert">✕ v{sub.version} rejected</span>
-                        )
-                      ) : (
-                        <span>○ No orders filed yet</span>
-                      )}
-                      <span className="ml-3 text-paper/80">Score: {t.score.toLocaleString()} PTS</span>
-                    </div>
-                  </div>
-
-                  <div className="flex shrink-0 items-center gap-2">
-                    {t.status === 'active' ? (
-                      <Button
-                        variant="danger"
-                        className="!px-3 !py-1.5 !text-[10px]"
-                        disabled={!!busy}
-                        onClick={() =>
-                          ask({
-                            title: `Disqualify ${nameOf(t)}?`,
-                            body: `${nameOf(t)} will be marked disqualified on the War Map and excluded from active scoring.`,
-                            confirmLabel: 'Disqualify nation',
-                            run: () => void run(`team-${t.team_id}`, `Disqualified ${nameOf(t)}`, () => admin.setTeamStatus(t.team_id, 'disqualified')),
-                          })
-                        }
-                      >
-                        Disqualify
-                      </Button>
-                    ) : (
-                      <Button
-                        variant="ghost"
-                        className="!px-3 !py-1.5 !text-[10px]"
-                        disabled={!!busy}
-                        onClick={() => void run(`team-${t.team_id}`, `Restored ${nameOf(t)} to active status`, () => admin.setTeamStatus(t.team_id, 'active'))}
-                      >
-                        Restore
-                      </Button>
-                    )}
-                  </div>
-                </div>
-              )
-            })}
-          </div>
-        </Panel>
+      {/* Full width: the team roster has six columns plus its buttons */}
+      <div className="lg:col-span-12">
+        <Roster teams={overview.teams} round={overview.round} />
       </div>
     </div>
   )
