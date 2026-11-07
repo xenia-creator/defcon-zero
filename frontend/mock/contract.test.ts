@@ -66,7 +66,7 @@ describe('the mock follows docs/api.md', () => {
   it('public routes answer without a token, and ignore a bad one', async () => {
     for (const token of [undefined, 'not-a-token']) {
       expect(shaped(Health, (await call('GET', '/health', { token })).json).status).toBe('ok')
-      expect(shaped(TerritoryList, (await call('GET', '/territories', { token })).json).territories.length).toBe(21)
+      expect(shaped(TerritoryList, (await call('GET', '/territories', { token })).json).territories.length).toBe(42)
       expect(shaped(Round, (await call('GET', '/rounds/current', { token })).json).status).toBe('open')
       expect(shaped(Standings, (await call('GET', '/standings', { token })).json).nations).toEqual([])
     }

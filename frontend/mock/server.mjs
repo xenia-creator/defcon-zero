@@ -25,9 +25,12 @@ const PASSWORD = 'demo'
 
 /** As backend/app/core/territories.py: code → display name, in this order. */
 const TERRITORIES = {
-  AR: 'Argentina', AU: 'Australia', BR: 'Brazil', CA: 'Canada', CL: 'Chile', DK: 'Denmark', EG: 'Egypt',
-  FI: 'Finland', FR: 'France', DE: 'Germany', IN: 'India', JP: 'Japan', KE: 'Kenya', MX: 'Mexico', NO: 'Norway',
-  PE: 'Peru', RU: 'Russia', ES: 'Spain', SE: 'Sweden', TR: 'Turkey', VN: 'Vietnam',
+  US: 'United States', CA: 'Canada', MX: 'Mexico', BR: 'Brazil', AR: 'Argentina', CL: 'Chile', CO: 'Colombia',
+  PE: 'Peru', GB: 'United Kingdom', FR: 'France', DE: 'Germany', ES: 'Spain', IT: 'Italy', NL: 'Netherlands',
+  SE: 'Sweden', NO: 'Norway', DK: 'Denmark', FI: 'Finland', PL: 'Poland', GR: 'Greece', UA: 'Ukraine',
+  RU: 'Russia', TR: 'Turkey', EG: 'Egypt', DZ: 'Algeria', MA: 'Morocco', NG: 'Nigeria', KE: 'Kenya',
+  ZA: 'South Africa', SA: 'Saudi Arabia', IR: 'Iran', PK: 'Pakistan', IN: 'India', CN: 'China', JP: 'Japan',
+  KR: 'South Korea', KZ: 'Kazakhstan', ID: 'Indonesia', TH: 'Thailand', VN: 'Vietnam', PH: 'Philippines', AU: 'Australia',
 }
 
 /** The engine's sample bots per game (engine/registry.py), one test match each. */
