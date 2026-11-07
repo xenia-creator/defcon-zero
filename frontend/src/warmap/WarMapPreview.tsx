@@ -1,76 +1,36 @@
-import { useQuery } from '@tanstack/react-query'
 import { useState } from 'react'
-import { useAuth } from '../lib/auth'
-import { API_URL } from '../lib/config'
-import { useCurrentRound } from '../lib/queries'
-import { roundByGame, roundByNumber } from '../lib/rounds'
-import type { Round, StandingsResponse, TerritoriesResponse, TroopMovement } from './types'
+import { useServerNow } from '../lib/clock'
+import { useCurrentRound, useStandings, useTerritoryList } from '../lib/queries'
+import { boardEmptyText, connection, liveNotice } from './liveState'
+import type { MapRound, MapTerritory, StandingsNation } from './types'
 import { useMockFeed } from './useMockFeed'
-import { WarMap } from './WarMap'
+import { WarMap, WarMapFault } from './WarMap'
 
-type LiveStandingsPayload = StandingsResponse & { movements?: TroopMovement[] }
+const NO_TERRITORIES: MapTerritory[] = []
+const NO_NATIONS: StandingsNation[] = []
 
-// WarMap driven by live server /standings + /territories (with toggle for scripted showcase loop).
-export function WarMapPreview({ roundOverride, showStandings = true }: { roundOverride?: 1 | 2 | 3; showStandings?: boolean }) {
+// The war map, live by default. The scripted showcase loop is an explicit toggle and is
+// always labelled as demo data; the live map never falls back to it.
+export function WarMapPreview({ showStandings = true }: { showStandings?: boolean }) {
   const [mode, setMode] = useState<'live' | 'showcase'>('live')
-  const token = useAuth((s) => s.session?.access)
-  const { round: mockRound, territories: mockTerritories, standings: mockStandings, movements: mockMovements } = useMockFeed()
-  const { data: liveRound } = useCurrentRound()
-
-  const { data: liveStandings } = useQuery<LiveStandingsPayload>({
-    queryKey: ['warmap-standings', roundOverride, liveRound?.id],
-    queryFn: async () => {
-      const headers: Record<string, string> = {}
-      if (token) headers.Authorization = `Bearer ${token}`
-      const res = await fetch(`${API_URL}/standings`, { headers })
-      if (!res.ok) throw new Error('Failed to load standings')
-      return res.json()
-    },
-    refetchInterval: 2_000,
-    enabled: mode === 'live',
-  })
-
-  const { data: liveTerritories } = useQuery<TerritoriesResponse>({
-    queryKey: ['warmap-territories', liveStandings?.nations.length],
-    queryFn: async () => {
-      const headers: Record<string, string> = {}
-      if (token) headers.Authorization = `Bearer ${token}`
-      const res = await fetch(`${API_URL}/territories`, { headers })
-      if (!res.ok) throw new Error('Failed to load territories')
-      return res.json()
-    },
-    refetchInterval: 3_000,
-    enabled: mode === 'live',
-  })
-
-  const number = roundOverride ?? liveRound?.number ?? mockRound.number
-  // The server's game wins for the live round; otherwise the shared round table (lib/rounds.ts) names it
-  const liveGame = roundOverride === undefined || roundOverride === liveRound?.number ? roundByGame(liveRound?.game)?.game : undefined
-  const game = liveGame ?? roundByNumber(number)?.game ?? mockRound.game
-
-  const useLive = mode === 'live' && !!liveStandings && liveStandings.nations.length > 0
-
-  const round: Round = {
-    ...mockRound,
-    id: liveRound?.id ?? number,
-    number,
-    game,
-    status: (liveRound?.status as Round['status']) ?? liveStandings?.round_status ?? mockRound.status,
-    opens_at: liveRound?.opensAt ? new Date(liveRound.opensAt).toISOString() : mockRound.opens_at,
-    closes_at: liveRound?.closesAt ? new Date(liveRound.closesAt).toISOString() : mockRound.closes_at,
-    server_time: liveStandings?.server_time ?? mockRound.server_time,
-  }
-
-  const standings: StandingsResponse = useLive ? liveStandings : mockStandings
-  const territories: TerritoriesResponse = useLive && liveTerritories ? liveTerritories : mockTerritories
-  const movements = useLive ? (liveStandings.movements ?? []) : mockMovements
 
   return (
     <div className="relative h-full w-full">
-      <WarMap round={round} territories={territories} standings={standings} movements={movements} showStandings={showStandings} />
+      {mode === 'live' ? <LiveWarMap showStandings={showStandings} /> : <ShowcaseWarMap showStandings={showStandings} />}
+
+      {mode === 'showcase' && (
+        <div
+          role="status"
+          className="pointer-events-none absolute top-[84px] left-1/2 z-30 -translate-x-1/2 border border-amber/60 bg-ink/90 px-4 py-1.5 font-mono text-[11px] font-bold tracking-[0.2em] whitespace-nowrap text-amber uppercase shadow-lg"
+        >
+          ▶ Demo data, not live · scripted showcase loop
+        </div>
+      )}
+
       <div className="pointer-events-auto absolute bottom-3 left-5 z-30 flex items-center gap-1 border border-steel bg-ink/90 p-1 text-[10px] font-mono tracking-widest uppercase shadow-lg">
         <button
           type="button"
+          aria-pressed={mode === 'live'}
           onClick={() => setMode('live')}
           className={`cursor-pointer px-2.5 py-1 transition-colors ${
             mode === 'live' ? 'bg-coop/20 text-coop border border-coop/50 font-bold' : 'text-muted hover:text-paper'
@@ -80,6 +40,7 @@ export function WarMapPreview({ roundOverride, showStandings = true }: { roundOv
         </button>
         <button
           type="button"
+          aria-pressed={mode === 'showcase'}
           onClick={() => setMode('showcase')}
           className={`cursor-pointer px-2.5 py-1 transition-colors ${
             mode === 'showcase' ? 'bg-amber/20 text-amber border border-amber/50 font-bold' : 'text-muted hover:text-paper'
@@ -89,5 +50,65 @@ export function WarMapPreview({ roundOverride, showStandings = true }: { roundOv
         </button>
       </div>
     </div>
+  )
+}
+
+/**
+ * The real event, from the shared public hooks (docs/api.md v5.3): claimed territories from
+ * GET /territories, the round header from GET /rounds/current, standings from GET /standings.
+ * No troop movements: the contract has none.
+ */
+function LiveWarMap({ showStandings }: { showStandings: boolean }) {
+  const roundQ = useCurrentRound()
+  const standingsQ = useStandings()
+  const territoriesQ = useTerritoryList()
+  // Synced to the server by useCurrentRound (lib/clock), never the browser's clock alone.
+  const now = useServerNow(1000)
+
+  const [retrying, setRetrying] = useState(false)
+
+  const reads = [roundQ, standingsQ, territoriesQ]
+  const conn = connection(reads)
+  // The polls keep retrying on their own; this is the impatient human's button. "Retrying…" tracks
+  // only this press (background polling keeps isFetching true almost constantly).
+  const retry = async () => {
+    setRetrying(true)
+    await Promise.allSettled(reads.map((q) => q.refetch()))
+    setRetrying(false)
+  }
+
+  if (conn === 'fault') return <WarMapFault onRetry={() => void retry()} retrying={retrying} />
+
+  const round = roundQ.data
+  const nations = standingsQ.data?.nations ?? NO_NATIONS
+  const mapRound: MapRound | null = round ? { number: round.number, game: round.game, status: round.status } : null
+
+  return (
+    <WarMap
+      round={mapRound}
+      territories={territoriesQ.data?.territories ?? NO_TERRITORIES}
+      nations={nations}
+      serverTime={now}
+      showStandings={showStandings}
+      notice={liveNotice({ conn, round, ranked: nations.length })}
+      signalLost={conn === 'degraded'}
+      boardEmpty={boardEmptyText(round)}
+    />
+  )
+}
+
+/** The scripted mini-event (mock.ts), with troop arcs. Only mounted while the toggle is on. */
+function ShowcaseWarMap({ showStandings }: { showStandings: boolean }) {
+  const { round, territories, frame, movements } = useMockFeed()
+  return (
+    <WarMap
+      round={{ ...round, status: frame.roundStatus }}
+      territories={territories}
+      nations={frame.nations}
+      serverTime={frame.serverTime}
+      movements={movements}
+      showStandings={showStandings}
+      demo
+    />
   )
 }

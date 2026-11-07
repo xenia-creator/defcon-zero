@@ -3,7 +3,7 @@ import { COUNTRIES, LAT_BOTTOM, LAT_TOP, MAP_HEIGHT, MAP_WIDTH, projectX, projec
 import { defconLevel, gameName, roundByGame } from '../lib/rounds'
 import { AmbientBackground } from './AmbientBackground'
 import { TroopLayer } from './TroopLayer'
-import type { Round, StandingsNation, StandingsResponse, TeamStatus, TerritoriesResponse, TroopMovement } from './types'
+import type { MapNotice, MapRound, MapTerritory, StandingsNation, TeamStatus, TroopMovement } from './types'
 import './WarMap.css'
 
 // Pinned colours per nation name. Chosen so bordering territories get far-apart
@@ -21,8 +21,9 @@ const NATION_COLOUR_BY_NAME: Record<string, string> = {
   'Southern Cross': '#00E5FF', // cyan
 }
 
-// Fallback for unmapped nations, assigned in team_id order after skipping any
-// colour already pinned to a nation on the board.
+// Fallback for unmapped nations: a fixed colour per territory code (see fallbackColour), so a
+// nation's colour never depends on who else has claimed, and stays the same from claim to ranked.
+// Neighbouring nations may share a colour; a neighbour-aware palette is N2.
 const FALLBACK_COLOURS = [
   '#00E5FF', // cyan
   '#20C95E', // green
@@ -52,48 +53,68 @@ interface WarEvent {
 }
 
 interface WarMapProps {
-  round: Round
-  territories: TerritoriesResponse
-  standings: StandingsResponse
-  // Provisional troop data; see TroopMovement in types.ts.
+  /** null before any round has started. */
+  round: MapRound | null
+  /** GET /territories, as sent. Claimed ones show in a dim nation colour until ranked. */
+  territories: MapTerritory[]
+  /** GET /standings `nations`: published results only, [] until the first publish. */
+  nations: StandingsNation[]
+  /** Server time in ms, for the header clock. */
+  serverTime: number
+  /** SHOWCASE ONLY. The backend sends no movement data, so the live map never passes this. */
   movements?: TroopMovement[]
-  // The leaderboard (every team's score and rank) is organiser-only; the public big board leaves it out.
+  // The leaderboard (every team's score and rank): organisers and the public big board (app/views.ts seesStandings).
   showStandings?: boolean
+  /** Scripted showcase loop rather than the server: the header says Demo, not Live. */
+  demo?: boolean
+  /** A status plate over the map: standby, round in progress, connecting. */
+  notice?: MapNotice | null
+  /** A poll failed but the last good data is still on screen. */
+  signalLost?: boolean
+  /** What the leaderboard says when there are no published results. */
+  boardEmpty?: string
 }
 
-const NO_MOVES: TroopMovement[] = []
+export function WarMap({
+  round,
+  territories,
+  nations,
+  serverTime,
+  movements,
+  showStandings = true,
+  demo = false,
+  notice = null,
+  signalLost = false,
+  boardEmpty = 'No published results yet',
+}: WarMapProps) {
+  // Claimed territories with their nation name, from /territories; ranked nations fill any gap.
+  const claimedByCode = useMemo(() => {
+    const named = new Map<string, string>()
+    for (const t of territories) if (t.claimed && t.nation_name) named.set(t.territory_code, t.nation_name)
+    for (const n of nations) named.set(n.territory_code, n.nation_name)
+    return named
+  }, [territories, nations])
 
-export function WarMap({ round, territories, standings, movements = NO_MOVES, showStandings = true }: WarMapProps) {
-  const colourByTeam = useMemo(() => {
-    const nations = [...standings.nations].sort((a, b) => a.team_id - b.team_id)
-    const pinned = new Set(nations.map((n) => NATION_COLOUR_BY_NAME[n.nation_name]).filter(Boolean))
-    const free = FALLBACK_COLOURS.filter((c) => !pinned.has(c))
-    const pool = free.length ? free : FALLBACK_COLOURS
-    let next = 0
-    return new Map(
-      nations.map((n) => [n.team_id, NATION_COLOUR_BY_NAME[n.nation_name] ?? pool[next++ % pool.length]]),
-    )
-  }, [standings.nations])
-
-  const nationByCode = useMemo(
-    () => new Map(standings.nations.map((n) => [n.territory_code, n])),
-    [standings.nations],
+  const colourByCode = useMemo(
+    () => new Map([...claimedByCode].map(([code, name]) => [code, NATION_COLOUR_BY_NAME[name] ?? fallbackColour(code)])),
+    [claimedByCode],
   )
 
-  const claimedCodes = useMemo(
-    () => new Set(territories.territories.filter((t) => t.claimed).map((t) => t.territory_code)),
-    [territories],
+  const colourByTeam = useMemo(
+    () => new Map(nations.map((n) => [n.team_id, colourByCode.get(n.territory_code) ?? '#5A6472'])),
+    [nations, colourByCode],
   )
 
-  const events = useStatusEvents(standings)
-  const activeCount = standings.nations.filter((n) => n.status === 'active').length
-  const topScore = Math.max(1, ...standings.nations.map((n) => n.score))
+  const nationByCode = useMemo(() => new Map(nations.map((n) => [n.territory_code, n])), [nations])
+
+  const events = useStatusEvents(nations)
+  const published = nations.length > 0
+  const activeCount = nations.filter((n) => n.status === 'active').length
+  const claimedCount = territories.filter((t) => t.claimed).length
+  const topScore = Math.max(1, ...nations.map((n) => n.score))
 
   // Stable DOM order so rank changes animate as a slide rather than a re-render.
-  const rows = useMemo(
-    () => [...standings.nations].sort((a, b) => a.team_id - b.team_id),
-    [standings.nations],
-  )
+  const rows = useMemo(() => [...nations].sort((a, b) => a.team_id - b.team_id), [nations])
 
   // Draw nations last so their glow and borders sit above neighbouring land.
   const countryCodes = useMemo(
@@ -111,21 +132,33 @@ export function WarMap({ round, territories, standings, movements = NO_MOVES, sh
           <span className="warmap__defcon-level">{defconLevel(round) || 'ZERO'}</span>
         </div>
         <div className="warmap__round">
-          <div className="warmap__game">{gameName(round.game)}</div>
+          <div className="warmap__game">{round ? gameName(round.game) : 'Standby'}</div>
           <div className="warmap__meta">
-            <span>Round {round.number}</span>
-            {roundByGame(round.game) && <span>{roundByGame(round.game)!.also}</span>}
-            <span className={`warmap__pill is-${standings.round_status}`}>{standings.round_status}</span>
-            <span>
-              <strong>{activeCount}</strong> / {standings.nations.length} nations standing
-            </span>
+            {round && <span>Round {round.number}</span>}
+            {round && roundByGame(round.game) && <span>{roundByGame(round.game)!.also}</span>}
+            {round && <span className={`warmap__pill is-${round.status}`}>{round.status}</span>}
+            {published ? (
+              <span>
+                <strong>{activeCount}</strong> / {nations.length} nations standing
+              </span>
+            ) : (
+              <span>
+                <strong>{claimedCount}</strong> {claimedCount === 1 ? 'nation' : 'nations'} claimed
+              </span>
+            )}
           </div>
         </div>
         <div className="warmap__clock">
-          <span className="warmap__live">
-            <span className="warmap__live-dot" /> Live
-          </span>
-          <span className="warmap__clock-time">{formatClock(standings.server_time)} UTC</span>
+          {signalLost ? (
+            <span className="warmap__live is-lost" role="status">
+              <span className="warmap__live-dot" /> Signal lost · retrying
+            </span>
+          ) : (
+            <span className={`warmap__live ${demo ? 'is-demo' : ''}`}>
+              <span className="warmap__live-dot" /> {demo ? 'Demo' : 'Live'}
+            </span>
+          )}
+          <span className="warmap__clock-time">{formatClock(serverTime)} UTC</span>
         </div>
       </header>
 
@@ -164,13 +197,23 @@ export function WarMap({ round, territories, standings, movements = NO_MOVES, sh
                 const shape = COUNTRIES[code]
                 const nation = nationByCode.get(code)
                 if (!nation) {
+                  const claimedBy = claimedByCode.get(code)
+                  if (!claimedBy) {
+                    return (
+                      <path key={code} d={shape.d} className="warmap__country">
+                        <title>{shape.name}</title>
+                      </path>
+                    )
+                  }
+                  // Claimed but no published result yet: dim nation colour, no glow.
                   return (
                     <path
                       key={code}
                       d={shape.d}
-                      className={`warmap__country ${claimedCodes.has(code) ? 'is-claimed-unranked' : ''}`}
+                      className="warmap__country is-claimed-unranked"
+                      style={{ ['--nation' as string]: colourByCode.get(code) }}
                     >
-                      <title>{shape.name}</title>
+                      <title>{`${claimedBy} (${shape.name}) · Claimed, not ranked yet`}</title>
                     </path>
                   )
                 }
@@ -179,7 +222,7 @@ export function WarMap({ round, territories, standings, movements = NO_MOVES, sh
                     key={code}
                     d={shape.d}
                     className={`warmap__country is-nation is-${nation.status}`}
-                    style={{ ['--nation' as string]: colourByTeam.get(nation.team_id) }}
+                    style={{ ['--nation' as string]: colourByCode.get(code) }}
                     filter={nation.status === 'active' ? 'url(#warmap-glow)' : undefined}
                   >
                     <title>{`${nation.nation_name} (${shape.name}) · #${nation.rank} · ${STATUS_LABELS[nation.status]}`}</title>
@@ -189,9 +232,9 @@ export function WarMap({ round, territories, standings, movements = NO_MOVES, sh
 
               <Graticule />
               <TroopLayer
-                movements={movements}
-                nations={standings.nations}
-                serverTime={standings.server_time}
+                movements={movements /* undefined on the live map: bursts only, no arcs */}
+                nations={nations}
+                serverTime={serverTime}
                 colourByTeam={colourByTeam}
                 bursts={events}
               />
@@ -200,6 +243,12 @@ export function WarMap({ round, territories, standings, movements = NO_MOVES, sh
             <span className="warmap__corner is-tr" />
             <span className="warmap__corner is-bl" />
             <span className="warmap__corner is-br" />
+            {notice && (
+              <div className={`warmap__notice is-${notice.tone}`} role="status">
+                <span className="warmap__notice-title">{notice.title}</span>
+                <span className="warmap__notice-detail">{notice.detail}</span>
+              </div>
+            )}
           </div>
 
           <ol className="warmap__events" aria-live="polite">
@@ -212,12 +261,13 @@ export function WarMap({ round, territories, standings, movements = NO_MOVES, sh
         {showStandings && (
           <aside className="warmap__board" aria-label="Leaderboard">
             <h2 className="warmap__board-title">Standings</h2>
+            {rows.length === 0 && <p className="warmap__board-empty">{boardEmpty}</p>}
             <ol className="warmap__rows" style={{ height: rows.length * ROW_HEIGHT }}>
               {rows.map((n) => (
                 <LeaderRow
                   key={n.team_id}
                   nation={n}
-                  colour={colourByTeam.get(n.team_id) ?? '#5A6472'}
+                  colour={colourByCode.get(n.territory_code) ?? '#5A6472'}
                   share={n.score / topScore}
                 />
               ))}
@@ -225,6 +275,25 @@ export function WarMap({ round, territories, standings, movements = NO_MOVES, sh
           </aside>
         )}
       </main>
+    </div>
+  )
+}
+
+/** Cold start with nothing to show: the server could not be reached. Polling keeps retrying underneath. */
+export function WarMapFault({ onRetry, retrying }: { onRetry: () => void; retrying: boolean }) {
+  return (
+    <div className="warmap">
+      <AmbientBackground />
+      <div className="warmap__fault" role="alert">
+        <span className="warmap__fault-label">
+          <span className="warmap__live-dot" /> Signal lost
+        </span>
+        <h2 className="warmap__fault-title">Cannot reach command</h2>
+        <p className="warmap__fault-detail">The war map could not load from the server. It keeps trying on its own.</p>
+        <button type="button" className="warmap__retry" onClick={onRetry} disabled={retrying}>
+          {retrying ? 'Retrying…' : 'Retry now'}
+        </button>
+      </div>
     </div>
   )
 }
@@ -292,13 +361,14 @@ function Graticule() {
 }
 
 // Diff successive standings and keep a short log of status changes.
-function useStatusEvents(standings: StandingsResponse): WarEvent[] {
+function useStatusEvents(nations: StandingsNation[]): WarEvent[] {
   const prev = useRef<Map<number, TeamStatus> | null>(null)
+  const seq = useRef(0)
   const [events, setEvents] = useState<WarEvent[]>([])
 
   useEffect(() => {
     const before = prev.current
-    const now = new Map(standings.nations.map((n) => [n.team_id, n.status]))
+    const now = new Map(nations.map((n) => [n.team_id, n.status]))
     prev.current = now
     if (!before) return
 
@@ -308,10 +378,11 @@ function useStatusEvents(standings: StandingsResponse): WarEvent[] {
       return
     }
 
-    const fresh: WarEvent[] = standings.nations
+    const batch = ++seq.current
+    const fresh: WarEvent[] = nations
       .filter((n) => n.status !== 'active' && before.get(n.team_id) !== n.status)
       .map((n) => ({
-        id: `${standings.server_time}-${n.team_id}`,
+        id: `${batch}-${n.team_id}`,
         status: n.status,
         territory_code: n.territory_code,
         text: n.status === 'eliminated'
@@ -319,11 +390,18 @@ function useStatusEvents(standings: StandingsResponse): WarEvent[] {
           : `${n.nation_name} has been disqualified`,
       }))
     if (fresh.length) setEvents((list) => [...fresh, ...list].slice(0, 4))
-  }, [standings])
+  }, [nations])
 
   return events
 }
 
-function formatClock(iso: string) {
-  return iso.slice(11, 19)
+/** Deterministic (FNV-1a of the code): the same territory always gets the same fallback colour. */
+function fallbackColour(code: string) {
+  let h = 0x811c9dc5
+  for (const ch of code) h = Math.imul(h ^ ch.charCodeAt(0), 0x01000193) >>> 0
+  return FALLBACK_COLOURS[h % FALLBACK_COLOURS.length]
+}
+
+function formatClock(ms: number) {
+  return new Date(ms).toISOString().slice(11, 19)
 }
