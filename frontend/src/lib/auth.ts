@@ -1,14 +1,32 @@
 import { z } from 'zod'
 import { create } from 'zustand'
-import { Team } from './contract'
+import { ROLES, Team } from './contract'
+
+/**
+ * Who is using this browser. `team` and `organiser` come from POST /auth/login.
+ * `spectator` is local only: the view-only big board from the login page. It never
+ * signs in, so it has no token and only ever calls the public routes
+ * (GET /standings, GET /territories, GET /health).
+ */
+export const SESSION_ROLES = [...ROLES, 'spectator'] as const
+export type SessionRole = (typeof SESSION_ROLES)[number]
 
 const StoredSession = z.object({
-  access: z.string().min(1),
+  /** The bearer token. Ignored (never sent) for a spectator. */
+  access: z.string(),
   username: z.string(),
-  role: z.string(),
+  role: z.enum(SESSION_ROLES),
   team: Team.nullable(),
 })
 export type Session = z.infer<typeof StoredSession>
+
+/** The view-only big board. No token, no team. */
+export const SPECTATOR_SESSION: Session = { access: '', username: 'spectator', role: 'spectator', team: null }
+
+export const isSpectator = (session: Pick<Session, 'role'> | null | undefined) => session?.role === 'spectator'
+
+/** The bearer token to send, or null: a spectator never sends one, even if an old session stored a placeholder. */
+export const tokenOf = (session: Session | null | undefined) => (session && !isSpectator(session) && session.access ? session.access : null)
 
 type AuthState = {
   session: Session | null
@@ -26,7 +44,10 @@ export function parseSession(raw: string | null): Session | null {
   if (!raw) return null
   try {
     const parsed = StoredSession.safeParse(JSON.parse(raw))
-    return parsed.success ? parsed.data : null
+    if (!parsed.success) return null
+    // Only a spectator may be without a token
+    if (!isSpectator(parsed.data) && !parsed.data.access) return null
+    return parsed.data
   } catch {
     return null
   }
