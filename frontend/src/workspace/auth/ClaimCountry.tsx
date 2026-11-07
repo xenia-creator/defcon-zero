@@ -142,7 +142,7 @@ export function ClaimCountry({ username }: { username: string }) {
     <div className="flex h-full flex-col gap-3 p-3 lg:flex-row">
       {/* Nation established stamp — full-screen reveal on lock-in */}
       {justClaimed && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink/85 tactical-grid">
+        <div role="status" aria-live="polite" className="fixed inset-0 z-50 flex items-center justify-center bg-ink/85 tactical-grid">
           <div className="stamp stamp-land text-4xl text-coop rotate-[-6deg] shadow-[0_0_40px_var(--color-coop)]">
             Nation Established
           </div>
@@ -152,11 +152,11 @@ export function ClaimCountry({ username }: { username: string }) {
       {/* Territory list */}
       <Panel
         title="Available territories"
-        right={<span className="label !text-amber tracking-widest">{freeCount} free</span>}
+        right={<span className="label !text-amber tracking-widest">{territories.length ? `${freeCount} of ${territories.length} free` : `${freeCount} free`}</span>}
         className="min-h-0 min-w-0 flex-1"
         bodyClass="flex min-h-0 flex-col"
       >
-        <div className="border-b border-steel p-3">
+        <div className="relative border-b border-steel p-3">
           <input
             className={inputClass}
             aria-label="Search countries"
@@ -165,6 +165,15 @@ export function ClaimCountry({ username }: { username: string }) {
             value={filter}
             onChange={(e) => setFilter(e.target.value)}
           />
+          {filter && (
+            <button
+              type="button"
+              onClick={() => setFilter('')}
+              className="label absolute top-1/2 right-6 -translate-y-1/2 cursor-pointer !text-[10px] hover:!text-paper"
+            >
+              Clear
+            </button>
+          )}
         </div>
         <div className="min-h-0 flex-1 overflow-y-auto p-3">
           {isPending ? (

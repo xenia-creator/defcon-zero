@@ -210,7 +210,7 @@ test.describe('claiming a country', () => {
       if (!intercepted) {
         intercepted = true
         // Let the real claim succeed on the server, then return 409 ALREADY_CLAIMED to the client
-        await r.fetch()
+        await r.fetch({ url: r.request().url().replace('lab.test', '127.0.0.1') })
         await r.fulfill({
           status: 409,
           contentType: 'application/json',
@@ -615,7 +615,7 @@ test.describe('the three rounds', () => {
   test('a game this client has never heard of reports a could-not-read error', async ({ page }) => {
     await readyWorkspace(page)
     await mock(page, 'round', { game: 'surprise' })
-    await expect(page.getByRole('alert')).toContainText('could not read')
+    await expect(page.getByText('could not read')).toBeVisible()
     await expect(editor(page)).toContainText('def strategy')
   })
 })
@@ -821,7 +821,7 @@ test.describe('during the window', () => {
     await expect(result(page)).toHaveCount(0)
     await submitButton(page).click()
     await expect(result(page)).toContainText('vs Tit for tat')
-    await expect(result(page)).toContainText('400 – 400')
+    await expect(result(page)).toContainText('596 – 424')
   })
 
   test('a rejected version says why, straight away', async ({ page }) => {

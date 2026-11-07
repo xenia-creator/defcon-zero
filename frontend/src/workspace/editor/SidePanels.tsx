@@ -22,6 +22,8 @@ const botName = (key: string) => {
   return words.charAt(0).toUpperCase() + words.slice(1)
 }
 
+const formatScore = (n: number) => (Number.isInteger(n) ? String(n) : n.toFixed(1))
+
 /** Chip showing win / tie / loss for a single bot match */
 function MatchChip({ myScore, oppScore }: { myScore: number; oppScore: number }) {
   const won = myScore > oppScore
@@ -35,7 +37,7 @@ function MatchChip({ myScore, oppScore }: { myScore: number; oppScore: number })
   return (
     <span
       className={`inline-flex h-5 w-5 items-center justify-center text-[10px] font-bold text-ink ${color}`}
-      title={`You ${won ? 'won' : tied ? 'tied' : 'lost'}: ${myScore} – ${oppScore}`}
+      title={`You ${won ? 'won' : tied ? 'tied' : 'lost'}: ${formatScore(myScore)} – ${formatScore(oppScore)}`}
     >
       {symbol}
     </span>
@@ -64,7 +66,7 @@ function TestResults({ tests }: { tests: SubmissionDetail['tests'] }) {
           <span className="flex items-center gap-1.5 tabular-nums shrink-0">
             <MatchChip myScore={t.my_score} oppScore={t.opp_score} />
             <span className="text-muted">
-              {t.my_score} – {t.opp_score}
+              {formatScore(t.my_score)} – {formatScore(t.opp_score)}
             </span>
           </span>
         </div>
@@ -147,12 +149,14 @@ export function History({
   roundId: number | undefined
   onLoad: (id: number, version: number) => void
 }) {
-  const { data: submissions = [], isError, refetch } = useSubmissions(roundId)
+  const { data: submissions = [], isPending, isError, refetch } = useSubmissions(roundId)
   const [open, setOpen] = useState<number | null>(null)
 
   return (
     <Panel title="Version history" bodyClass="p-0">
-      {isError && submissions.length === 0 ? (
+      {roundId !== undefined && isPending ? (
+        <Empty>Loading versions…</Empty>
+      ) : isError && submissions.length === 0 ? (
         <LoadFailed what="your versions" onRetry={() => refetch()} />
       ) : submissions.length === 0 ? (
         <Empty>No submissions yet.</Empty>

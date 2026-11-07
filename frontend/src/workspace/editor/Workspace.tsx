@@ -555,7 +555,7 @@ function RoundWorkspace({ team, gameKey }: { team: ClaimedTeam; gameKey: string 
 
   return (
     <div className="grid min-h-full grid-cols-1 gap-3 p-3 lg:h-full lg:grid-cols-[1fr_380px]">
-      <section className="flex min-h-[70vh] flex-col border border-steel bg-panel/90 lg:min-h-0">
+      <section className="flex min-h-[70vh] flex-col border border-steel bg-panel/90 panel-3d lg:min-h-0">
         {placesTroops && (
           <div className="flex flex-wrap items-stretch gap-px border-b border-steel bg-steel/40" role="tablist" aria-label="How to play this round">
             {(
@@ -709,9 +709,17 @@ function RoundWorkspace({ team, gameKey }: { team: ClaimedTeam; gameKey: string 
                       Submitting: <span className="text-paper">{mapMode ? 'your troop placement on the map' : 'your code'}</span>
                     </p>
                   )}
-                  {round?.status !== 'waiting' && (
+                  {!round ? (
                     <p className="text-xs text-muted">
-                      {round?.status === 'open'
+                      The event has not started yet. Prepare your strategy here; your draft is saved automatically.
+                    </p>
+                  ) : round.status === 'waiting' ? (
+                    <p className="text-xs text-muted">
+                      The submission window has not opened yet. Prepare your strategy here; you can submit as soon as the window opens.
+                    </p>
+                  ) : (
+                    <p className="text-xs text-muted">
+                      {round.status === 'open'
                         ? accepted
                           ? `Version ${accepted.version} is your latest accepted strategy and will play when the window closes.`
                           : 'You have no accepted strategy yet.'
@@ -744,7 +752,7 @@ function RoundWorkspace({ team, gameKey }: { team: ClaimedTeam; gameKey: string 
         )}
         {round && (
           <Guard name="Round rules">
-            <details open className="shrink-0 border border-steel bg-panel/90">
+            <details open className="shrink-0 border border-steel bg-panel/90 panel-3d">
               <summary className="label cursor-pointer bg-steel/40 px-4 py-2 !text-paper">Round rules</summary>
               <div className="flex flex-col gap-2 p-4 text-xs">
                 {game.also && <p className="label !text-amber">{game.also}</p>}

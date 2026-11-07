@@ -42,6 +42,11 @@ export function TroopPlacement({
         <span data-testid="troops-placed" className={`font-bold tabular-nums ${valid ? 'text-coop' : placed > troops ? 'text-alert' : 'text-amber'}`}>
           {placed} / {troops} troops placed
         </span>
+        {placed !== troops && (
+          <span className="text-xs tabular-nums text-muted">
+            ({placed < troops ? `${troops - placed} remaining` : `${placed - troops} over limit`})
+          </span>
+        )}
         <span className="ml-auto flex gap-2">
           <button type="button" disabled={disabled} onClick={() => onChange(evenAllocation(troops, regions))} className="label cursor-pointer border border-steel px-2 py-1 !text-[10px] hover:!text-paper disabled:cursor-not-allowed">
             Spread evenly
