@@ -214,8 +214,8 @@ async def test_me_with_token_for_a_user_that_does_not_exist(client):
 async def organiser_client():
     """A client for a tiny app with one organiser-only route.
 
-    No real route uses require_organiser yet, and the admin stubs stay untouched
-    until their own session, so this route exists only for these tests.
+    This route exists only for these tests, so they check the dependency alone
+    and do not change if an admin route's own rules change.
     """
     test_app = FastAPI()
     register_error_handling(test_app)

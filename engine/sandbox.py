@@ -8,11 +8,13 @@ isolation: workers still run as the server's user.
 import ast
 import ctypes
 import hashlib
+import logging
 import math
 import multiprocessing
 import os
 import random
 import signal
+import threading
 import time
 import traceback
 from collections.abc import Mapping
@@ -24,6 +26,8 @@ from .games import GAMES, PRISONERS_DILEMMA, get_game
 from .match import play_match
 from .strategies import BUILT_IN_BOTS
 from .tournament import match_seed, schedule, summarize
+
+logger = logging.getLogger(__name__)
 
 MATCH_TIMEOUT = 2.0   # seconds per match, enforced inside the worker
 WATCHDOG_GRACE = 1.0  # extra seconds before the parent kills a stuck worker
@@ -177,8 +181,10 @@ class BadMove(Exception):
 # Shared arrays indexed by match: when it started, and which side (0/1) is moving
 _started = None
 _running = None
-_worker_memory_error = None
 _worker_job_handle = None
+# Taken once and never released, so only the first thread to see a failed memory
+# limit logs it. Every check starts new workers, so warning from them would repeat.
+_memory_limit_warning = threading.Lock()
 
 
 def _apply_windows_memory_limit():
@@ -253,14 +259,16 @@ def _apply_worker_memory_limit():
     resource.setrlimit(resource.RLIMIT_AS, (target, target))
 
 
-def _init_worker(started, running):
-    global _started, _running, _worker_memory_error
+def _init_worker(started, running, memory_limit_failed):
+    global _started, _running
     _started, _running = started, running
     try:
         _apply_worker_memory_limit()
-        _worker_memory_error = None
-    except Exception as error:
-        _worker_memory_error = f"{type(error).__name__}: {error}"
+    except Exception:
+        # Some hosts cannot set the limit (macOS refuses RLIMIT_AS). The bot still
+        # runs, without the cap, so that every check does not fail there. The
+        # parent logs the warning. Linux sets the limit, so it stays enforced.
+        memory_limit_failed.value = 1
     if _HAS_SIGNAL_TIMER:
         signal.signal(signal.SIGALRM, _on_alarm)
 
@@ -295,8 +303,6 @@ def _play_job(index, sources, game, turns, noise, seed, bot_seeds, record=False)
     """Play one match in a worker. Returns (score1, score2, forfeit or None), plus
     (history1, history2) when `record` is set. On a forfeit the histories hold
     every turn completed before it."""
-    if _worker_memory_error:
-        raise RuntimeError(f"Unable to enforce worker memory limit: {_worker_memory_error}")
     _started[index] = time.monotonic()
     histories = ([], [])
 
@@ -371,6 +377,7 @@ def _run_in_pool(matches, sources, game, turns, noise, seed, record=False):
     """
     started = multiprocessing.Array("d", len(matches), lock=False)
     running = multiprocessing.Array("i", len(matches), lock=False)
+    memory_limit_failed = multiprocessing.Value("b", 0, lock=False)
     outcomes = [None] * len(matches)
     todo = list(range(len(matches)))
 
@@ -379,7 +386,7 @@ def _run_in_pool(matches, sources, game, turns, noise, seed, record=False):
             started[i] = 0.0
         stuck = []
         workers = min(len(todo), os.cpu_count() or 1)
-        with multiprocessing.Pool(workers, initializer=_init_worker, initargs=(started, running)) as pool:
+        with multiprocessing.Pool(workers, initializer=_init_worker, initargs=(started, running, memory_limit_failed)) as pool:
             pending = {}
             for i in todo:
                 rep, a, b = matches[i]
@@ -405,6 +412,8 @@ def _run_in_pool(matches, sources, game, turns, noise, seed, record=False):
                 outcomes[i] += ([], [])
         todo = [i for i in pending if i not in stuck]
 
+    if memory_limit_failed.value and _memory_limit_warning.acquire(blocking=False):
+        logger.warning("Worker memory limit could not be set; bots run without it.")
     return outcomes
 
 

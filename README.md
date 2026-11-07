@@ -1,7 +1,7 @@
 # DEFCON Zero
 
 Strategy bot tournament for Gradient AI Club, BMSCE, Winter Arc.
-Teams lead a nation and code a bot for Prisoner's Dilemma, Colonel Blotto, and Trust (pending its approved rules).
+Teams lead a nation and code a bot that cooperates or betrays across three rounds, live on a world map.
 
 Private repo for the core team. Do not share outside the team.
 
@@ -21,10 +21,10 @@ Private repo for the core team. Do not share outside the team.
 | Round | Game | Teams |
 | --- | --- | --- |
 | DEFCON 3 | Prisoner's Dilemma | 30 to 15 |
-| DEFCON 2 | Colonel Blotto | 15 to 8 |
-| DEFCON 1 | Trust | 8 to 2, rules pending team approval |
+| DEFCON 2 | Theatre of War | 15 to 8 |
+| DEFCON 1 | Foreign Aid | 8 to 2, winner and runner up |
 
-Full rules: `docs/rules.md`
+Full rules: `engine/rules.md`
 
 ## Rules for working in this repo
 
