@@ -38,7 +38,7 @@ const EMBLEM_SHAPES: ShapeRenderer[] = [
   (c) =>
     `<polygon points="27,4 50,27 27,50 4,27" fill="none" stroke="${c}" stroke-width="3"/><polygon points="27,16 38,27 27,38 16,27" fill="${c}"/>`,
   (c) =>
-    `<circle cx="27" cy="27" r="22" fill="none" stroke="${c}" stroke-width="3"/><circle cx="27,27" r="8" fill="${c}"/>`.replace('cx="27,27"', 'cx="27" cy="27"'),
+    `<circle cx="27" cy="27" r="22" fill="none" stroke="${c}" stroke-width="3"/><circle cx="27" cy="27" r="8" fill="${c}"/>`,
   (c) =>
     `<polygon points="27,5 50,47 4,47" fill="none" stroke="${c}" stroke-width="3"/><polygon points="27,24 36,41 18,41" fill="${c}"/>`,
   (c) =>
