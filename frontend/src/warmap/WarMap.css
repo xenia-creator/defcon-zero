@@ -701,13 +701,105 @@
   color: var(--wm-muted);
 }
 
-.warmap__board-empty {
+/* Public leaderboard: header, column labels, awaiting panel, footer */
+.warmap__board-head {
+  margin: 0 0 14px;
+}
+
+.warmap__board-head .warmap__board-title {
   margin: 0;
-  padding: 14px 0;
-  font-size: 11px;
-  letter-spacing: 0.14em;
+}
+
+/* Whose results these are: "Round 1 · The Prisoner's Dilemma — Final" */
+.warmap__board-round {
+  margin: 10px 0 0;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--wm-text);
+}
+
+/* A newer round is under way: these are the previous round's results */
+.warmap__board-pending {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 6px 0 0;
+  font-size: 10px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--wm-amber);
+}
+
+/* Lines up with the row grid: rank 26px + gap + swatch 12px = the 48px label column. */
+.warmap__cols {
+  display: grid;
+  grid-template-columns: 48px 1fr auto;
+  gap: 10px;
+  padding: 0 12px 6px;
+  font-size: 10px;
+  letter-spacing: 0.2em;
   text-transform: uppercase;
   color: var(--wm-muted);
+}
+
+.warmap__board-foot {
+  margin: 10px 0 0;
+  font-size: 10px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--wm-muted);
+}
+
+.warmap__board-foot strong {
+  color: var(--wm-text);
+  font-weight: 700;
+}
+
+.warmap__await {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 18px 16px;
+  background: var(--wm-bg);
+  border: 1px dashed var(--wm-line);
+  border-left: 2px solid var(--wm-amber);
+  animation: warmap-event-in 0.4s ease-out;
+}
+
+.warmap__await-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--wm-amber);
+}
+
+.warmap__await-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--wm-amber);
+  box-shadow: 0 0 8px var(--wm-amber);
+  animation: warmap-blink 1.4s ease-in-out infinite;
+}
+
+.warmap__await-detail {
+  font-size: 11px;
+  line-height: 1.5;
+  letter-spacing: 0.06em;
+  color: var(--wm-muted);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .warmap__await,
+  .warmap__await-dot {
+    animation: none;
+  }
 }
 
 /* Poll failed, last good data still shown */
