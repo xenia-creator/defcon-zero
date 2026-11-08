@@ -413,7 +413,7 @@ function ConsoleTimer({ status, closesAt }: { status: RoundStatus; closesAt: num
   return (
     <div data-testid="console-timer" className="text-right">
       <span className="label !text-[11px] tracking-[0.2em]">{seconds > 0 ? 'Window closes in' : 'Window closing'}</span>
-      <p className={`text-3xl font-bold tabular-nums ${tone} ${seconds < 60 ? 'blink' : ''}`}>{formatDuration(seconds)}</p>
+      <p className={`text-3xl font-bold tabular-nums ${tone}`}>{formatDuration(seconds)}</p>
       {!synced && <p className="mt-1 text-xs text-amber">Syncing with the server clock…</p>}
     </div>
   )

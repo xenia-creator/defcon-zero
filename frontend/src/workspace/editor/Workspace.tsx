@@ -555,7 +555,8 @@ function RoundWorkspace({ team, gameKey }: { team: ClaimedTeam; gameKey: string 
 
   return (
     <div className="grid min-h-full grid-cols-1 gap-3 p-3 lg:h-full lg:grid-cols-[1fr_380px]">
-      <section className="flex min-h-[70vh] flex-col border border-steel bg-panel/90 panel-3d lg:min-h-0">
+      {/* min-w-0 on both columns: a wide editor or a long line can never push the right column off screen */}
+      <section className="flex min-h-[70vh] min-w-0 flex-col border border-steel bg-panel/90 panel-3d lg:min-h-0">
         {placesTroops && (
           <div className="flex flex-wrap items-stretch gap-px border-b border-steel bg-steel/40" role="tablist" aria-label="How to play this round">
             {(
@@ -676,10 +677,11 @@ function RoundWorkspace({ team, gameKey }: { team: ClaimedTeam; gameKey: string 
         </>
         )}
       </section>
-      <div className="flex min-h-0 flex-col gap-3 overflow-y-auto">
+      <div className="flex min-h-0 min-w-0 flex-col gap-3 overflow-y-auto lg:overflow-hidden">
         <Guard name="Command">
-          {/* Stays in view, so Submit and the timer are always reachable while reading results below */}
-          <Panel className="z-10 shrink-0 !bg-panel lg:sticky lg:top-0" title={round ? `Round ${round.number} of ${TOTAL_ROUNDS}` : 'Command'} right={round && <span className="label !text-amber">{game.name}</span>}>
+          {/* Stays in view, so Submit and the timer are always reachable while reading results below. On wide
+              screens the panels below scroll in their own area under it, so nothing slides beneath it. */}
+          <Panel className="z-10 shrink-0 !bg-panel" title={round ? `Round ${round.number} of ${TOTAL_ROUNDS}` : 'Command'} right={round && <span className="label !text-amber">{game.name}</span>}>
             <div className="flex flex-col gap-3">
               {/* Only this team's own score, from public GET /standings (published rounds only). Teams never see other teams' scores or the leaderboard */}
               <div data-testid="own-score" className="flex items-baseline justify-between border border-steel bg-ink/60 px-3 py-2">
@@ -745,45 +747,47 @@ function RoundWorkspace({ team, gameKey }: { team: ClaimedTeam; gameKey: string 
             </div>
           </Panel>
         </Guard>
-        {newest && (
-          <Guard name="Latest version">
-            <LatestResult version={newest.version} detail={latestDetail?.id === newest.id ? latestDetail : undefined} />
-          </Guard>
-        )}
-        {round && (
-          <Guard name="Round rules">
-            <details open className="shrink-0 border border-steel bg-panel/90 panel-3d">
-              <summary className="label cursor-pointer bg-steel/40 px-4 py-2 !text-paper">Round rules</summary>
-              <div className="flex flex-col gap-2 p-4 text-xs">
-                {game.also && <p className="label !text-amber">{game.also}</p>}
-                {game.brief && <p>{game.brief}</p>}
-                {game.question && <p className="text-muted italic">{game.question}</p>}
-                {moves.length > 0 ? (
-                  <p className="text-muted">Moves: {moves.map((m) => moveOption(m, moveLabel(m))).join(' · ')}</p>
-                ) : (
-                  <p className="text-muted">No named moves this round: your bot returns numbers.</p>
-                )}
-                {game.limits && <p className="text-muted">{game.limits}</p>}
-                {placesTroops && (
+        <div className="flex flex-col gap-3 lg:min-h-0 lg:flex-1 lg:overflow-y-auto">
+          {newest && (
+            <Guard name="Latest version">
+              <LatestResult version={newest.version} detail={latestDetail?.id === newest.id ? latestDetail : undefined} />
+            </Guard>
+          )}
+          {round && (
+            <Guard name="Round rules">
+              <details open className="shrink-0 border border-steel bg-panel/90 panel-3d">
+                <summary className="label cursor-pointer bg-steel/40 px-4 py-2 !text-paper">Round rules</summary>
+                <div className="flex flex-col gap-2 p-4 text-xs">
+                  {game.also && <p className="label !text-amber">{game.also}</p>}
+                  {game.brief && <p>{game.brief}</p>}
+                  {game.question && <p className="text-muted italic">{game.question}</p>}
+                  {moves.length > 0 ? (
+                    <p className="text-muted">Moves: {moves.map((m) => moveOption(m, moveLabel(m))).join(' · ')}</p>
+                  ) : (
+                    <p className="text-muted">No named moves this round: your bot returns numbers.</p>
+                  )}
+                  {game.limits && <p className="text-muted">{game.limits}</p>}
+                  {placesTroops && (
+                    <p className="text-muted">
+                      Region order in the list: {regionNames(regions).map((name, i) => `${i + 1}. ${name}`).join(' · ')}
+                    </p>
+                  )}
+                  {round.config.rounds_per_match !== undefined && (
+                    <p className="text-muted">
+                      {round.config.rounds_per_match} turns per match{round.config.repetitions !== undefined ? ` · ${round.config.repetitions} repetitions` : ''}
+                    </p>
+                  )}
                   <p className="text-muted">
-                    Region order in the list: {regionNames(regions).map((name, i) => `${i + 1}. ${name}`).join(' · ')}
+                    Blocks: {maxModules ? `up to ${maxModules} module${maxModules > 1 ? 's' : ''}, ${blockLimit} blocks in total · ${TOOLBOX.map((group) => group.label).join(', ')}` : 'not used this round, write code'}
                   </p>
-                )}
-                {round.config.rounds_per_match !== undefined && (
-                  <p className="text-muted">
-                    {round.config.rounds_per_match} turns per match{round.config.repetitions !== undefined ? ` · ${round.config.repetitions} repetitions` : ''}
-                  </p>
-                )}
-                <p className="text-muted">
-                  Blocks: {maxModules ? `up to ${maxModules} module${maxModules > 1 ? 's' : ''}, ${blockLimit} blocks in total · ${TOOLBOX.map((group) => group.label).join(', ')}` : 'not used this round, write code'}
-                </p>
-              </div>
-            </details>
+                </div>
+              </details>
+            </Guard>
+          )}
+          <Guard name="Version history">
+            <History roundId={round?.id} onLoad={askToLoad} />
           </Guard>
-        )}
-        <Guard name="Version history">
-          <History roundId={round?.id} onLoad={askToLoad} />
-        </Guard>
+        </div>
       </div>
       {dialog}
     </div>

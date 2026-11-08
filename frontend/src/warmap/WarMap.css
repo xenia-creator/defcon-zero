@@ -1,16 +1,21 @@
+/*
+ * The war map as a printed map on a field table (WWI look; PLAN.md "First visual pass").
+ * warmap-table.jpg is the table; the map frame shows that photo's own blank sheet, so the map is
+ * drawn in ink on the paper. The header (round banner) and the leaderboard (field dispatch) are
+ * typed on paper.jpg. No glows: ink, hatching and stamps instead.
+ * Colours come from the theme tokens in src/index.css; nation inks from palette.ts.
+ */
 .warmap {
-  --wm-bg: #0B0F12;
-  --wm-red: #E5253C;
-  --wm-amber: #F5A526;
-  --wm-green: #20C95E;
-  --wm-text: #FFFFFF;
-  --wm-muted: #5A6472;
-  --wm-panel: #0E1418;
-  --wm-land: #1C2933;
-  --wm-land-claimed: #26343F;
-  --wm-border: #0A1014;
-  --wm-line: #1A242C;
-  --wm-red-soft: rgba(229, 37, 60, 0.35);
+  --wm-bg: var(--color-ink);
+  --wm-ink: var(--color-type-ink); /* text on paper */
+  --wm-ink-muted: var(--color-type-muted);
+  --wm-red: var(--color-type-red); /* faded red ink: danger, disqualified, live */
+  --wm-brass: var(--color-type-brass); /* pending, standby */
+  --wm-olive: var(--color-type-olive); /* published, in progress */
+  --wm-rust: var(--color-type-rust); /* the leader */
+  --wm-charcoal: #2f2d2a; /* eliminated */
+  --wm-line: rgb(35 31 26 / 0.35); /* rules on paper */
+  --wm-paper-wash: 236 226 204; /* rgb of the light wash over paper */
 
   /* Fills its parent instead of the whole window, so the app header (and Log out) stays reachable */
   position: relative;
@@ -20,22 +25,32 @@
   display: flex;
   flex-direction: column;
   background: var(--wm-bg);
-  color: var(--wm-text);
-  font-family: ui-monospace, 'Cascadia Mono', 'SF Mono', Consolas, monospace;
+  color: var(--wm-ink);
+  font-family: var(--font-mono);
   text-align: left;
   letter-spacing: 0.02em;
   overflow: hidden;
   isolation: isolate;
 }
 
-/* Ambient radar + starfield canvas: full screen, behind everything, never interactive */
-.warmap__ambient {
+/* The table, in low light: warmap-table-dim.jpg is the photo with the blur and dimming baked in
+   (no CSS filter, which Safari re-runs over the whole screen on every map update), plus a vignette */
+.warmap::before,
+.warmap::after {
+  content: '';
   position: absolute;
   inset: 0;
-  width: 100%;
-  height: 100%;
-  z-index: 0;
   pointer-events: none;
+}
+
+.warmap::before {
+  z-index: -2;
+  background: url('/warmap-table-dim.jpg') center / cover no-repeat;
+}
+
+.warmap::after {
+  z-index: -1;
+  background: radial-gradient(ellipse at center, transparent 45%, rgb(5 6 7 / 0.75) 100%);
 }
 
 .warmap__header,
@@ -50,35 +65,41 @@
   box-sizing: border-box;
 }
 
-/* Header */
+/* A sheet of paper.jpg, as .paper in index.css (never tiled, washed so the inks keep AA contrast) */
+.warmap__header,
+.warmap__board,
+.warmap__notice,
+.warmap__event,
+.warmap__fault {
+  color: var(--wm-ink);
+  background-color: #ddd3bc;
+  background-image: linear-gradient(rgb(var(--wm-paper-wash) / 0.35), rgb(var(--wm-paper-wash) / 0.35)), url('/paper.jpg');
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  box-shadow: 0 14px 30px -12px rgb(0 0 0 / 0.9), 0 3px 8px rgb(0 0 0 / 0.5);
+}
+
+/* Header: the round banner, a typed strip across the top */
 .warmap__header {
-  position: relative;
   display: flex;
   align-items: center;
   gap: 20px;
-  padding: 14px 24px;
-  background: linear-gradient(180deg, #10171C 0%, var(--wm-bg) 100%);
-  border-bottom: 1px solid var(--wm-line);
+  margin: 12px 16px 0;
+  padding: 10px 22px;
 }
 
-.warmap__header::before {
-  content: '';
-  position: absolute;
-  inset: 0 0 auto 0;
-  height: 2px;
-  background: linear-gradient(90deg, var(--wm-red) 0%, var(--wm-red-soft) 40%, transparent 100%);
-}
-
+/* DEFCON as a rubber stamp */
 .warmap__defcon {
   display: flex;
   align-items: baseline;
   gap: 10px;
-  padding: 6px 14px;
-  border: 1px solid var(--wm-red);
-  background: rgba(229, 37, 60, 0.08);
+  padding: 4px 12px;
+  border: 3px solid var(--wm-red);
   color: var(--wm-red);
-  box-shadow: 0 0 18px rgba(229, 37, 60, 0.25), inset 0 0 12px rgba(229, 37, 60, 0.12);
-  text-shadow: 0 0 8px rgba(229, 37, 60, 0.6);
+  font-family: var(--font-type);
+  transform: rotate(-2deg);
+  mask-image: repeating-linear-gradient(115deg, #000 0 6px, rgb(0 0 0 / 0.78) 6px 8px);
 }
 
 .warmap__defcon-label {
@@ -87,6 +108,7 @@
 }
 
 .warmap__defcon-level {
+  font-family: var(--font-stencil);
   font-size: 28px;
   font-weight: 700;
   line-height: 1;
@@ -98,10 +120,12 @@
 }
 
 .warmap__game {
-  font-size: 18px;
+  font-family: var(--font-stencil);
+  font-size: 24px;
   font-weight: 700;
+  line-height: 1.1;
   text-transform: uppercase;
-  letter-spacing: 0.1em;
+  letter-spacing: 0.08em;
 }
 
 .warmap__meta {
@@ -109,25 +133,26 @@
   flex-wrap: wrap;
   align-items: center;
   gap: 4px 12px;
-  margin-top: 2px;
-  font-size: 12px;
-  color: var(--wm-muted);
+  margin-top: 3px;
+  font-family: var(--font-type);
+  font-size: 13px;
+  color: var(--wm-ink-muted);
   text-transform: uppercase;
   letter-spacing: 0.08em;
 }
 
 .warmap__meta strong {
-  color: var(--wm-text);
+  color: var(--wm-ink);
 }
 
 .warmap__pill {
-  padding: 1px 8px;
-  border: 1px solid currentColor;
-  color: var(--wm-amber);
+  padding: 0 8px;
+  border: 1.5px solid currentColor;
+  color: var(--wm-brass);
 }
 
 .warmap__pill.is-published {
-  color: var(--wm-green);
+  color: var(--wm-olive);
 }
 
 .warmap__clock {
@@ -140,14 +165,15 @@
 }
 
 .warmap__clock-time {
-  color: var(--wm-muted);
+  color: var(--wm-ink-muted);
 }
 
 .warmap__live {
   display: flex;
   align-items: center;
   gap: 6px;
-  font-size: 11px;
+  font-family: var(--font-type);
+  font-size: 12px;
   letter-spacing: 0.2em;
   text-transform: uppercase;
   color: var(--wm-red);
@@ -158,22 +184,20 @@
   height: 7px;
   border-radius: 50%;
   background: var(--wm-red);
-  box-shadow: 0 0 8px var(--wm-red);
-  animation: warmap-blink 1.4s ease-in-out infinite;
+  animation: warmap-blink 2.4s ease-in-out infinite;
 }
 
-/* Showcase loop: amber "Demo" instead of red "Live", so it is never mistaken for the event */
+/* Showcase loop: brass "Demo" instead of red "Live", so it is never mistaken for the event */
 .warmap__live.is-demo {
-  color: var(--wm-amber);
+  color: var(--wm-brass);
 }
 
 .warmap__live.is-demo .warmap__live-dot {
-  background: var(--wm-amber);
-  box-shadow: 0 0 8px var(--wm-amber);
+  background: var(--wm-brass);
 }
 
 @keyframes warmap-blink {
-  50% { opacity: 0.25; }
+  50% { opacity: 0.3; }
 }
 
 /* Body */
@@ -203,14 +227,23 @@
   place-items: center;
 }
 
+/*
+ * The sheet: the photo's own blank paper, mapped onto the frame. The part used is x 180..1500,
+ * y 58..780 of the 1712x1071 photo: the torn top-left corner of the sheet, clear of the compass and
+ * the lamp, and exactly the map's 1.83 aspect ratio, so nothing is stretched.
+ *   size = 1712/1320, 1071/722;  position = 180/(1712-1320), 58/(1071-722)
+ * A light wash fades the photo's printed grid so the app's ink map reads.
+ */
 .warmap__frame {
   position: relative;
   aspect-ratio: var(--map-ratio);
   width: min(100cqw, max(360px, 100cqh * var(--map-ratio)));
   max-width: 100%;
   max-height: 100%;
-  border: 1px solid var(--wm-line);
-  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.6), 0 20px 60px rgba(0, 0, 0, 0.6);
+  background:
+    radial-gradient(ellipse at center, rgb(var(--wm-paper-wash) / 0.5) 62%, rgb(var(--wm-paper-wash) / 0) 100%),
+    url('/warmap-table.jpg') 45.92% 16.62% / 129.7% 148.34% no-repeat;
+  box-shadow: 0 24px 60px -20px rgb(0 0 0 / 0.95);
 }
 
 .warmap__frame svg {
@@ -219,90 +252,115 @@
   height: 100%;
 }
 
+/* The old HUD corner brackets: the torn paper edges frame the map now */
 .warmap__corner {
-  position: absolute;
-  width: 14px;
-  height: 14px;
-  border: 0 solid var(--wm-red);
-  opacity: 0.8;
-  pointer-events: none;
+  display: none;
 }
 
-.warmap__corner.is-tl { top: -5px; left: -5px; border-top-width: 2px; border-left-width: 2px; }
-.warmap__corner.is-tr { top: -5px; right: -5px; border-top-width: 2px; border-right-width: 2px; }
-.warmap__corner.is-bl { bottom: -5px; left: -5px; border-bottom-width: 2px; border-left-width: 2px; }
-.warmap__corner.is-br { bottom: -5px; right: -5px; border-bottom-width: 2px; border-right-width: 2px; }
+/* Sea: a faint slate wash, like a hand-tinted print */
+.warmap__sea {
+  fill: rgb(91 124 156 / 0.1);
+}
 
+/* Graticule in sepia ink */
 .warmap__grid line {
-  stroke: #9FB4C4;
-  stroke-opacity: 0.07;
+  stroke: #4a3b28;
+  stroke-opacity: 0.16;
   stroke-width: 0.5;
   vector-effect: non-scaling-stroke;
 }
 
 .warmap__grid line.is-major {
-  stroke-opacity: 0.16;
+  stroke-opacity: 0.32;
 }
 
 .warmap__grid line.is-tropic {
-  stroke-opacity: 0.1;
+  stroke-opacity: 0.22;
   stroke-dasharray: 3 4;
 }
 
 .warmap__grid-labels text {
+  font-family: var(--font-type);
   font-size: 7px;
-  fill: var(--wm-muted);
-  fill-opacity: 0.7;
+  fill: var(--wm-ink-muted);
   letter-spacing: 0.05em;
 }
 
+/* Land: paper with an ink outline */
 .warmap__country {
-  fill: var(--wm-land);
-  stroke: var(--wm-border);
+  fill: rgb(240 232 212 / 0.45);
+  stroke: #3b3024;
+  stroke-opacity: 0.7;
   stroke-width: 0.6px;
   vector-effect: non-scaling-stroke;
   stroke-linejoin: round;
   transition: fill 1.2s ease, fill-opacity 1.2s ease, stroke 0.6s ease;
 }
 
-/* Claimed, no published result yet: a dim wash of the nation's colour, no glow.
-   Full colour and glow arrive with .is-nation once it is ranked. */
+/* Claimed, no published result yet: a clear wash of the nation's ink (readable from across a room)
+   with an outline in a darker shade of it, still lighter than a ranked nation's solid ink.
+   The full ink and the dark seam arrive with .is-nation once it is ranked. */
 .warmap__country.is-claimed-unranked {
-  fill: color-mix(in srgb, var(--nation, var(--wm-land-claimed)) 32%, var(--wm-land-claimed));
+  fill: color-mix(in srgb, var(--nation) 62%, transparent);
+  stroke: color-mix(in srgb, var(--nation) 70%, #231f1a);
+  stroke-opacity: 1;
+  stroke-width: 1.1px;
 }
 
-/* Dark seam rather than a coloured stroke, so bordering nations stay
-   cleanly separated and the halo never smears across the line. */
+/* Ranked: the nation's ink, just translucent enough for the paper grain to show through
+   (no blend mode, which is costly in Safari) */
 .warmap__country.is-nation {
   fill: var(--nation);
-  fill-opacity: 0.95;
-  stroke: var(--wm-border);
+  fill-opacity: 0.88;
+  stroke: #231f1a;
+  stroke-opacity: 0.85;
   stroke-width: 0.9px;
 }
 
+/* Eliminated: the colour faded out and hatched over in charcoal */
 .warmap__country.is-eliminated {
-  fill: color-mix(in srgb, var(--nation) 15%, #8A939C);
-  fill-opacity: 0.35;
-  stroke: #8A939C;
-  stroke-opacity: 0.8;
+  fill: url(#warmap-elim);
+  fill-opacity: 1;
+  stroke: var(--wm-charcoal);
   stroke-dasharray: 3 2;
   animation: warmap-hit 1.6s ease-out;
 }
 
+/* Disqualified: hatched in faded red, with a stamp (.warmap__stamp) */
 .warmap__country.is-disqualified {
   fill: url(#warmap-dq);
-  fill-opacity: 0.9;
+  fill-opacity: 1;
   stroke: var(--wm-red);
   animation: warmap-hit 1.6s ease-out;
 }
 
+.warmap__hatch-ground.is-elim { fill: rgb(47 45 42 / 0.16); }
+.warmap__hatch-line.is-elim { stroke: var(--wm-charcoal); stroke-width: 0.8; stroke-opacity: 0.75; }
+.warmap__hatch-ground.is-dq { fill: rgb(150 54 48 / 0.14); }
+.warmap__hatch-line.is-dq { stroke: #8f3a30; stroke-width: 0.8; stroke-opacity: 0.8; }
+
+/* The moment a nation falls: the outline is inked over heavily, then settles */
 @keyframes warmap-hit {
-  0% { stroke: #FFFFFF; stroke-width: 4px; fill: var(--wm-red); fill-opacity: 0.9; stroke-dasharray: none; }
-  35% { stroke: var(--wm-red); stroke-width: 2.5px; }
+  0% { stroke: var(--wm-red); stroke-width: 3px; stroke-dasharray: none; }
   100% { stroke-width: 0.8px; }
 }
 
-/* Event ticker */
+.warmap__stamp {
+  font-family: var(--font-type);
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  text-anchor: middle;
+  dominant-baseline: middle;
+  fill: var(--wm-red);
+  fill-opacity: 0.9;
+  paint-order: stroke;
+  stroke: rgb(var(--wm-paper-wash) / 0.75);
+  stroke-width: 2.4px;
+  pointer-events: none;
+}
+
+/* Event ticker: torn-off telegram slips */
 .warmap__events {
   position: absolute;
   left: 32px;
@@ -318,37 +376,33 @@
 
 .warmap__event {
   padding: 7px 14px;
-  font-size: 12px;
+  font-family: var(--font-type);
+  font-size: 13px;
   text-transform: uppercase;
   letter-spacing: 0.1em;
-  background: rgba(11, 15, 18, 0.9);
-  border: 1px solid var(--wm-red-soft);
-  border-left: 3px solid var(--wm-red);
-  box-shadow: 0 0 16px rgba(229, 37, 60, 0.2);
+  border-left: 4px solid var(--wm-charcoal);
   animation: warmap-event-in 0.4s ease-out;
 }
 
 .warmap__event:not(:first-child) {
-  opacity: 0.45;
-  box-shadow: none;
+  opacity: 0.6;
 }
 
 .warmap__event.is-disqualified {
-  border-color: rgba(245, 165, 38, 0.35);
-  border-left-color: var(--wm-amber);
+  border-left-color: var(--wm-red);
+  color: var(--wm-red);
 }
 
 @keyframes warmap-event-in {
-  from { transform: translateX(-12px); opacity: 0; }
+  from { transform: translateY(6px); opacity: 0; }
 }
 
-/* Leaderboard */
+/* Leaderboard: a typed field dispatch */
 .warmap__board {
   min-height: 0;
   overflow-y: auto;
-  padding: 18px 20px;
-  background: var(--wm-panel);
-  border-left: 1px solid var(--wm-line);
+  margin: 20px 16px 20px 0;
+  padding: 20px 20px 18px;
 }
 
 .warmap__board-title {
@@ -356,26 +410,27 @@
   align-items: center;
   gap: 10px;
   margin: 0 0 14px;
-  font-size: 12px;
-  font-weight: 400;
-  letter-spacing: 0.28em;
+  font-family: var(--font-stencil);
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: 0.2em;
   text-transform: uppercase;
-  color: var(--wm-muted);
+  color: var(--wm-ink);
 }
 
 .warmap__board-title::before {
   content: '';
-  width: 3px;
-  height: 14px;
-  background: var(--wm-red);
-  box-shadow: 0 0 8px var(--wm-red);
+  width: 4px;
+  height: 16px;
+  background: var(--color-fire);
 }
 
 .warmap__board-title::after {
   content: '';
   flex: 1;
-  height: 1px;
-  background: linear-gradient(90deg, var(--wm-line), transparent);
+  height: 3px;
+  border-top: 1px solid var(--wm-line);
+  border-bottom: 1px solid var(--wm-line);
 }
 
 .warmap__rows {
@@ -395,41 +450,37 @@
   grid-template-columns: 26px 12px 1fr auto;
   align-items: center;
   gap: 10px;
-  padding: 0 12px;
+  padding: 0 10px;
   overflow: hidden;
-  background: var(--wm-bg);
-  border: 1px solid var(--wm-line);
-  border-left: 2px solid var(--nation);
+  border-bottom: 1px dashed var(--wm-line);
+  border-left: 3px solid var(--nation);
   transition: transform 0.7s cubic-bezier(0.2, 0.8, 0.2, 1), opacity 0.6s ease, border-color 0.6s ease;
 }
 
 .warmap__row.is-leader.is-active {
-  border-color: rgba(229, 37, 60, 0.4);
-  border-left-color: var(--nation);
-  background: linear-gradient(90deg, color-mix(in srgb, var(--nation) 12%, var(--wm-bg)) 0%, var(--wm-bg) 70%);
+  background: linear-gradient(90deg, color-mix(in srgb, var(--nation) 16%, transparent) 0%, transparent 75%);
 }
 
 .warmap__rank {
   font-size: 13px;
   font-weight: 700;
-  color: var(--wm-muted);
+  color: var(--wm-ink-muted);
   font-variant-numeric: tabular-nums;
 }
 
 .warmap__row.is-active .warmap__rank {
-  color: var(--wm-text);
+  color: var(--wm-ink);
 }
 
 .warmap__row.is-leader.is-active .warmap__rank {
-  color: var(--wm-red);
-  text-shadow: 0 0 8px rgba(229, 37, 60, 0.6);
+  color: var(--wm-rust);
 }
 
 .warmap__swatch {
   width: 12px;
   height: 12px;
   background: var(--nation);
-  box-shadow: 0 0 8px var(--nation), 0 0 2px var(--nation);
+  box-shadow: inset 0 0 0 1px rgb(35 31 26 / 0.45);
 }
 
 .warmap__name {
@@ -437,13 +488,15 @@
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
-  font-size: 14px;
+  font-family: var(--font-type);
+  font-size: 15px;
 }
 
 .warmap__code {
   margin-left: 8px;
+  font-family: var(--font-mono);
   font-size: 11px;
-  color: var(--wm-muted);
+  color: var(--wm-ink-muted);
 }
 
 .warmap__score {
@@ -451,14 +504,17 @@
   flex-direction: column;
   align-items: flex-end;
   font-size: 14px;
+  font-weight: 700;
   font-variant-numeric: tabular-nums;
 }
 
 .warmap__tag {
-  font-size: 10px;
+  font-family: var(--font-type);
+  font-size: 11px;
+  font-weight: 400;
   letter-spacing: 0.12em;
   text-transform: uppercase;
-  color: var(--wm-red);
+  color: var(--wm-charcoal);
 }
 
 .warmap__bar {
@@ -468,31 +524,32 @@
   bottom: 0;
   height: 2px;
   background: var(--nation);
-  opacity: 0.55;
+  opacity: 0.5;
   transform-origin: left;
   transition: transform 0.9s ease;
 }
 
+/* Fallen nations: struck from the list in muted ink, never faded below readable contrast */
 .warmap__row.is-eliminated,
 .warmap__row.is-disqualified {
-  opacity: 0.55;
-  border-left-color: var(--wm-muted);
+  border-left-color: var(--wm-ink-muted);
+  color: var(--wm-ink-muted);
 }
 
 .warmap__row.is-eliminated .warmap__swatch,
 .warmap__row.is-disqualified .warmap__swatch {
-  opacity: 0.4;
-  box-shadow: none;
-  filter: grayscale(0.7);
+  opacity: 0.6;
+  background: color-mix(in srgb, var(--nation) 25%, #8a8478); /* greyed out without a CSS filter */
 }
 
 .warmap__row.is-eliminated .warmap__bar,
 .warmap__row.is-disqualified .warmap__bar {
-  background: var(--wm-muted);
+  background: var(--wm-ink-muted);
+  opacity: 0.35;
 }
 
 .warmap__row.is-disqualified .warmap__tag {
-  color: var(--wm-amber);
+  color: var(--wm-red);
 }
 
 .warmap__row.is-disqualified .warmap__name {
@@ -500,48 +557,225 @@
   text-decoration-color: var(--wm-red);
 }
 
-@media (max-width: 900px) {
-  .warmap {
-    position: static;
-    min-height: 100svh;
-    overflow: visible;
-  }
-
-  .warmap__header {
-    padding: 12px 16px;
-    flex-wrap: wrap;
-  }
-
-  .warmap__body {
-    grid-template-columns: 1fr;
-  }
-
-  .warmap__map {
-    container-type: normal;
-    height: auto;
-    display: flex;
-    flex-direction: column;
-    align-items: stretch;
-    padding: 16px;
-  }
-
-  .warmap__frame {
-    width: 100%;
-  }
-
-  .warmap__events {
-    position: static;
-    margin-top: 12px;
-  }
-
-  .warmap__board {
-    border-left: 0;
-    border-top: 1px solid var(--wm-line);
-    padding: 16px;
-  }
+/* Live states: a small typed slip pinned in the top-left corner of the map, over the open Pacific
+   north of Alaska, so it never covers land (standby / round in progress / connecting) */
+.warmap__notice {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  transform: rotate(-0.8deg);
+  transform-origin: top left;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+  max-width: min(196px, 30%);
+  padding: 4px 9px 5px;
+  text-align: left;
+  text-transform: uppercase;
+  border-left: 3px solid var(--wm-brass);
+  pointer-events: none;
+  animation: warmap-event-in 0.4s ease-out;
 }
 
-/* Troop movements */
+.warmap__notice.is-progress {
+  border-left-color: var(--wm-olive);
+}
+
+.warmap__notice-title {
+  font-family: var(--font-type);
+  font-size: 12px;
+  letter-spacing: 0.12em;
+  color: var(--wm-brass);
+}
+
+.warmap__notice.is-progress .warmap__notice-title {
+  color: var(--wm-olive);
+}
+
+.warmap__notice-detail {
+  font-size: 9.5px;
+  line-height: 1.35;
+  letter-spacing: 0.03em;
+  text-transform: none;
+  color: var(--wm-ink-muted);
+}
+
+/* Public leaderboard: header, column labels, awaiting panel, footer */
+.warmap__board-head {
+  margin: 0 0 14px;
+}
+
+.warmap__board-head .warmap__board-title {
+  margin: 0;
+}
+
+/* Whose results these are: "Round 1 · The Prisoner's Dilemma — Final" */
+.warmap__board-round {
+  margin: 10px 0 0;
+  font-family: var(--font-type);
+  font-size: 15px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--wm-ink);
+}
+
+/* A newer round is under way: these are the previous round's results */
+.warmap__board-pending {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 6px 0 0;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--wm-brass);
+}
+
+/* Lines up with the row grid: rank 26px + gap + swatch 12px = the 48px label column. */
+.warmap__cols {
+  display: grid;
+  grid-template-columns: 48px 1fr auto;
+  gap: 10px;
+  padding: 0 10px 6px 13px;
+  border-bottom: 1.5px solid var(--wm-ink);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--wm-ink-muted);
+}
+
+.warmap__board-foot {
+  margin: 10px 0 0;
+  font-family: var(--font-type);
+  font-size: 12px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--wm-ink-muted);
+}
+
+.warmap__board-foot strong {
+  color: var(--wm-ink);
+}
+
+.warmap__await {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 16px 14px;
+  border: 1.5px dashed var(--wm-line);
+  border-left: 3px solid var(--wm-brass);
+  animation: warmap-event-in 0.4s ease-out;
+}
+
+.warmap__await-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--font-type);
+  font-size: 15px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--wm-brass);
+}
+
+.warmap__await-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--wm-brass);
+  animation: warmap-blink 2.4s ease-in-out infinite;
+}
+
+.warmap__await-detail {
+  font-size: 11px;
+  line-height: 1.5;
+  letter-spacing: 0.04em;
+  color: var(--wm-ink-muted);
+}
+
+/* Poll failed, last good data still shown */
+.warmap__live.is-lost {
+  color: var(--wm-brass);
+}
+
+.warmap__live.is-lost .warmap__live-dot {
+  background: var(--wm-brass);
+  animation-duration: 1.2s;
+}
+
+/* Cold start, nothing to show: a typed signal-lost slip with retry */
+.warmap__fault {
+  position: relative;
+  z-index: 1;
+  margin: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  max-width: 440px;
+  padding: 28px 32px;
+  text-align: center;
+  border-top: 4px solid var(--wm-red);
+}
+
+.warmap__fault-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font-type);
+  font-size: 12px;
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+  color: var(--wm-red);
+}
+
+.warmap__fault-title {
+  margin: 0;
+  font-family: var(--font-stencil);
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.warmap__fault-detail {
+  margin: 0;
+  font-family: var(--font-type);
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--wm-ink-muted);
+}
+
+.warmap__retry {
+  margin-top: 6px;
+  padding: 7px 18px;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--wm-ink);
+  background: transparent;
+  border: 1.5px solid var(--wm-ink);
+  cursor: pointer;
+  transition: background 0.2s ease, color 0.2s ease;
+}
+
+.warmap__retry:hover:not(:disabled) {
+  background: var(--wm-ink);
+  color: var(--color-paper);
+}
+
+.warmap__retry:disabled {
+  opacity: 0.6;
+  cursor: progress;
+}
+
+/* Troop movements (showcase only): inked arcs */
 .warmap__troops {
   pointer-events: none;
 }
@@ -549,7 +783,7 @@
 .warmap__arc-guide {
   fill: none;
   stroke: var(--nation);
-  stroke-opacity: 0.12;
+  stroke-opacity: 0.3;
   stroke-width: 0.8px;
   stroke-dasharray: 0.01 0.012;
   vector-effect: non-scaling-stroke;
@@ -558,35 +792,33 @@
 .warmap__arc-trail {
   fill: none;
   stroke: var(--nation);
-  stroke-width: 1.4px;
+  stroke-width: 1.6px;
   stroke-linecap: round;
-  stroke-opacity: 0.85;
+  stroke-opacity: 0.9;
   vector-effect: non-scaling-stroke;
-  filter: drop-shadow(0 0 2px var(--nation));
 }
 
 .warmap__arc-head {
-  fill: #FFFFFF;
+  fill: rgb(var(--wm-paper-wash));
   stroke: var(--nation);
   stroke-width: 1.5px;
   vector-effect: non-scaling-stroke;
-  filter: drop-shadow(0 0 3px var(--nation));
 }
 
 .warmap__arc-label {
   font-size: 7px;
   font-weight: 700;
   text-anchor: middle;
-  fill: var(--nation);
+  fill: var(--wm-ink);
   paint-order: stroke;
-  stroke: var(--wm-bg);
+  stroke: rgb(var(--wm-paper-wash));
   stroke-width: 2px;
   letter-spacing: 0.04em;
 }
 
-/* Attack landing: target flash + shockwave */
+/* Attack landing: an ink blot and a ring, no flash */
 .warmap__impact-flash {
-  fill: #FFFFFF;
+  fill: var(--wm-ink);
   animation: warmap-flash 0.6s ease-out forwards;
 }
 
@@ -605,14 +837,14 @@
 }
 
 .warmap__impact-core {
-  fill: #FFFFFF;
+  fill: var(--wm-ink);
   transform-box: fill-box;
   transform-origin: center;
   animation: warmap-shock 0.5s ease-out forwards;
 }
 
 @keyframes warmap-flash {
-  from { fill-opacity: 0.55; }
+  from { fill-opacity: 0.3; }
   to { fill-opacity: 0; }
 }
 
@@ -621,7 +853,7 @@
   to { transform: scale(1); opacity: 0; }
 }
 
-/* Elimination: bigger red burst */
+/* Elimination: faded red ink spreads, two rings, no sparks */
 .warmap__burst-flash {
   fill: var(--wm-red);
   animation: warmap-flash 1.4s ease-out forwards;
@@ -629,264 +861,105 @@
 
 .warmap__burst-ring {
   stroke: var(--wm-red);
-  stroke-width: 2.5px;
+  stroke-width: 2px;
   opacity: 0;
   animation: warmap-shock 1.3s ease-out forwards;
 }
 
 .warmap__burst-ring.is-late {
-  stroke: #FFFFFF;
-  stroke-width: 1.2px;
+  stroke: var(--wm-charcoal);
+  stroke-width: 1px;
   animation-delay: 0.25s;
 }
 
 .warmap__burst-spark {
-  stroke: var(--wm-amber);
-  stroke-width: 1.4px;
-  stroke-linecap: round;
-  vector-effect: non-scaling-stroke;
-  transform-box: view-box;
-  opacity: 0;
-  animation: warmap-spark 0.9s ease-out forwards;
+  display: none;
 }
 
-@keyframes warmap-spark {
-  0% { opacity: 1; stroke-dasharray: 2 30; }
-  100% { opacity: 0; stroke-dasharray: 16 30; }
-}
+@media (max-width: 900px) {
+  /* The page scrolls instead of the map squeezing: the old 1fr map row shrank to nothing under a
+     tall leaderboard, which hid the map at phone width. */
+  .warmap {
+    height: auto;
+    min-height: 100%;
+    overflow: visible;
+  }
 
-/* Live states: a plate over the map (standby / round in progress / connecting) */
-.warmap__notice {
-  position: absolute;
-  top: 14px;
-  left: 50%;
-  transform: translateX(-50%);
-  z-index: 2;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 3px;
-  max-width: calc(100% - 28px);
-  padding: 8px 18px;
-  text-align: center;
-  text-transform: uppercase;
-  background: rgba(11, 15, 18, 0.9);
-  border: 1px solid rgba(245, 165, 38, 0.45);
-  border-top: 2px solid var(--wm-amber);
-  box-shadow: 0 0 18px rgba(245, 165, 38, 0.15);
-  pointer-events: none;
-  animation: warmap-event-in 0.4s ease-out;
-}
+  .warmap__header {
+    margin: 10px 10px 0;
+    padding: 10px 14px;
+    flex-wrap: wrap;
+    gap: 10px 16px;
+  }
 
-.warmap__notice.is-progress {
-  border-color: rgba(32, 201, 94, 0.45);
-  border-top-color: var(--wm-green);
-  box-shadow: 0 0 18px rgba(32, 201, 94, 0.15);
-}
+  /* DEFCON stamp and clock share the first line; the round details get the full width below */
+  .warmap__header {
+    justify-content: space-between;
+  }
 
-.warmap__notice-title {
-  font-size: 13px;
-  font-weight: 700;
-  letter-spacing: 0.2em;
-  color: var(--wm-amber);
-}
+  .warmap__round {
+    order: 3;
+    flex-basis: 100%;
+  }
 
-.warmap__notice.is-progress .warmap__notice-title {
-  color: var(--wm-green);
-}
+  .warmap__game {
+    font-size: 20px;
+  }
 
-.warmap__notice-detail {
-  font-size: 11px;
-  letter-spacing: 0.08em;
-  color: var(--wm-muted);
-}
+  .warmap__body {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto auto;
+  }
 
-/* Public leaderboard: header, column labels, awaiting panel, footer */
-.warmap__board-head {
-  margin: 0 0 14px;
-}
+  .warmap__map {
+    container-type: normal;
+    height: auto;
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    padding: 14px 10px;
+  }
 
-.warmap__board-head .warmap__board-title {
-  margin: 0;
-}
+  .warmap__frame {
+    width: 100%;
+    max-height: none;
+  }
 
-/* Whose results these are: "Round 1 · The Prisoner's Dilemma — Final" */
-.warmap__board-round {
-  margin: 10px 0 0;
-  font-size: 13px;
-  font-weight: 700;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: var(--wm-text);
-}
+  /* Too little map to spare a corner: the note sits on the table just above the map */
+  .warmap__frame:has(.warmap__notice) {
+    margin-top: 52px;
+  }
 
-/* A newer round is under way: these are the previous round's results */
-.warmap__board-pending {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin: 6px 0 0;
-  font-size: 10px;
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
-  color: var(--wm-amber);
-}
+  .warmap__notice {
+    top: auto;
+    bottom: calc(100% + 8px);
+    left: 0;
+    max-width: 100%;
+    transform: none;
+  }
 
-/* Lines up with the row grid: rank 26px + gap + swatch 12px = the 48px label column. */
-.warmap__cols {
-  display: grid;
-  grid-template-columns: 48px 1fr auto;
-  gap: 10px;
-  padding: 0 12px 6px;
-  font-size: 10px;
-  letter-spacing: 0.2em;
-  text-transform: uppercase;
-  color: var(--wm-muted);
-}
+  .warmap__events {
+    position: static;
+    margin-top: 12px;
+  }
 
-.warmap__board-foot {
-  margin: 10px 0 0;
-  font-size: 10px;
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
-  color: var(--wm-muted);
-}
-
-.warmap__board-foot strong {
-  color: var(--wm-text);
-  font-weight: 700;
-}
-
-.warmap__await {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding: 18px 16px;
-  background: var(--wm-bg);
-  border: 1px dashed var(--wm-line);
-  border-left: 2px solid var(--wm-amber);
-  animation: warmap-event-in 0.4s ease-out;
-}
-
-.warmap__await-title {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 13px;
-  font-weight: 700;
-  letter-spacing: 0.2em;
-  text-transform: uppercase;
-  color: var(--wm-amber);
-}
-
-.warmap__await-dot {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: var(--wm-amber);
-  box-shadow: 0 0 8px var(--wm-amber);
-  animation: warmap-blink 1.4s ease-in-out infinite;
-}
-
-.warmap__await-detail {
-  font-size: 11px;
-  line-height: 1.5;
-  letter-spacing: 0.06em;
-  color: var(--wm-muted);
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .warmap__await,
-  .warmap__await-dot {
-    animation: none;
+  .warmap__board {
+    margin: 0 10px 64px; /* room for the Live / Showcase toggle */
+    padding: 16px;
+    overflow: visible;
   }
 }
 
-/* Poll failed, last good data still shown */
-.warmap__live.is-lost {
-  color: var(--wm-amber);
-}
-
-.warmap__live.is-lost .warmap__live-dot {
-  background: var(--wm-amber);
-  box-shadow: 0 0 8px var(--wm-amber);
-  animation-duration: 0.7s;
-}
-
-/* Cold start, nothing to show: full error with retry */
-.warmap__fault {
-  position: relative;
-  z-index: 1;
-  margin: auto;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 10px;
-  max-width: 440px;
-  padding: 28px 32px;
-  text-align: center;
-  background: rgba(14, 20, 24, 0.92);
-  border: 1px solid var(--wm-red-soft);
-  border-top: 2px solid var(--wm-red);
-  box-shadow: 0 0 24px rgba(229, 37, 60, 0.2);
-}
-
-.warmap__fault-label {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 11px;
-  letter-spacing: 0.24em;
-  text-transform: uppercase;
-  color: var(--wm-red);
-}
-
-.warmap__fault-title {
-  margin: 0;
-  font-size: 18px;
-  font-weight: 700;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-}
-
-.warmap__fault-detail {
-  margin: 0;
-  font-size: 12px;
-  line-height: 1.5;
-  color: var(--wm-muted);
-}
-
-.warmap__retry {
-  margin-top: 6px;
-  padding: 7px 18px;
-  font: inherit;
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.2em;
-  text-transform: uppercase;
-  color: var(--wm-red);
-  background: rgba(229, 37, 60, 0.08);
-  border: 1px solid var(--wm-red);
-  cursor: pointer;
-  transition: background 0.2s ease;
-}
-
-.warmap__retry:hover:not(:disabled) {
-  background: rgba(229, 37, 60, 0.2);
-}
-
-.warmap__retry:disabled {
-  opacity: 0.6;
-  cursor: progress;
-}
-
 @media (prefers-reduced-motion: reduce) {
-  .warmap__notice {
+  .warmap__notice,
+  .warmap__await,
+  .warmap__await-dot,
+  .warmap__live-dot,
+  .warmap__event {
     animation: none;
   }
   .warmap__impact-ring,
-  .warmap__burst-ring,
-  .warmap__burst-spark {
+  .warmap__burst-ring {
     animation-duration: 0.01s;
   }
 }

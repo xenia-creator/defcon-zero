@@ -2,22 +2,42 @@
 @import '@fontsource/jetbrains-mono/400.css';
 @import '@fontsource/jetbrains-mono/700.css';
 @import '@fontsource/special-elite/400.css';
+@import '@fontsource/stardos-stencil/700.css';
 
-@theme {
-  --color-ink: #08090a;
-  --color-panel: #121518;
-  --color-steel: #262c33;
-  --color-steel-light: #3a424c;
-  --color-muted: #8b96a3;
-  --color-paper: #d9dde2;
-  --color-alert: #e5243b;
-  --color-alert-dim: #6b1520;
-  --color-amber: #f5a524;
-  --color-coop: #22c55e;
-  --color-peace: #4b7bec;
+/*
+ * WWI trench palette: cold slate sky, mud, olive, khaki, faded paper. One warm accent (fire) for
+ * actions and highlights; faded red (alert) only for danger and eliminations. Every text colour
+ * here passes WCAG AA (4.5:1) on ink and panel; muted, coop, amber, peace and fire also on steel.
+ * `static` keeps every token on :root even when no utility uses it, because plain CSS (WarMap.css) reads them.
+ */
+@theme static {
+  --color-ink: #0e1011; /* night trench, near-black with a cold cast */
+  --color-panel: #191c1b; /* charcoal field kit */
+  --color-steel: #2b302d; /* slate-olive rule lines and panel headers */
+  --color-steel-light: #4a514b; /* borders only, never text */
+  --color-muted: #999b8e; /* faded khaki-grey */
+  --color-paper: #d9d3c3; /* aged paper */
+  --color-khaki: #b3aa82;
+  --color-mud: #3a3128;
+  --color-alert: #cf6858; /* faded red: danger, eliminations */
+  --color-alert-dim: #4e2620;
+  --color-amber: #b99a5e; /* dull brass: pending and warnings */
+  --color-coop: #8f9e62; /* olive/moss: good, accepted */
+  --color-peace: #8299ad; /* slate blue */
+  --color-fire: #d97a35; /* the one warm accent */
+  --color-fire-light: #e88f4c;
+
+  /* Inks for text printed on paper.jpg (.paper). AA on the darkest 1% of the washed paper. */
+  --color-type-ink: #231f1a;
+  --color-type-muted: #463f33;
+  --color-type-red: #7a2418;
+  --color-type-brass: #54411a;
+  --color-type-rust: #7a3510;
+  --color-type-olive: #3d4a22;
 
   --font-mono: 'JetBrains Mono', ui-monospace, Menlo, Consolas, monospace;
   --font-type: 'Special Elite', 'Courier New', ui-monospace, monospace;
+  --font-stencil: 'Stardos Stencil', 'Special Elite', Georgia, serif;
 }
 
 html,
@@ -29,27 +49,144 @@ body {
   min-height: 100vh;
 }
 
+/* Cold blue-grey haze from above, mud from below */
 body {
   background-image:
-    radial-gradient(ellipse at top, rgb(229 36 59 / 0.08), transparent 60%),
-    radial-gradient(ellipse at bottom, rgb(38 44 51 / 0.5), transparent 70%);
+    radial-gradient(ellipse at top, rgb(110 128 140 / 0.1), transparent 60%),
+    radial-gradient(ellipse at bottom, rgb(58 49 40 / 0.45), transparent 70%);
   background-attachment: fixed;
 }
 
-/* CRT scanlines over the whole app; pointer-events off so it never blocks clicks */
-.scanlines {
+/*
+ * Film grain over the whole app (replaces the CRT scanlines). A static baked tile (public/grain.png,
+ * light and dark specks at low alpha) with no blend mode and no filter, so it costs nothing per frame
+ * in Safari; pointer-events off so it never blocks clicks.
+ */
+.film-grain {
   pointer-events: none;
   position: fixed;
   inset: 0;
   z-index: 50;
-  background: repeating-linear-gradient(
-    to bottom,
-    rgb(255 255 255 / 0.025) 0,
-    rgb(255 255 255 / 0.025) 1px,
-    transparent 1px,
-    transparent 3px
-  );
-  mix-blend-mode: overlay;
+  background-image: url('/grain.png');
+  background-size: 160px 160px;
+}
+
+/* Large stencil headings (Stardos Stencil) */
+.stencil {
+  font-family: var(--font-stencil);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+/* Worn paint: a fixed noise mask eats small flecks out of the letters. Big headings only. */
+.weathered {
+  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='240' height='240'%3E%3Cfilter id='w'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.11' numOctaves='4' seed='7'/%3E%3CfeColorMatrix values='0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  -7 0 0 0 4.9'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23w)'/%3E%3C/svg%3E");
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='240' height='240'%3E%3Cfilter id='w'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.11' numOctaves='4' seed='7'/%3E%3CfeColorMatrix values='0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  -7 0 0 0 4.9'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23w)'/%3E%3C/svg%3E");
+  -webkit-mask-size: 240px 240px;
+  mask-size: 240px 240px;
+}
+
+/*
+ * A sheet of paper.jpg: covers the box (never tiled), under a light wash that lifts the darkest
+ * stains so the type-* inks keep AA contrast everywhere on it. Text on it defaults to type-ink.
+ */
+.paper {
+  color: var(--color-type-ink);
+  background-color: #ddd3bc;
+  background-image: linear-gradient(rgb(240 234 218 / 0.35), rgb(240 234 218 / 0.35)), url('/paper.jpg');
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  box-shadow:
+    0 1px 0 rgb(255 255 255 / 0.15) inset,
+    0 18px 40px -12px rgb(0 0 0 / 0.9),
+    0 4px 10px rgb(0 0 0 / 0.5);
+}
+
+/* A typed form line on paper: ink underline, no box */
+.paper-input {
+  width: 100%;
+  border: 0;
+  border-bottom: 1.5px solid var(--color-type-muted);
+  background: rgb(255 255 255 / 0.18);
+  padding: 0.45rem 0.6rem;
+  font-family: var(--font-type);
+  font-size: 1rem;
+  color: var(--color-type-ink);
+  outline: none;
+  color-scheme: light;
+  transition: border-color 0.15s, background-color 0.15s;
+}
+.paper-input::placeholder {
+  color: var(--color-type-muted);
+  opacity: 1;
+}
+.paper-input:focus {
+  border-bottom-color: var(--color-type-rust);
+  background: rgb(255 255 255 / 0.32);
+  box-shadow: 0 2px 0 0 var(--color-type-rust);
+}
+
+/*
+ * Slow drifting snow/ash: two tiled layers of soft flecks moving down with a slight tilt.
+ * CSS only and decorative. Animated with transform alone (no background-position, no filter), so
+ * Safari moves a cached layer on the GPU instead of repainting the screen every frame. Each layer
+ * moves exactly one tile, so the loop is seamless. Still (but visible) under prefers-reduced-motion.
+ */
+.snow {
+  pointer-events: none;
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+}
+.snow::before,
+.snow::after {
+  content: '';
+  pointer-events: none;
+  position: absolute;
+  left: -20%;
+  right: -20%;
+  bottom: -10%;
+  will-change: transform;
+  backface-visibility: hidden;
+}
+.snow::before {
+  top: calc(-10% - 300px);
+  background-image:
+    radial-gradient(1.5px 1.5px at 20px 30px, rgb(230 232 235 / 0.55), transparent),
+    radial-gradient(1px 1px at 140px 80px, rgb(230 232 235 / 0.45), transparent),
+    radial-gradient(1.5px 1.5px at 90px 190px, rgb(230 232 235 / 0.4), transparent),
+    radial-gradient(1px 1px at 230px 150px, rgb(230 232 235 / 0.5), transparent),
+    radial-gradient(1px 1px at 270px 260px, rgb(230 232 235 / 0.35), transparent),
+    radial-gradient(1.5px 1.5px at 180px 280px, rgb(230 232 235 / 0.4), transparent);
+  background-size: 300px 300px;
+  animation: snow-fall 38s linear infinite;
+}
+.snow::after {
+  top: calc(-10% - 460px);
+  background-image:
+    radial-gradient(3px 3px at 60px 110px, rgb(230 232 235 / 0.3), transparent),
+    radial-gradient(2.5px 2.5px at 330px 40px, rgb(230 232 235 / 0.26), transparent),
+    radial-gradient(3.5px 3.5px at 250px 340px, rgb(230 232 235 / 0.2), transparent),
+    radial-gradient(2.5px 2.5px at 400px 230px, rgb(230 232 235 / 0.26), transparent);
+  background-size: 460px 460px;
+  animation: snow-fall-near 26s linear infinite;
+}
+@keyframes snow-fall {
+  from { transform: rotate(7deg) translate3d(0, 0, 0); }
+  to { transform: rotate(7deg) translate3d(0, 300px, 0); }
+}
+@keyframes snow-fall-near {
+  from { transform: rotate(7deg) translate3d(0, 0, 0); }
+  to { transform: rotate(7deg) translate3d(0, 460px, 0); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .snow::before,
+  .snow::after {
+    animation: none;
+    transform: rotate(7deg);
+  }
 }
 
 .label {
@@ -96,11 +233,9 @@ textarea {
   }
 }
 
-/* Title glow from the briefing screen */
+/* Was a neon title glow; now a heavy pressed-ink shadow (class kept so existing markup still works) */
 .glow {
-  text-shadow:
-    0 0 18px rgb(229 36 59 / 0.7),
-    0 0 60px rgb(229 36 59 / 0.35);
+  text-shadow: 0 2px 0 rgb(0 0 0 / 0.55), 0 6px 18px rgb(0 0 0 / 0.5);
 }
 
 /* --- Blockly --- */
@@ -118,11 +253,10 @@ textarea {
 /* ---- 3D depth panels ---- */
 .panel-3d {
   box-shadow:
-    0 0 0 1px #000,
-    0 2px 0 0 var(--color-steel),
-    0 4px 0 0 rgba(0,0,0,0.6),
-    0 8px 24px -4px rgba(0,0,0,0.9),
-    inset 0 1px 0 0 rgba(255,255,255,0.04);
+    0 0 0 1px rgb(0 0 0 / 0.7),
+    0 2px 0 0 rgb(0 0 0 / 0.5),
+    0 12px 28px -8px rgb(0 0 0 / 0.85),
+    inset 0 1px 0 0 rgb(217 211 195 / 0.04);
 }
 
 /* Vignette overlay — applied as an extra child div absolutely inside a container */
@@ -130,14 +264,14 @@ textarea {
   pointer-events: none;
   position: absolute;
   inset: 0;
-  box-shadow: inset 0 0 60px 8px rgba(229,36,59,0.55);
+  box-shadow: inset 0 0 60px 8px rgb(207 104 88 / 0.4);
   z-index: 1;
 }
 .vign-amber {
   pointer-events: none;
   position: absolute;
   inset: 0;
-  box-shadow: inset 0 0 50px 6px rgba(245,165,36,0.35);
+  box-shadow: inset 0 0 50px 6px rgb(185 154 94 / 0.3);
   z-index: 1;
 }
 
@@ -167,25 +301,32 @@ textarea {
 
 /* Boot terminal typing animation */
 @keyframes typing {
-  from { width: 0 }
-  to { width: 100% }
+  from { max-width: 0 }
+  to { max-width: 100% }
 }
 @keyframes cursor-blink {
   0%, 100% { border-right-color: transparent }
-  50% { border-right-color: var(--color-coop) }
+  50% { border-right-color: var(--color-khaki) }
 }
+/* Field telegraph lines on the landing page, typed out one by one */
 .boot-line {
   overflow: hidden;
   white-space: nowrap;
-  color: var(--color-coop);
-  font-size: 11px;
-  letter-spacing: 0.08em;
+  width: fit-content; /* the cursor sits at the end of the text, not the end of the column */
+  color: var(--color-khaki);
+  font-family: var(--font-type);
+  font-size: 12px;
+  line-height: 1.3;
+  letter-spacing: 0.1em;
   border-right: 2px solid transparent;
 }
 .boot-line-1 { animation: typing 0.6s steps(40) 0.2s both, cursor-blink 0.5s 0.8s 3; }
 .boot-line-2 { animation: typing 0.6s steps(40) 0.9s both, cursor-blink 0.5s 1.5s 3; }
 .boot-line-3 { animation: typing 0.6s steps(40) 1.6s both, cursor-blink 0.5s 2.2s 3; }
 .boot-line-4 { animation: typing 0.6s steps(40) 2.3s both, cursor-blink 0.5s 1s infinite; }
+@media (prefers-reduced-motion: reduce) {
+  .boot-line { animation: none !important; }
+}
 
 /* Transmit progress bar pulse */
 @keyframes transmit-fill {
@@ -195,7 +336,7 @@ textarea {
 .transmit-bar {
   animation: transmit-fill 1.2s ease-out forwards;
   height: 100%;
-  background: var(--color-alert);
+  background: var(--color-fire);
 }
 
 /* stamp land animation */
@@ -208,51 +349,52 @@ textarea {
   animation: stamp-land 0.35s cubic-bezier(0.22,1,0.36,1) forwards;
 }
 
-/* Zone closing edge glow — applied as fixed overlay div */
+/* Window closing: a still, dark edge that slowly breathes (brass at 5 minutes, faded red in the last minute).
+   Fixed overlay div; timing is unchanged (App.tsx ZoneOverlay). */
 .zone-closing {
   pointer-events: none;
   position: fixed;
   inset: 0;
   z-index: 30;
-  box-shadow: inset 0 0 60px 8px rgba(245,165,36,0.5);
-  animation: zone-pulse 1.4s ease-in-out infinite;
+  box-shadow: inset 0 0 90px 10px rgb(185 154 94 / 0.28);
+  animation: zone-pulse 4s ease-in-out infinite;
 }
 .zone-critical {
   pointer-events: none;
   position: fixed;
   inset: 0;
   z-index: 30;
-  box-shadow: inset 0 0 80px 16px rgba(229,36,59,0.7);
-  animation: zone-pulse 0.7s ease-in-out infinite;
+  box-shadow: inset 0 0 110px 18px rgb(207 104 88 / 0.4);
+  animation: zone-pulse 2.6s ease-in-out infinite;
 }
 @keyframes zone-pulse {
   0%, 100% { opacity: 1 }
-  50% { opacity: 0.4 }
+  50% { opacity: 0.6 }
+}
+@media (prefers-reduced-motion: reduce) {
+  .zone-closing,
+  .zone-critical {
+    animation: none;
+  }
 }
 
-/* Grid pattern background (subtle tactical overlay) */
+/* Grid pattern background (faint survey grid) */
 .tactical-grid {
-  background-image: 
-    linear-gradient(rgba(38,44,51,0.4) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(38,44,51,0.4) 1px, transparent 1px);
+  background-image:
+    linear-gradient(rgb(43 48 45 / 0.45) 1px, transparent 1px),
+    linear-gradient(90deg, rgb(43 48 45 / 0.45) 1px, transparent 1px);
   background-size: 24px 24px;
 }
 
-/* DEFCON badge glow by level */
-.defcon-glow-3 { box-shadow: 0 0 12px -2px var(--color-amber), inset 0 0 8px rgba(245,165,36,0.1); }
-.defcon-glow-2 { box-shadow: 0 0 12px -2px #f0702a, inset 0 0 8px rgba(240,112,42,0.1); }
-.defcon-glow-1 { box-shadow: 0 0 16px -2px var(--color-alert), inset 0 0 8px rgba(229,36,59,0.1); }
-.defcon-glow-0 { box-shadow: 0 0 24px -2px #fff6f2, inset 0 0 12px rgba(255,246,242,0.2); background: #fff6f2; color: var(--color-alert) !important; }
+/* DEFCON badge by level: flat tinted fields, no glow (class names kept) */
+.defcon-glow-3 { background: rgb(185 154 94 / 0.08); }
+.defcon-glow-2 { background: rgb(217 122 53 / 0.1); }
+.defcon-glow-1 { background: rgb(207 104 88 / 0.12); }
+.defcon-glow-0 { background: var(--color-paper); color: var(--color-alert-dim) !important; }
 
-/* Logo pulse */
-@keyframes logo-flicker {
-  0%, 100% { opacity: 1 }
-  92% { opacity: 1 }
-  93% { opacity: 0.7 }
-  94% { opacity: 1 }
-}
+/* Was a CRT flicker; the look is heavy and still now, so it does nothing (class kept) */
 .logo-flicker {
-  animation: logo-flicker 4s ease-in-out infinite;
+  animation: none;
 }
 
 /* Leaderboard cut line */
@@ -273,8 +415,8 @@ textarea {
   padding: 0 4px;
 }
 
-/* Orange DEFCON 2 accent */
-.text-orange { color: #f0702a; }
-.border-orange { border-color: #f0702a; }
-.bg-orange { background: #f0702a; }
-.shadow-orange { box-shadow: 0 0 20px -4px #f0702a; }
+/* DEFCON 2 accent: now the fire token */
+.text-orange { color: var(--color-fire); }
+.border-orange { border-color: var(--color-fire); }
+.bg-orange { background: var(--color-fire); }
+.shadow-orange { box-shadow: 0 4px 14px -6px rgb(0 0 0 / 0.8); }

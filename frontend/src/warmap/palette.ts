@@ -3,18 +3,21 @@
 // Colour depends only on the code and this file, never on who has claimed what, so a nation keeps
 // the same colour from claim to ranked, in live and showcase alike.
 
-/** The 10 nation colours, grouped into hue families that read alike from across a room. */
+/**
+ * The 10 nation colours, grouped into hue families that read alike from across a room. Muted
+ * printing inks for a map on aged paper; the two in each family differ in value as well as hue.
+ */
 export const PALETTE = [
-  { colour: '#00E5FF', family: 'blue' }, // cyan
-  { colour: '#3D7BFF', family: 'blue' }, // electric blue
-  { colour: '#20C95E', family: 'green' }, // green
-  { colour: '#D4FF2B', family: 'green' }, // lime
-  { colour: '#FFE53B', family: 'yellow' }, // gold
-  { colour: '#F5A526', family: 'yellow' }, // amber
-  { colour: '#FF6A1A', family: 'red' }, // orange
-  { colour: '#E5253C', family: 'red' }, // red
-  { colour: '#FF2BD6', family: 'purple' }, // magenta
-  { colour: '#A855F7', family: 'purple' }, // violet
+  { colour: '#5B7C9C', family: 'blue' }, // slate blue
+  { colour: '#2E5566', family: 'blue' }, // prussian
+  { colour: '#7E8C3A', family: 'green' }, // olive
+  { colour: '#3F6148', family: 'green' }, // moss
+  { colour: '#D0A445', family: 'yellow' }, // ochre
+  { colour: '#9C7A3C', family: 'yellow' }, // raw umber
+  { colour: '#B7602F', family: 'red' }, // rust
+  { colour: '#963630', family: 'red' }, // dull red
+  { colour: '#764A6E', family: 'purple' }, // plum
+  { colour: '#A0819B', family: 'purple' }, // dusty mauve
 ] as const
 
 /**

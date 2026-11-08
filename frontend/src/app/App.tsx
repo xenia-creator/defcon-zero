@@ -64,28 +64,29 @@ function Shell({ session }: { session: Session }) {
 
   return (
     <div className="flex h-screen flex-col">
-      {/* War-room top bar: brand and views on the left, one status group and the user on the right */}
-      <header className="relative z-20 flex h-14 shrink-0 items-center justify-between gap-6 border-b border-steel bg-ink/95 px-5 panel-3d">
+      {/* War-room top bar: brand and views on the left, one status group and the user on the right.
+          Wraps onto a second line when the window is too narrow, instead of overlapping. */}
+      <header className="relative z-20 flex min-h-14 shrink-0 flex-wrap items-center justify-between gap-x-6 gap-y-1 border-b border-steel bg-ink/95 px-3 py-1 panel-3d sm:px-5">
         <span className="absolute top-0 left-0 h-3 w-3 border-r border-b border-steel-light opacity-60" aria-hidden />
         <span className="absolute right-0 bottom-0 h-3 w-3 border-t border-l border-steel-light opacity-60" aria-hidden />
 
-        <div className="flex min-w-0 items-center gap-6">
-          <span className="flex shrink-0 items-center gap-3 logo-flicker">
-            <span className="h-3 w-3 bg-alert shadow-[0_0_14px_2px_var(--color-alert)] blink" aria-hidden />
-            <span className="text-lg font-bold tracking-[0.3em] whitespace-nowrap text-alert glow select-none">DEFCON ZERO</span>
+        <div className="flex min-w-0 max-w-full items-center gap-3 sm:gap-6">
+          <span className="flex shrink-0 items-center gap-3">
+            <span className="h-3 w-1.5 bg-fire" aria-hidden />
+            <span className="stencil text-xl tracking-[0.2em] whitespace-nowrap text-paper glow select-none">DEFCON ZERO</span>
           </span>
           {views.length > 1 && (
-            <nav className="flex min-w-0 gap-1" aria-label="Views">
+            <nav className="flex min-w-0 gap-1 overflow-x-auto" aria-label="Views">
               {views.map((v, i) => (
                 <button
                   key={v}
                   onClick={() => setChosen(v)}
                   aria-current={view === v ? 'page' : undefined}
-                  className={`cursor-pointer border-b-2 px-3 py-4 text-xs font-bold tracking-[0.2em] whitespace-nowrap uppercase transition-colors ${
-                    view === v ? 'border-alert text-paper' : 'border-transparent text-muted hover:text-paper'
+                  className={`cursor-pointer border-b-2 px-3 py-3 text-xs font-bold tracking-[0.2em] whitespace-nowrap uppercase transition-colors sm:py-4 ${
+                    view === v ? 'border-fire text-paper' : 'border-transparent text-muted hover:text-paper'
                   }`}
                 >
-                  <span className="mr-2 text-alert">0{i + 1}</span>
+                  <span className="mr-2 text-fire">0{i + 1}</span>
                   {v === 'workspace' && needsCountry ? 'Claim nation' : VIEW_LABELS[v]}
                 </button>
               ))}
@@ -93,8 +94,8 @@ function Shell({ session }: { session: Session }) {
           )}
         </div>
 
-        <div className="flex shrink-0 items-center gap-4">
-          <div className="flex items-center gap-4 border border-steel bg-panel/60 px-3 py-1">
+        <div className="flex min-w-0 max-w-full flex-wrap items-center gap-x-4 gap-y-1">
+          <div className="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-1 border border-steel bg-panel/60 px-3 py-1">
             {/* The war map shows DEFCON and the game in its own header, so the bar doesn't repeat them there */}
             {view !== 'warmap' && (
               <>
@@ -113,14 +114,14 @@ function Shell({ session }: { session: Session }) {
             <span className="max-w-40 truncate text-muted" title={team?.nation_name ?? session.username}>
               {team?.nation_name ?? session.username}
             </span>
-            <button onClick={() => logout()} className="label cursor-pointer !text-[10px] transition-colors hover:!text-alert">
+            <button onClick={() => logout()} className="label cursor-pointer !text-[10px] transition-colors hover:!text-fire">
               Log out
             </button>
           </span>
         </div>
       </header>
 
-      <main className={`flex min-h-0 flex-1 flex-col ${view === 'warmap' ? 'h-full overflow-hidden' : 'overflow-y-auto'}`}>
+      <main className={`flex min-h-0 flex-1 flex-col ${view === 'warmap' ? 'h-full overflow-hidden max-[900px]:overflow-y-auto' : 'overflow-y-auto'}`}>
         {view === 'command' ? (
           <OrganiserConsole />
         ) : view === 'warmap' ? (
@@ -149,7 +150,7 @@ function Shell({ session }: { session: Session }) {
         )}
       </main>
       <Toasts />
-      <div className="scanlines" />
+      <div className="film-grain" aria-hidden />
       <ZoneOverlay round={round} />
     </div>
   )
