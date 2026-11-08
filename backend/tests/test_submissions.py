@@ -866,6 +866,7 @@ async def test_list_is_empty_for_organisers(
     )
 
     assert response.status_code == 200
+
     assert response.json()["submissions"] == []
 
 

@@ -54,21 +54,29 @@ async def get_standings(db: AsyncSession) -> StandingsResponse:
 
 
 async def drop_to_bottom(db: AsyncSession, round_id: int, team_id: int) -> None:
-    """Re-rank a round so this team is last, without committing.
+    """Move disqualified teams to the bottom of the standings.
 
-    For a team disqualified while its round is in review, so the cut at publish
-    keeps exactly N teams that are not disqualified. Does nothing if the team has
-    no row in the round, as there is no place to move it from.
-
-    The caller must hold a lock that stops the round being published meanwhile:
-    PATCH /admin/teams takes a shared lock on the round before calling this.
     The rows themselves are locked here, so two re-ranks run one at a time.
     """
     rows = await standings_repository.list_for_round_for_update(db, round_id)
+
     if all(row.team_id != team_id for row in rows):
         return
-    current = [ranking.TeamResult(row.team_id, row.score, row.rank) for row in rows]
-    new_rank = {r.team_id: r.rank for r in ranking.move_to_bottom(current, [team_id])}
+
+    current = [
+        ranking.TeamResult(row.team_id, row.score, row.rank)
+        for row in rows
+    ]
+
+    disqualified_ids = await teams_repository.list_disqualified_ids(
+        db, [row.team_id for row in rows]
+    )
+
+    new_rank = {
+        r.team_id: r.rank
+        for r in ranking.move_to_bottom(current, disqualified_ids)
+    }
+
     # Changing the loaded rows is enough: the session writes the changed ranks
     # back as UPDATEs when the caller commits.
     for row in rows:

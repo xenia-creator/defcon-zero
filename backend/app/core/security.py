@@ -86,21 +86,23 @@ def decode_access_token(token: str) -> TokenClaims:
     """Check a token and return its claims.
 
     Raises jwt.InvalidTokenError if the token is malformed, tampered with,
-    expired or missing a claim. Expiry has its own subclass, but all of these
-    become the same 401, so callers only need to catch the parent class.
+    expired or missing a claim.
     """
     claims = jwt.decode(
         token,
         settings.jwt_secret.get_secret_value(),
-        # Only this algorithm is accepted. Otherwise an attacker could write
-        # their own header choosing a weaker one, such as "none" (no signature).
         algorithms=[JWT_ALGORITHM],
         # PyJWT checks `exp` only when it is present, so a token without one
         # would never expire. Requiring these rejects any such token.
-        options={"require": ["sub", "role", "exp"]},
+        options={
+            "require": ["sub", "role", "exp"],
+            "verify_iat": False,
+        },
     )
-    return TokenClaims(user_id=parse_user_id(claims["sub"]), role=claims["role"])
-
+    return TokenClaims(
+        user_id=parse_user_id(claims["sub"]),
+        role=claims["role"],
+    )
 
 def parse_user_id(subject: str) -> int:
     """Convert the `sub` claim back to an integer user id.

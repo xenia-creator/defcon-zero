@@ -63,6 +63,7 @@ class TeamLogin(NamedTuple):
     headers: dict[str, str]
 
 
+
 async def claim_teams(
     client: httpx.AsyncClient, claimed_team: ClaimedTeam, count: int
 ) -> list[TeamLogin]:
@@ -73,7 +74,9 @@ async def claim_teams(
         headers = await claimed_team(f"team_{index:02d}", code, name)
         me = await client.get("/me", headers=headers)
         teams.append(TeamLogin(me.json()["team_id"], headers))
+
     return teams
+
 
 
 async def open_round(client: httpx.AsyncClient, organiser: dict[str, str], round_id: int) -> None:

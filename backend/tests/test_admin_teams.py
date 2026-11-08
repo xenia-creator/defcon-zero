@@ -285,8 +285,11 @@ async def test_two_disqualifications_at_once_both_count(
     claimed_team: ClaimedTeam,
     round_ids: dict[int, int],
 ) -> None:
-    """Without the row locks, the second commit would undo the first one's move."""
-    ranked = [team.id for team in await claim_teams(client, claimed_team, 5)]
+    """Without the row locks, the second commit would undo the first one's."""
+    ranked = [
+        team.id
+        for team in await claim_teams(client, claimed_team, 5)
+    ]
     await put_round_in_review(round_ids[1], ranked)
 
     responses = await asyncio.gather(
