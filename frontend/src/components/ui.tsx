@@ -33,9 +33,9 @@ export function Panel({
 }
 
 const BUTTON_STYLES = {
-  primary: 'bg-alert text-white border-alert hover:bg-[#ff3b52] shadow-[0_0_20px_-4px_var(--color-alert)] hover:shadow-[0_0_28px_-2px_var(--color-alert)] active:scale-95',
-  ghost: 'bg-transparent text-paper border-steel-light hover:border-paper hover:text-alert',
-  danger: 'bg-transparent text-alert border-alert-dim hover:border-alert hover:shadow-[0_0_12px_-4px_var(--color-alert)]',
+  primary: 'bg-fire text-ink border-fire hover:bg-fire-light hover:border-fire-light shadow-[0_2px_0_0_rgb(0_0_0/0.6)] active:translate-y-px active:shadow-none',
+  ghost: 'bg-transparent text-paper border-steel-light hover:border-paper hover:text-fire',
+  danger: 'bg-transparent text-alert border-alert-dim hover:border-alert hover:bg-alert/10',
 }
 
 export function Button({
@@ -51,10 +51,19 @@ export function Button({
   )
 }
 
+/**
+ * The primary button on a paper sheet (login form, claim form). Enabled: solid fire with ink text, an
+ * ink border and an ink drop, the strongest thing on the page. Disabled: no fill, a dashed outline in
+ * muted ink (still readable, clearly not ready), instead of a faded fire that reads as broken.
+ */
+export const paperPrimaryClass =
+  'border-2 !border-type-ink !text-type-ink font-bold shadow-[0_3px_0_0_var(--color-type-ink)] hover:!border-type-ink disabled:!opacity-100 disabled:!bg-transparent disabled:border-dashed disabled:!border-type-muted disabled:!text-type-muted disabled:!shadow-none'
+
 export const inputClass =
-  'w-full border border-steel-light bg-ink px-3 py-2 font-mono text-sm text-paper outline-none focus:border-alert focus:shadow-[0_0_8px_-2px_var(--color-alert)] transition-shadow'
+  'w-full border border-steel-light bg-ink px-3 py-2 font-mono text-sm text-paper outline-none focus:border-fire focus:shadow-[inset_0_0_0_1px_var(--color-fire)] transition-shadow'
 
 const STATUS_TONE: Record<string, string> = {
+  active: 'text-khaki border-khaki/50',
   accepted: 'text-coop border-coop/50',
   advanced: 'text-coop border-coop/50',
   published: 'text-coop border-coop/50',
@@ -100,11 +109,11 @@ export function WindowTimer({ round }: { round: Round | null | undefined }) {
   const urgent = seconds < 60
   const nearEnd = seconds < 300
   const tone = urgent ? 'text-alert' : nearEnd ? 'text-amber' : 'text-coop'
-  const glowColor = urgent ? 'drop-shadow-[0_0_18px_var(--color-alert)]' : nearEnd ? 'drop-shadow-[0_0_14px_var(--color-amber)]' : 'drop-shadow-[0_0_12px_var(--color-coop)]'
   return (
     <div data-testid="timer">
       <span className="label !text-[11px] tracking-[0.2em]">{seconds > 0 ? 'Window closes in' : 'Window closing'}</span>
-      <p className={`text-4xl font-bold tabular-nums ${tone} ${glowColor} ${urgent ? 'blink' : ''}`}>{formatDuration(seconds)}</p>
+      {/* Never blinks: a blinking number is unreadable half the time, and teams must always see their time left */}
+      <p className={`text-4xl font-bold tabular-nums ${tone}`}>{formatDuration(seconds)}</p>
       {!synced && <p className="mt-1 text-xs text-amber">Syncing with the server clock…</p>}
     </div>
   )
@@ -117,8 +126,9 @@ export function Countdown({ round, large = false }: { round: Round | null | unde
   const urgent = seconds < 60
   return (
     <span className="flex items-baseline gap-2">
-      <span className="label tracking-[0.14em]">Window closes</span>
-      <span className={`font-bold tabular-nums ${large ? 'text-4xl' : 'text-lg'} ${urgent ? 'text-alert blink drop-shadow-[0_0_10px_var(--color-alert)]' : 'text-amber drop-shadow-[0_0_8px_var(--color-amber)]'}`}>{formatDuration(seconds)}</span>
+      <span className="label tracking-[0.14em]">{seconds > 0 ? 'Window closes' : 'Window closed'}</span>
+      {/* Never blinks, so the time left is always readable */}
+      <span className={`font-bold tabular-nums ${large ? 'text-4xl' : 'text-lg'} ${urgent ? 'text-alert' : 'text-amber'}`}>{formatDuration(seconds)}</span>
     </span>
   )
 }
@@ -127,7 +137,7 @@ export function Countdown({ round, large = false }: { round: Round | null | unde
 export function ConnectionStatus() {
   const { isPending, isError } = useCurrentRound()
   const status = isError ? 'reconnecting' : isPending ? 'connecting' : 'connected'
-  const tone = status === 'connected' ? 'bg-coop shadow-[0_0_6px_var(--color-coop)]' : 'bg-amber blink'
+  const tone = status === 'connected' ? 'bg-coop' : 'bg-amber blink'
   return (
     <span className="flex items-center gap-2" title="Connection to the server">
       <span className={`h-2 w-2 rounded-full ${tone}`} />
@@ -140,7 +150,7 @@ const DEFCON_CONFIG: Record<number, { label: string; color: string; glowClass: s
   3: { label: 'DEFCON', color: 'text-amber', glowClass: 'defcon-glow-3', border: 'border-amber/60' },
   2: { label: 'DEFCON', color: 'text-orange', glowClass: 'defcon-glow-2', border: 'border-orange/60' },
   1: { label: 'DEFCON', color: 'text-alert', glowClass: 'defcon-glow-1', border: 'border-alert/60' },
-  0: { label: 'DEFCON', color: 'text-ink font-black', glowClass: 'defcon-glow-0', border: 'border-white' },
+  0: { label: 'DEFCON', color: 'text-ink font-black', glowClass: 'defcon-glow-0', border: 'border-paper' },
 }
 
 /** DEFCON 3, 2, 1 for the three rounds, and ZERO once the final results are out (levels from lib/rounds.ts). */
@@ -249,7 +259,7 @@ export function LoadFailed({ what, onRetry }: { what: string; onRetry: () => voi
 export function Toasts() {
   const toasts = useLive((s) => s.toasts)
   const dismiss = useLive((s) => s.dismiss)
-  const tone = { info: 'border-steel-light bg-panel', good: 'border-coop text-coop bg-panel shadow-[0_0_12px_-4px_var(--color-coop)]', bad: 'border-alert text-alert bg-panel shadow-[0_0_12px_-4px_var(--color-alert)]' }
+  const tone = { info: 'border-steel-light bg-panel', good: 'border-coop text-coop bg-panel', bad: 'border-alert text-alert bg-panel' }
   return (
     <div role="status" data-testid="toasts" className="fixed bottom-4 left-4 z-40 flex w-80 flex-col gap-2">
       {toasts.map((t) => (

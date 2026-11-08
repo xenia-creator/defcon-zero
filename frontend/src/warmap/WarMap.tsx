@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { COUNTRIES, LAT_BOTTOM, LAT_TOP, MAP_HEIGHT, MAP_WIDTH, projectX, projectY } from './worldPaths'
 import { defconLevel, gameName, roundByGame } from '../lib/rounds'
-import { AmbientBackground } from './AmbientBackground'
 import { TroopLayer } from './TroopLayer'
 import { boardHeading, type BoardState } from './liveState'
 import { nationColour } from './palette'
@@ -92,7 +91,7 @@ export function WarMap({
   const slotByTeam = useMemo(() => new Map(nations.map((n, i) => [n.team_id, i])), [nations])
   const rows = useMemo(() => [...nations].sort((a, b) => a.team_id - b.team_id), [nations])
 
-  // Draw nations last so their glow and borders sit above neighbouring land.
+  // Draw nations last so their borders sit above neighbouring land.
   const countryCodes = useMemo(
     () => Object.keys(COUNTRIES).sort((a, b) => Number(nationByCode.has(a)) - Number(nationByCode.has(b))),
     [nationByCode],
@@ -100,7 +99,6 @@ export function WarMap({
 
   return (
     <div className="warmap">
-      <AmbientBackground />
       <header className="warmap__header">
         <div className="warmap__defcon">
           <span className="warmap__defcon-label">DEFCON</span>
@@ -147,27 +145,19 @@ export function WarMap({
               role="img"
             >
               <defs>
-                <radialGradient id="warmap-ocean" cx="50%" cy="45%" r="75%">
-                  <stop offset="0%" stopColor="#0F1C26" />
-                  <stop offset="60%" stopColor="#0A141B" />
-                  <stop offset="100%" stopColor="#060B0F" />
-                </radialGradient>
-                <pattern id="warmap-dq" width="5" height="5" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
-                  <rect width="5" height="5" fill="#2A1218" />
-                  <line x1="0" y1="0" x2="0" y2="5" stroke="#E5253C" strokeWidth="1.6" />
+                {/* Printed-map hatching: charcoal for eliminated, faded red for disqualified (colours in WarMap.css) */}
+                <pattern id="warmap-elim" width="3.2" height="3.2" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+                  <rect width="3.2" height="3.2" className="warmap__hatch-ground is-elim" />
+                  <line x1="0" y1="0" x2="0" y2="3.2" className="warmap__hatch-line is-elim" />
                 </pattern>
-                {/* Tight halo: small blur at reduced alpha, with the crisp shape drawn on top. */}
-                <filter id="warmap-glow" x="-10%" y="-10%" width="120%" height="120%">
-                  <feGaussianBlur in="SourceGraphic" stdDeviation="1.1" result="blur" />
-                  <feColorMatrix in="blur" type="matrix" values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 0.7 0" result="glow" />
-                  <feMerge>
-                    <feMergeNode in="glow" />
-                    <feMergeNode in="SourceGraphic" />
-                  </feMerge>
-                </filter>
+                <pattern id="warmap-dq" width="3.2" height="3.2" patternUnits="userSpaceOnUse" patternTransform="rotate(-45)">
+                  <rect width="3.2" height="3.2" className="warmap__hatch-ground is-dq" />
+                  <line x1="0" y1="0" x2="0" y2="3.2" className="warmap__hatch-line is-dq" />
+                </pattern>
               </defs>
 
-              <rect width={MAP_WIDTH} height={MAP_HEIGHT} fill="url(#warmap-ocean)" />
+              {/* Sea: a faint slate wash, so the paper of the table shows through */}
+              <rect width={MAP_WIDTH} height={MAP_HEIGHT} className="warmap__sea" />
 
               {countryCodes.map((code) => {
                 const shape = COUNTRIES[code]
@@ -199,7 +189,6 @@ export function WarMap({
                     d={shape.d}
                     className={`warmap__country is-nation is-${nation.status}`}
                     style={{ ['--nation' as string]: colourByCode.get(code) }}
-                    filter={nation.status === 'active' ? 'url(#warmap-glow)' : undefined}
                   >
                     <title>{`${nation.nation_name} (${shape.name}) · #${nation.rank} · ${STATUS_LABELS[nation.status]}`}</title>
                   </path>
@@ -207,6 +196,19 @@ export function WarMap({
               })}
 
               <Graticule />
+              {/* Disqualified nations get a faded red stamp across them */}
+              <g className="warmap__stamps" aria-hidden="true">
+                {nations
+                  .filter((n) => n.status === 'disqualified' && COUNTRIES[n.territory_code])
+                  .map((n) => {
+                    const [x, y] = COUNTRIES[n.territory_code].anchor
+                    return (
+                      <text key={n.team_id} x={x} y={y} transform={`rotate(-14 ${x} ${y})`} className="warmap__stamp">
+                        Disqualified
+                      </text>
+                    )
+                  })}
+              </g>
               <TroopLayer
                 movements={movements /* undefined on the live map: bursts only, no arcs */}
                 nations={nations}
@@ -290,7 +292,6 @@ export function WarMap({
 export function WarMapFault({ onRetry, retrying }: { onRetry: () => void; retrying: boolean }) {
   return (
     <div className="warmap">
-      <AmbientBackground />
       <div className="warmap__fault" role="alert">
         <span className="warmap__fault-label">
           <span className="warmap__live-dot" /> Signal lost

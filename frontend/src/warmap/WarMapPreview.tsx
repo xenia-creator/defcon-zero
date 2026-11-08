@@ -15,7 +15,8 @@ export function WarMapPreview({ showStandings = true }: { showStandings?: boolea
   const [mode, setMode] = useState<'live' | 'showcase'>('live')
 
   return (
-    <div className="relative h-full w-full">
+    // Below 900px the war map grows to its content and the page scrolls (WarMap.css)
+    <div className="relative h-full w-full max-[900px]:h-auto max-[900px]:min-h-full">
       {mode === 'live' ? <LiveWarMap showStandings={showStandings} /> : <ShowcaseWarMap showStandings={showStandings} />}
 
       {mode === 'showcase' && (

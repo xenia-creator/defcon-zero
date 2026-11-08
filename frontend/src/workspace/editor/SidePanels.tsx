@@ -29,10 +29,10 @@ function MatchChip({ myScore, oppScore }: { myScore: number; oppScore: number })
   const won = myScore > oppScore
   const tied = myScore === oppScore
   const color = won
-    ? 'bg-coop shadow-[0_0_6px_var(--color-coop)]'
+    ? 'bg-coop'
     : tied
       ? 'bg-amber'
-      : 'bg-alert shadow-[0_0_6px_var(--color-alert)]'
+      : 'bg-alert'
   const symbol = won ? '✓' : tied ? '=' : '✕'
   return (
     <span

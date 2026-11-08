@@ -1,6 +1,6 @@
 import { useQueryClient } from '@tanstack/react-query'
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Badge, Button, Empty, LoadFailed, Panel, inputClass, useConfirm } from '../../components/ui'
+import { Badge, Button, Empty, LoadFailed, Panel, inputClass, paperPrimaryClass, useConfirm } from '../../components/ui'
 import { ApiError, errorMessage, hasCode, request } from '../../lib/api'
 import { useAuth } from '../../lib/auth'
 import { Team, isClaimed } from '../../lib/contract'
@@ -31,7 +31,8 @@ function nameHash(str: string): number {
   return Math.abs(h)
 }
 
-const EMBLEM_COLORS = ['#f5a524', '#f0702a', '#e5243b', '#22c55e', '#4b7bec', '#a78bfa', '#e6e9ec', '#06b6d4']
+// Printing inks, drawn on the paper claim sheet (all dark enough to read on paper.jpg)
+const EMBLEM_COLORS = ['#7a2418', '#54411a', '#2f4a5c', '#3d4a22', '#7a3510', '#231f1a', '#4b3a55', '#2d5552']
 
 type ShapeRenderer = (c: string) => string
 const EMBLEM_SHAPES: ShapeRenderer[] = [
@@ -53,7 +54,7 @@ function NationEmblem({ name, size = 48 }: { name: string; size?: number }) {
   if (!name.trim())
     return (
       <svg width={size} height={size} viewBox="0 0 54 54">
-        <circle cx="27" cy="27" r="22" fill="none" stroke="var(--color-steel-light)" strokeWidth="2" />
+        <circle cx="27" cy="27" r="22" fill="none" stroke="var(--color-type-muted)" strokeWidth="2" strokeDasharray="3 3" />
       </svg>
     )
   const h = nameHash(name)
@@ -139,21 +140,32 @@ export function ClaimCountry({ username }: { username: string }) {
   }
 
   return (
-    <div className="flex h-full flex-col gap-3 p-3 lg:flex-row">
+    <div className="relative isolate flex min-h-full flex-col gap-4 p-3 sm:p-5 lg:h-full lg:flex-row lg:items-stretch">
+      {/* claim.jpg behind everything, darkened on the left where the list sits; the column on the right stays open */}
+      <div
+        className="absolute inset-0 -z-20 bg-cover bg-[position:right_center]"
+        style={{ backgroundImage: "url('/claim.jpg')" }}
+        aria-hidden
+      />
+      <div
+        className="absolute inset-0 -z-10 bg-[linear-gradient(90deg,rgb(10_12_13/0.93)_0%,rgb(10_12_13/0.86)_50%,rgb(10_12_13/0.35)_80%,rgb(10_12_13/0.15)_100%),linear-gradient(0deg,rgb(10_12_13/0.7)_0%,transparent_35%)] max-lg:bg-[linear-gradient(180deg,rgb(10_12_13/0.85),rgb(10_12_13/0.93))]"
+        aria-hidden
+      />
+
       {/* Nation established stamp — full-screen reveal on lock-in */}
       {justClaimed && (
-        <div role="status" aria-live="polite" className="fixed inset-0 z-50 flex items-center justify-center bg-ink/85 tactical-grid">
-          <div className="stamp stamp-land text-4xl text-coop rotate-[-6deg] shadow-[0_0_40px_var(--color-coop)]">
-            Nation Established
+        <div role="status" aria-live="polite" className="fixed inset-0 z-50 flex items-center justify-center bg-ink/85">
+          <div className="paper px-10 py-8">
+            <div className="stamp stamp-land rotate-[-6deg] text-4xl text-type-olive">Nation Established</div>
           </div>
         </div>
       )}
 
-      {/* Territory list */}
+      {/* Territory list: a dark field-kit panel the image shows faintly through */}
       <Panel
         title="Available territories"
-        right={<span className="label !text-amber tracking-widest">{territories.length ? `${freeCount} of ${territories.length} free` : `${freeCount} free`}</span>}
-        className="min-h-0 min-w-0 flex-1"
+        right={<span className="label !text-khaki tracking-widest">{territories.length ? `${freeCount} of ${territories.length} free` : `${freeCount} free`}</span>}
+        className="min-h-0 min-w-0 flex-1 !bg-ink/75 max-lg:min-h-[60vh] lg:max-w-4xl"
         bodyClass="flex min-h-0 flex-col"
       >
         <div className="relative border-b border-steel p-3">
@@ -183,16 +195,16 @@ export function ClaimCountry({ username }: { username: string }) {
           ) : shown.length === 0 ? (
             <Empty>No country matches "{filter}".</Empty>
           ) : (
-            <ul className="grid grid-cols-[repeat(auto-fill,minmax(190px,1fr))] gap-2">
+            <ul className="grid grid-cols-[repeat(auto-fill,minmax(180px,1fr))] gap-2">
               {shown.map((t) => (
                 <li key={t.code}>
                   <button
                     disabled={t.claimed}
                     onClick={() => setSelected(t.code)}
-                    className={`flex w-full cursor-pointer items-center justify-between gap-2 border px-3 py-2 text-left text-sm transition-all disabled:cursor-not-allowed disabled:opacity-40 ${
+                    className={`flex w-full cursor-pointer items-center justify-between gap-2 border px-3 py-2 text-left text-sm transition-colors disabled:cursor-not-allowed disabled:opacity-45 ${
                       selected === t.code
-                        ? 'border-amber text-amber shadow-[0_0_10px_-4px_var(--color-amber)] bg-amber/5'
-                        : 'border-steel hover:border-paper'
+                        ? 'border-fire bg-fire/10 text-fire'
+                        : 'border-steel bg-panel/60 hover:border-khaki hover:bg-panel'
                     }`}
                   >
                     <span className="truncate tracking-wide">{t.name}</span>
@@ -205,73 +217,75 @@ export function ClaimCountry({ username }: { username: string }) {
         </div>
       </Panel>
 
-      {/* Claim side panel */}
-      <Panel title="Claim your nation" className="shrink-0 lg:w-80">
-        <div className="flex flex-col gap-4">
-          <p className="text-sm text-muted tracking-wide">
-            {username}, name your nation and pick its territory. Both are unique, and the choice is
-            final.
+      {/* Claim sheet: the nation is registered on paper */}
+      <section className="paper relative flex shrink-0 flex-col gap-4 self-start p-5 max-lg:w-full lg:w-96">
+        <header className="border-b-2 border-double border-type-muted pb-3">
+          <p className="font-[family-name:var(--font-type)] text-[11px] tracking-[0.24em] text-type-muted uppercase">
+            Form DZ-2 · Registration of nation
           </p>
+          <h2 className="stencil mt-1 text-2xl tracking-[0.08em]">Claim your nation</h2>
+        </header>
 
-          <label className="flex flex-col gap-1">
-            <span className="label tracking-[0.2em]">Nation name</span>
-            <input
-              ref={nameInputRef}
-              className={inputClass}
-              placeholder="Red Fox Republic"
-              maxLength={24}
-              autoComplete="off"
-              spellCheck={false}
-              value={nationName}
-              onChange={(e) => setNationName(e.target.value)}
-            />
-            <span className={`text-xs ${name && nameProblem ? 'text-alert' : 'text-muted'}`}>
-              {name && nameProblem ? nameProblem : '3 to 24 letters, numbers or spaces.'}
-            </span>
-          </label>
+        <p className="font-[family-name:var(--font-type)] text-sm leading-relaxed text-type-muted">
+          {username}, name your nation and pick its territory. Both are unique, and the choice is final.
+        </p>
 
-          {/* Live emblem preview */}
-          {name && !nameProblem && (
-            <div className="flex items-center gap-3 border border-steel/60 bg-ink/40 p-3">
-              <NationEmblem name={name} size={42} />
-              <div>
-                <p className="font-mono text-[10px] tracking-[0.2em] text-muted uppercase">Emblem</p>
-                <p className="font-bold tracking-widest text-paper">{name.toUpperCase()}</p>
-              </div>
+        <label className="flex flex-col gap-1">
+          <span className="font-mono text-[10px] font-bold tracking-[0.24em] text-type-muted uppercase">Nation name</span>
+          <input
+            ref={nameInputRef}
+            className="paper-input"
+            placeholder="Red Fox Republic"
+            maxLength={24}
+            autoComplete="off"
+            spellCheck={false}
+            value={nationName}
+            onChange={(e) => setNationName(e.target.value)}
+          />
+          <span className={`font-[family-name:var(--font-type)] text-xs ${name && nameProblem ? 'text-type-red' : 'text-type-muted'}`}>
+            {name && nameProblem ? nameProblem : '3 to 24 letters, numbers or spaces.'}
+          </span>
+        </label>
+
+        {/* Live emblem preview */}
+        {name && !nameProblem && (
+          <div className="flex items-center gap-3 border border-dashed border-type-muted/70 p-3">
+            <NationEmblem name={name} size={42} />
+            <div className="min-w-0">
+              <p className="font-mono text-[10px] font-bold tracking-[0.2em] text-type-muted uppercase">Emblem</p>
+              <p className="truncate font-[family-name:var(--font-type)] text-lg tracking-widest">{name.toUpperCase()}</p>
             </div>
-          )}
-
-          <div className="border border-steel p-3">
-            <span className="label tracking-[0.2em]">Selected territory</span>
-            <p className="mt-1 text-xl font-bold tracking-widest break-words text-amber drop-shadow-[0_0_8px_var(--color-amber)]">
-              {chosen ? chosen.name.toUpperCase() : '—'}
-            </p>
           </div>
+        )}
 
-          {error && (
-            <p role="alert" className="text-sm text-alert border border-alert/30 bg-alert/10 px-2 py-1">
-              {error}
-            </p>
-          )}
-
-          <Button
-            variant="primary"
-            disabled={!chosen || !!nameProblem || busy}
-            className="tracking-[0.3em]"
-            onClick={() =>
-              chosen &&
-              ask({
-                title: 'Confirm your nation',
-                body: `Claim ${chosen.name} as ${name}? This can't be changed afterwards.`,
-                confirmLabel: 'Lock in',
-                run: () => claim(chosen.code),
-              })
-            }
-          >
-            {busy ? 'Claiming…' : 'Lock in'}
-          </Button>
+        <div className="border-y border-type-muted/60 py-3">
+          <span className="font-mono text-[10px] font-bold tracking-[0.24em] text-type-muted uppercase">Selected territory</span>
+          <p className="stencil mt-1 text-2xl break-words">{chosen ? chosen.name.toUpperCase() : '—'}</p>
         </div>
-      </Panel>
+
+        {error && (
+          <p role="alert" className="border-l-2 border-type-red bg-type-red/5 px-2 py-1 font-[family-name:var(--font-type)] text-sm text-type-red">
+            {error}
+          </p>
+        )}
+
+        <Button
+          variant="primary"
+          disabled={!chosen || !!nameProblem || busy}
+          className={`py-2.5 tracking-[0.3em] ${paperPrimaryClass}`}
+          onClick={() =>
+            chosen &&
+            ask({
+              title: 'Confirm your nation',
+              body: `Claim ${chosen.name} as ${name}? This can't be changed afterwards.`,
+              confirmLabel: 'Lock in',
+              run: () => claim(chosen.code),
+            })
+          }
+        >
+          {busy ? 'Claiming…' : 'Lock in'}
+        </Button>
+      </section>
       {dialog}
     </div>
   )

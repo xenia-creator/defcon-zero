@@ -1,12 +1,13 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react'
-import { Button, inputClass } from '../../components/ui'
+import { Button, paperPrimaryClass } from '../../components/ui'
 import { errorMessage, hasCode, request } from '../../lib/api'
 import { SPECTATOR_SESSION, useAuth } from '../../lib/auth'
 import { LoginOut, Team } from '../../lib/contract'
 
+// Field telegraph, typed out one line at a time
 const BOOT_LINES = [
-  '> ESTABLISHING SECURE LINK… OK',
-  '> VERIFYING TERMINAL… OK',
+  '> LINE TO HQ… ESTABLISHED',
+  '> CIPHER KEY… VERIFIED',
   '> DEFCON STATUS: 3',
   '> AWAITING CLEARANCE_',
 ]
@@ -20,7 +21,7 @@ function BootSequence() {
     return () => timeouts.forEach(clearTimeout)
   }, [])
   return (
-    <div className="mb-4 space-y-1 font-mono text-[11px] text-coop">
+    <div className="min-h-[4.25rem] space-y-0.5" aria-hidden>
       {BOOT_LINES.slice(0, visibleLines).map((line, i) => (
         <div key={i} className={`boot-line boot-line-${i + 1}`}>
           {line}
@@ -74,159 +75,148 @@ export function Login() {
   }
 
   return (
-    <div className="flex min-h-screen flex-col tactical-grid">
-      {/* Top bar */}
-      <header className="flex h-14 shrink-0 items-center border-b border-steel bg-ink/95 px-5 panel-3d">
-        <span className="h-3 w-3 bg-alert shadow-[0_0_14px_2px_var(--color-alert)] blink" aria-hidden />
-        <span className="ml-3 text-lg font-bold tracking-[0.3em] text-alert glow logo-flicker">
-          DEFCON ZERO
+    <div className="relative isolate flex min-h-screen flex-col overflow-hidden bg-ink">
+      {/* Hero: the soldier stands on the right, so the text column sits on the left over a dark gradient */}
+      <div
+        className="absolute inset-0 -z-20 bg-cover bg-[position:72%_center]"
+        style={{ backgroundImage: "url('/hero.jpg')" }}
+        aria-hidden
+      />
+      <div
+        className="absolute inset-0 -z-10 bg-[linear-gradient(90deg,rgb(10_12_13/0.94)_0%,rgb(10_12_13/0.9)_40%,rgb(10_12_13/0.5)_62%,rgb(10_12_13/0.1)_80%),linear-gradient(0deg,rgb(10_12_13/0.85)_0%,transparent_30%),linear-gradient(180deg,rgb(10_12_13/0.8)_0%,transparent_16%),radial-gradient(ellipse_at_center,transparent_55%,rgb(5_6_7/0.75)_100%)] max-lg:bg-[linear-gradient(180deg,rgb(10_12_13/0.7)_0%,rgb(10_12_13/0.9)_45%,rgb(10_12_13/0.94)_100%)]"
+        aria-hidden
+      />
+      <div className="snow -z-10" aria-hidden />
+
+      {/* Top line */}
+      <header className="flex shrink-0 items-center justify-between gap-4 px-5 pt-4 sm:px-10 lg:px-16">
+        <span className="flex items-center gap-3">
+          <span className="h-3 w-1.5 bg-fire" aria-hidden />
+          <span className="label !text-khaki tracking-[0.3em]">Field Command</span>
         </span>
-        <span className="ml-auto font-mono text-[10px] tracking-[0.2em] text-muted uppercase">
-          Secure terminal · Lab node
-        </span>
+        <span className="label !text-[10px] text-right tracking-[0.2em]">Secure terminal · Lab node</span>
       </header>
 
-      <main className="flex flex-1 items-center justify-center p-5">
-        <div className="relative w-full max-w-5xl border border-steel bg-panel/70 panel-3d">
-          {/* Corner decorations */}
-          <span className="absolute top-0 left-0 h-6 w-6 border-r border-b border-amber/40" aria-hidden />
-          <span className="absolute top-0 right-0 h-6 w-6 border-l border-b border-amber/40" aria-hidden />
-          <span className="absolute bottom-0 left-0 h-6 w-6 border-r border-t border-amber/40" aria-hidden />
-          <span className="absolute bottom-0 right-0 h-6 w-6 border-l border-t border-amber/40" aria-hidden />
+      <main className="flex flex-1 items-center px-5 py-3 sm:px-10 lg:px-16">
+        <div className="flex w-full max-w-3xl flex-col gap-4 [@media(max-height:720px)]:gap-3">
+          <BootSequence />
 
-          {/* Top secret stamp */}
-          <span
-            className="stamp stamp-land absolute top-6 right-8 hidden rotate-[-8deg] text-2xl text-alert sm:block"
-            aria-hidden
-          >
-            Top secret
-          </span>
-
-          {/* Telemetry coords */}
-          <span
-            className="absolute bottom-3 left-4 font-mono text-[9px] tracking-[0.18em] text-steel-light uppercase"
-            aria-hidden
-          >
-            File 1983-RG · DGT
-          </span>
-          <span
-            className="absolute bottom-3 right-4 font-mono text-[9px] tracking-[0.18em] text-steel-light uppercase"
-            aria-hidden
-          >
-            Lat 48.8°N · Lon 2.3°E
-          </span>
-
-          <div className="flex flex-col items-center gap-10 px-6 py-14">
-            {/* Boot log — left-aligned on larger screens */}
-            <div className="w-full max-w-sm self-start">
-              <BootSequence />
-            </div>
-
-            <div className="text-center">
-              <p className="label mb-5 tracking-[0.3em]">
-                Eyes only · Directorate of Game Theory · File 1983-RG
-              </p>
-              <h1 className="glow text-5xl font-bold tracking-[0.18em] text-alert sm:text-7xl logo-flicker">
-                DEFCON ZERO
-              </h1>
-              <p className="mt-5 font-[family-name:var(--font-type)] text-xl sm:text-2xl tracking-wide">
-                Trust is a strategy. So is betrayal.
-              </p>
-            </div>
-
-            <form
-              onSubmit={submit}
-              className="flex w-full max-w-sm flex-col gap-4 border border-steel bg-ink/70 p-6 panel-3d"
-            >
-              <div className="flex items-center justify-between">
-                <span className="label tracking-[0.3em]">Identify yourself</span>
-                <span className="font-mono text-[9px] tracking-[0.14em] text-steel-light uppercase">
-                  ENCRYPTED
-                </span>
-              </div>
-
-              {/* Clearance denied feedback */}
-              {denied && (
-                <div className="border border-alert/40 bg-alert/10 p-2">
-                  <p className="font-mono text-xs tracking-widest text-alert uppercase">
-                    &gt; CLEARANCE DENIED
-                  </p>
-                </div>
-              )}
-
-              {expired && !error && (
-                <p className="text-sm text-amber">
-                  Your session ended. Log in again; your draft is still here.
-                </p>
-              )}
-
-              <label className="flex flex-col gap-1">
-                <span className="font-mono text-[10px] tracking-[0.24em] text-muted uppercase">
-                  Callsign
-                </span>
-                <input
-                  className={inputClass}
-                  aria-label="Username"
-                  placeholder="Username"
-                  autoComplete="username"
-                  autoCapitalize="none"
-                  spellCheck={false}
-                  autoFocus
-                  maxLength={100}
-                  value={username}
-                  onChange={(e) => setUsername(e.target.value)}
-                />
-              </label>
-
-              <label className="flex flex-col gap-1">
-                <span className="font-mono text-[10px] tracking-[0.24em] text-muted uppercase">
-                  Access code
-                </span>
-                <input
-                  className={inputClass}
-                  aria-label="Password"
-                  placeholder="Password"
-                  type="password"
-                  autoComplete="current-password"
-                  maxLength={200}
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                />
-              </label>
-
-              {error && (
-                <p role="alert" className="text-sm text-alert">
-                  {error}
-                </p>
-              )}
-
-              <Button
-                variant="primary"
-                disabled={busy || !username.trim() || !password}
-                className="mt-1 tracking-[0.3em]"
-              >
-                {busy ? 'Authenticating…' : 'Request Clearance'}
-              </Button>
-
-              <div className="relative my-2 flex items-center justify-center">
-                <span className="h-px w-full bg-steel" />
-                <span className="absolute bg-ink px-2 font-mono text-[9px] uppercase tracking-widest text-muted">or</span>
-              </div>
-
-              <Button
-                type="button"
-                variant="ghost"
-                disabled={busy}
-                // View only: never signs in as anyone, so watching the board can't grant organiser access
-                onClick={() => setSession(SPECTATOR_SESSION)}
-                className="tracking-[0.2em] border-steel text-muted hover:!text-amber hover:border-amber"
-              >
-                👁️ View Big Board · War Map
-              </Button>
-            </form>
+          <div>
+            <p className="label mb-2 !text-khaki tracking-[0.28em]">
+              Eyes only · Directorate of Game Theory · File 1983-RG
+            </p>
+            <h1 className="stencil weathered glow text-6xl leading-[0.95] tracking-[0.06em] text-paper sm:text-7xl [@media(max-height:760px)]:sm:text-6xl">
+              DEFCON ZERO
+            </h1>
+            <p className="mt-2 font-[family-name:var(--font-type)] text-xl tracking-wide text-paper sm:text-2xl">
+              Trust is a strategy. So is betrayal.
+            </p>
           </div>
+
+          {/* The clearance form: a worn sheet of paper */}
+          <form onSubmit={submit} className="paper relative flex w-full max-w-md flex-col gap-3 px-6 pt-5 pb-5 sm:px-8">
+            <span
+              className="stamp stamp-land pointer-events-none absolute -top-4 -right-3 rotate-[-8deg] text-base text-type-red sm:-right-5 sm:text-lg"
+              aria-hidden
+            >
+              Top secret
+            </span>
+
+            <div className="border-b-2 border-double border-type-muted pr-24 pb-2 sm:pr-28">
+              <p className="font-[family-name:var(--font-type)] text-[11px] tracking-[0.24em] text-type-muted uppercase">
+                Form DZ-1 · Request for clearance
+              </p>
+              <p className="mt-1 font-[family-name:var(--font-type)] text-xl tracking-[0.14em] uppercase">Identify yourself</p>
+            </div>
+
+            {/* Clearance denied feedback */}
+            {denied && (
+              <div className="self-start border-2 border-type-red px-2 py-1 -rotate-1">
+                <p className="font-[family-name:var(--font-type)] text-sm tracking-widest text-type-red uppercase">
+                  &gt; CLEARANCE DENIED
+                </p>
+              </div>
+            )}
+
+            {expired && !error && (
+              <p className="font-[family-name:var(--font-type)] text-sm text-type-brass">
+                Your session ended. Log in again; your draft is still here.
+              </p>
+            )}
+
+            <label className="flex flex-col gap-1">
+              <span className="font-mono text-[10px] font-bold tracking-[0.24em] text-type-muted uppercase">
+                Callsign
+              </span>
+              <input
+                className="paper-input"
+                aria-label="Username"
+                placeholder="Username"
+                autoComplete="username"
+                autoCapitalize="none"
+                spellCheck={false}
+                autoFocus
+                maxLength={100}
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
+              />
+            </label>
+
+            <label className="flex flex-col gap-1">
+              <span className="font-mono text-[10px] font-bold tracking-[0.24em] text-type-muted uppercase">
+                Access code
+              </span>
+              <input
+                className="paper-input"
+                aria-label="Password"
+                placeholder="Password"
+                type="password"
+                autoComplete="current-password"
+                maxLength={200}
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+              />
+            </label>
+
+            {error && (
+              <p role="alert" className="font-[family-name:var(--font-type)] text-sm text-type-red">
+                {error}
+              </p>
+            )}
+
+            <Button
+              variant="primary"
+              disabled={busy || !username.trim() || !password}
+              className={`mt-1 py-2.5 tracking-[0.3em] ${paperPrimaryClass}`}
+            >
+              {busy ? 'Authenticating…' : 'Request Clearance'}
+            </Button>
+
+            <div className="flex items-center gap-3" aria-hidden>
+              <span className="h-px flex-1 bg-type-muted/50" />
+              <span className="font-[family-name:var(--font-type)] text-xs tracking-widest text-type-muted uppercase">or</span>
+              <span className="h-px flex-1 bg-type-muted/50" />
+            </div>
+
+            <Button
+              type="button"
+              variant="ghost"
+              disabled={busy}
+              // View only: never signs in as anyone, so watching the board can't grant organiser access
+              onClick={() => setSession(SPECTATOR_SESSION)}
+              className="!border-type-ink !text-type-ink tracking-[0.2em] hover:!bg-type-ink hover:!text-paper"
+            >
+              View Big Board · War Map
+            </Button>
+          </form>
         </div>
       </main>
+
+      <footer className="flex shrink-0 justify-between gap-4 px-5 pb-3 font-mono text-[10px] tracking-[0.18em] text-muted uppercase sm:px-10 lg:px-16" aria-hidden>
+        <span>File 1983-RG · DGT</span>
+        <span>Lat 48.8°N · Lon 2.3°E</span>
+      </footer>
+      <div className="film-grain" aria-hidden />
     </div>
   )
 }
