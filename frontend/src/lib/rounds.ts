@@ -16,12 +16,14 @@ export interface RoundInfo {
   name: string
   /** The game-theory name, shown next to the event name. */
   also: string
+  /** The round-intro scene (public/), shown full screen when the round opens. */
+  scene: string
 }
 
 export const ROUNDS: readonly RoundInfo[] = [
-  { number: 1, defcon: 3, game: 'prisoners_dilemma', name: "The Prisoner's Dilemma", also: 'Cooperate or betray' },
-  { number: 2, defcon: 2, game: 'theatre_of_war', name: 'Theatre of War', also: 'Colonel Blotto' },
-  { number: 3, defcon: 1, game: 'foreign_aid', name: 'Foreign Aid', also: 'The Trust Game' },
+  { number: 1, defcon: 3, game: 'prisoners_dilemma', name: "The Prisoner's Dilemma", also: 'Cooperate or betray', scene: '/round-prisoners-dilemma.jpg' },
+  { number: 2, defcon: 2, game: 'theatre_of_war', name: 'Theatre of War', also: 'Colonel Blotto', scene: '/round-theatre-of-war.jpg' },
+  { number: 3, defcon: 1, game: 'foreign_aid', name: 'Foreign Aid', also: 'The Trust Game', scene: '/round-foreign-aid.jpg' },
 ]
 
 export const roundByNumber = (n: number | null | undefined): RoundInfo | undefined => ROUNDS.find((r) => r.number === n)
@@ -36,6 +38,19 @@ export function defconLevel(round: { number: number; status: string } | null | u
   if (!round) return 3
   if (round.number >= 3 && round.status === 'published') return 0
   return roundByNumber(round.number)?.defcon ?? (round.number > 3 ? 1 : 3)
+}
+
+/**
+ * The round whose intro should play now, or undefined. A round's intro plays once per browser,
+ * when it is open and not yet seen (so a late projector or login still gets it once, and polling
+ * never replays it). An unknown game has no scene, so no intro.
+ */
+export function introToPlay(
+  round: { id: number; game: string; status: string } | null | undefined,
+  seen: (roundId: number) => boolean,
+): RoundInfo | undefined {
+  if (!round || round.status !== 'open' || seen(round.id)) return undefined
+  return roundByGame(round.game)
 }
 
 /** "Cooperate (C)" for a named move with a label, the move itself otherwise. */

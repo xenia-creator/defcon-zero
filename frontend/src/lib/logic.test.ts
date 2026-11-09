@@ -9,7 +9,7 @@ import { SPECTATOR_SESSION, parseSession, tokenOf } from './auth'
 import { AdminOverview, LoginOut, Round, Rounds, Standings, SubmissionDetail, Submissions, Team, Territories, TerritoryList, isChecked, isClaimed } from './contract'
 import { formatDuration, offsetFrom, windowRemaining } from './clock'
 import { newId } from './ids'
-import { ROUNDS, defconLevel, gameName, moveOption, roundByGame } from './rounds'
+import { ROUNDS, defconLevel, gameName, introToPlay, moveOption, roundByGame } from './rounds'
 import { seesStandings, viewsFor } from '../app/views'
 import { moveLabel } from '../workspace/blocks/categories'
 import { COUNTRY_FRONT, FRONTS, allocationCode, allocationProblems, evenAllocation, parseAllocation, regionNames } from '../workspace/editor/troops'
@@ -415,6 +415,24 @@ describe('the round table', () => {
     expect(defconLevel({ number: 3, status: 'published' })).toBe(0)
     expect(defconLevel({ number: 2, status: 'published' })).toBe(2)
     expect(defconLevel(null)).toBe(3)
+  })
+
+  it('plays a round intro once, when the round is open and not yet seen', () => {
+    const never = () => false
+    const open = { id: 7, game: 'theatre_of_war', status: 'open' }
+    expect(introToPlay(null, never)).toBeUndefined()
+    expect(introToPlay(undefined, never)).toBeUndefined()
+    for (const status of ['waiting', 'running', 'review', 'published']) expect(introToPlay({ ...open, status }, never)).toBeUndefined()
+    expect(introToPlay(open, never)?.number).toBe(2)
+    expect(introToPlay(open, (id) => id === 7)).toBeUndefined()
+    // A new round id plays even after the last round was seen
+    expect(introToPlay({ ...open, id: 8, game: 'foreign_aid' }, (id) => id === 7)?.number).toBe(3)
+    expect(introToPlay({ ...open, game: 'surprise' }, never)).toBeUndefined()
+  })
+
+  it('gives every round its own scene image', () => {
+    expect(new Set(ROUNDS.map((r) => r.scene)).size).toBe(ROUNDS.length)
+    for (const r of ROUNDS) expect(r.scene).toMatch(/^\/round-[a-z-]+\.jpg$/)
   })
 
   it('shows round 1 options as Cooperate (C) and Betray (D)', () => {

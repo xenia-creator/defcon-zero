@@ -1,6 +1,7 @@
 import { useQueryClient } from '@tanstack/react-query'
 import { Suspense, lazy, useEffect, useState } from 'react'
 import { ErrorBoundary } from '../components/ErrorBoundary'
+import { RoundIntro } from '../components/RoundIntro'
 import { Button, ConnectionStatus, Countdown, Defcon, Empty, Toasts } from '../components/ui'
 import { useAuth, type Session } from '../lib/auth'
 import { isClaimed } from '../lib/contract'
@@ -121,7 +122,12 @@ function Shell({ session }: { session: Session }) {
         </div>
       </header>
 
-      <main className={`flex min-h-0 flex-1 flex-col ${view === 'warmap' ? 'h-full overflow-hidden max-[900px]:overflow-y-auto' : 'overflow-y-auto'}`}>
+      {/* The analyst's desk behind the team workspace (not the claim screen, which has its own image) */}
+      <main
+        className={`flex min-h-0 flex-1 flex-col ${view === 'warmap' ? 'h-full overflow-hidden max-[900px]:overflow-y-auto' : 'overflow-y-auto'} ${
+          view === 'workspace' && team && !needsCountry ? 'workspace-backdrop' : ''
+        }`}
+      >
         {view === 'command' ? (
           <OrganiserConsole />
         ) : view === 'warmap' ? (
@@ -152,6 +158,8 @@ function Shell({ session }: { session: Session }) {
       <Toasts />
       <div className="film-grain" aria-hidden />
       <ZoneOverlay round={round} />
+      {/* Not over the Command Console: it would cover the controls the organiser just used */}
+      <RoundIntro round={round} enabled={view !== 'command'} />
     </div>
   )
 }
