@@ -13,8 +13,8 @@
   --wm-brass: var(--color-type-brass); /* pending, standby */
   --wm-olive: var(--color-type-olive); /* published, in progress */
   --wm-rust: var(--color-type-rust); /* the leader */
-  --wm-charcoal: #2f2d2a; /* eliminated */
-  --wm-line: rgb(35 31 26 / 0.35); /* rules on paper */
+  --wm-charcoal: var(--color-type-ink); /* eliminated (an ink shade: L0 type-ink) */
+  --wm-line: color-mix(in srgb, var(--color-type-ink) 35%, transparent); /* rules on paper */
   --wm-paper-wash: 236 226 204; /* rgb of the light wash over paper */
 
   /* Fills its parent instead of the whole window, so the app header (and Log out) stays reachable */
@@ -50,7 +50,7 @@
 
 .warmap::after {
   z-index: -1;
-  background: radial-gradient(ellipse at center, transparent 45%, rgb(5 6 7 / 0.75) 100%);
+  background: radial-gradient(ellipse at center, transparent 45%, color-mix(in srgb, var(--color-ink) 75%, transparent) 100%);
 }
 
 .warmap__header,
@@ -65,41 +65,28 @@
   box-sizing: border-box;
 }
 
-/* A sheet of paper.jpg, as .paper in index.css (never tiled, washed so the inks keep AA contrast) */
-.warmap__header,
-.warmap__board,
-.warmap__notice,
-.warmap__event,
-.warmap__fault {
-  color: var(--wm-ink);
-  background-color: var(--paper-base);
-  background-image: linear-gradient(rgb(var(--wm-paper-wash) / 0.35), rgb(var(--wm-paper-wash) / 0.35)), url('/paper.jpg');
-  background-size: cover;
-  background-position: center;
-  background-repeat: no-repeat;
-  box-shadow: 0 14px 30px -12px rgb(0 0 0 / 0.9), 0 3px 8px rgb(0 0 0 / 0.5);
-}
+/*
+ * Paper areas (header, board, notice, event slips, fault) are L0 .paper-sheet in the markup; nothing
+ * here re-implements the paper. WarMap.css loads before index.css, so a rule that must beat
+ * .paper-sheet or .stamp is scoped under .warmap.
+ */
 
-/* Header: the round banner, a typed strip across the top */
-.warmap__header {
+/* Header: the round banner as a dossier strip. Title dominates; one tally; quiet meta; the clock. */
+.warmap .warmap__header {
   display: flex;
   align-items: center;
-  gap: 20px;
-  margin: 12px 16px 0;
-  padding: 10px 22px;
+  gap: var(--space-3);
+  margin: var(--space-2) var(--space-2) 0;
+  padding: var(--space-1) var(--space-3);
 }
 
-/* DEFCON as a rubber stamp */
-.warmap__defcon {
-  display: flex;
+/* DEFCON, on the L0 Stamp: the level in stencil, larger than the word */
+.warmap .warmap__defcon {
+  flex-shrink: 0;
+  display: inline-flex;
   align-items: baseline;
-  gap: 10px;
+  gap: var(--space-1);
   padding: 4px 12px;
-  border: 3px solid var(--wm-red);
-  color: var(--wm-red);
-  font-family: var(--font-type);
-  transform: rotate(-2deg);
-  mask-image: repeating-linear-gradient(115deg, #000 0 6px, rgb(0 0 0 / 0.78) 6px 8px);
 }
 
 .warmap__defcon-label {
@@ -108,46 +95,44 @@
 }
 
 .warmap__defcon-level {
-  font-family: var(--font-stencil);
-  font-size: 28px;
-  font-weight: 700;
+  font-size: 32px;
   line-height: 1;
+  letter-spacing: 0;
 }
 
 .warmap__round {
   flex: 1;
   min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+}
+
+.warmap__file {
+  color: var(--wm-ink-muted);
 }
 
 .warmap__game {
-  font-family: var(--font-stencil);
   font-size: 24px;
-  font-weight: 700;
   line-height: 1.1;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
 }
 
+/* Secondary: small and muted, so the title and the tally carry the banner */
 .warmap__meta {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 4px 12px;
-  margin-top: 3px;
-  font-family: var(--font-type);
-  font-size: 13px;
+  gap: 4px var(--space-2);
+  font-size: 12px;
   color: var(--wm-ink-muted);
   text-transform: uppercase;
   letter-spacing: 0.08em;
 }
 
-.warmap__meta strong {
-  color: var(--wm-ink);
-}
-
 .warmap__pill {
-  padding: 0 8px;
-  border: 1.5px solid currentColor;
+  padding: 0 var(--space-1);
+  border: 1px solid currentColor;
   color: var(--wm-brass);
 }
 
@@ -155,13 +140,33 @@
   color: var(--wm-olive);
 }
 
+/* The one number on the banner: nations standing (or claimed, before results) */
+.warmap__tally {
+  flex-shrink: 0;
+  padding-left: var(--space-3);
+  border-left: 1px solid var(--wm-line);
+  font-size: 12px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--wm-ink-muted);
+}
+
+.warmap__tally strong {
+  margin-right: 4px;
+  font-size: 40px;
+  line-height: 1;
+  letter-spacing: 0;
+  color: var(--wm-ink);
+  vertical-align: -0.1em;
+}
+
 .warmap__clock {
+  flex-shrink: 0;
   display: flex;
   flex-direction: column;
   align-items: flex-end;
-  gap: 2px;
+  gap: 4px;
   font-size: 14px;
-  font-variant-numeric: tabular-nums;
 }
 
 .warmap__clock-time {
@@ -171,8 +176,7 @@
 .warmap__live {
   display: flex;
   align-items: center;
-  gap: 6px;
-  font-family: var(--font-type);
+  gap: var(--space-1);
   font-size: 12px;
   letter-spacing: 0.2em;
   text-transform: uppercase;
@@ -221,7 +225,7 @@
   min-width: 0;
   min-height: 0;
   height: 100%;
-  padding: 20px;
+  padding: var(--space-3);
   container-type: size;
   display: grid;
   place-items: center;
@@ -250,6 +254,63 @@
   display: block;
   width: 100%;
   height: 100%;
+}
+
+/*
+ * Ambient life over the map, so the board never looks frozen between polls. Decorative, calm, and
+ * cheap: two composited layers, animated by opacity and transform only (no filter, no blend mode,
+ * nothing that repaints the map). Above the map, below the notice slip (z 2). Off under reduced motion.
+ */
+.warmap__ambient {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+/* Faint printed scanlines that breathe very slowly, like a lamp on the table */
+.warmap__scan {
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(0deg, color-mix(in srgb, var(--color-type-ink) 5%, transparent) 0 1px, transparent 1px 4px);
+  opacity: 0.6;
+  animation: warmap-breathe 7s ease-in-out infinite;
+}
+
+@keyframes warmap-breathe {
+  50% { opacity: 1; }
+}
+
+/*
+ * The recon sweep: a soft khaki band with a sharp leading edge, crossing the map left to right in
+ * about 9s, then resting about 5s before the next pass. Moved by translateX only. The band is 24%
+ * of the frame wide, so -100% starts it just off the left edge and 420% ends it off the right.
+ */
+.warmap__sweep {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 24%;
+  /* Khaki is close to the paper's own tone, so it needs more alpha than it would on dark to register */
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    color-mix(in srgb, var(--color-khaki) 16%, transparent) 55%,
+    color-mix(in srgb, var(--color-khaki) 38%, transparent) 96%,
+    color-mix(in srgb, var(--color-khaki) 95%, transparent) 99.2%,
+    transparent 100%
+  );
+  transform: translateX(-100%);
+  will-change: transform;
+  animation: warmap-sweep 14s cubic-bezier(0.45, 0, 0.55, 1) infinite;
+}
+
+@keyframes warmap-sweep {
+  0% { transform: translateX(-100%); }
+  64% { transform: translateX(420%); }
+  100% { transform: translateX(420%); }
 }
 
 /* The old HUD corner brackets: the torn paper edges frame the map now */
@@ -317,6 +378,54 @@
   stroke-width: 0.9px;
 }
 
+/* The leader's territory, outlined in fire (drawn last, so no neighbour covers the line) */
+.warmap__country.is-nation.is-leader {
+  stroke: var(--color-fire);
+  stroke-opacity: 1;
+  stroke-width: 2.5px;
+}
+
+/*
+ * Territory pulse: an outline of the nation's own ink that flashes and fades over its territory, where
+ * a score or rank just changed or a territory was just claimed. Opacity only; the map itself is
+ * untouched. Strong (rank change, new claim) is bolder and longer than a score-only change.
+ */
+.warmap__pulses {
+  pointer-events: none;
+}
+
+.warmap__pulse {
+  fill: var(--nation);
+  fill-opacity: 0.18;
+  stroke: var(--nation);
+  stroke-width: 2px;
+  vector-effect: non-scaling-stroke;
+  stroke-linejoin: round;
+  opacity: 0;
+  animation: warmap-pulse 1.2s ease-out forwards;
+}
+
+.warmap__pulse.is-strong {
+  fill-opacity: 0.3;
+  stroke-width: 3px;
+  animation: warmap-pulse-strong 1.6s ease-out forwards;
+}
+
+/* The outline flashes and fades in place. No swell: scaling a large country from its centre throws
+   its far edges well off its border, which reads as a misprinted second outline. Score-only is
+   quiet (in the showcase nearly every score moves each frame); rank change or a new claim is
+   bolder, holds longer and washes the land with the nation's ink. */
+@keyframes warmap-pulse {
+  0% { opacity: 0.7; }
+  100% { opacity: 0; }
+}
+
+@keyframes warmap-pulse-strong {
+  0% { opacity: 1; }
+  40% { opacity: 0.85; }
+  100% { opacity: 0; }
+}
+
 /* Eliminated: the colour faded out and hatched over in charcoal */
 .warmap__country.is-eliminated {
   fill: url(#warmap-elim);
@@ -326,7 +435,7 @@
   animation: warmap-hit 1.6s ease-out;
 }
 
-/* Disqualified: hatched in faded red, with a stamp (.warmap__stamp) */
+/* Disqualified: hatched in faded red, with a red stamp (.warmap__mapstamp) */
 .warmap__country.is-disqualified {
   fill: url(#warmap-dq);
   fill-opacity: 1;
@@ -334,10 +443,15 @@
   animation: warmap-hit 1.6s ease-out;
 }
 
-.warmap__hatch-ground.is-elim { fill: rgb(47 45 42 / 0.16); }
-.warmap__hatch-line.is-elim { stroke: var(--wm-charcoal); stroke-width: 0.8; stroke-opacity: 0.75; }
-.warmap__hatch-ground.is-dq { fill: rgb(150 54 48 / 0.14); }
-.warmap__hatch-line.is-dq { stroke: #8f3a30; stroke-width: 0.8; stroke-opacity: 0.8; }
+/*
+ * Fallen land reads as dead: the nation's colour is gone, replaced by a heavy ink wash under dense
+ * hatching, so it is darker than any live nation and nothing like the pale unclaimed paper.
+ * Paint only (pattern fills), no CSS filter.
+ */
+.warmap__hatch-ground.is-elim { fill: color-mix(in srgb, var(--color-type-ink) 38%, transparent); }
+.warmap__hatch-line.is-elim { stroke: var(--color-type-ink); stroke-width: 0.9; stroke-opacity: 0.8; }
+.warmap__hatch-ground.is-dq { fill: rgb(122 36 24 / 0.3); }
+.warmap__hatch-line.is-dq { stroke: var(--color-type-red); stroke-width: 0.9; stroke-opacity: 0.85; }
 
 /* The moment a nation falls: the outline is inked over heavily, then settles */
 @keyframes warmap-hit {
@@ -345,19 +459,63 @@
   100% { stroke-width: 0.8px; }
 }
 
-.warmap__stamp {
-  font-family: var(--font-type);
-  font-size: 10px;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  text-anchor: middle;
-  dominant-baseline: middle;
-  fill: var(--wm-red);
-  fill-opacity: 0.9;
-  paint-order: stroke;
-  stroke: rgb(var(--wm-paper-wash) / 0.75);
-  stroke-width: 2.4px;
+/*
+ * Stamps over fallen territory: L0 <Stamp> on an HTML layer over the frame, each centred on its
+ * country's anchor (placed by % in WarMap.tsx). Sizes follow the map's width (cqw of .warmap__map),
+ * so they stay in proportion from laptop to projector. Above the ambient layer, below the notice.
+ */
+.warmap__mapstamps {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
   pointer-events: none;
+}
+
+.warmap__mapstamp {
+  position: absolute;
+  display: grid;
+  place-items: center;
+  transform: translate(-50%, -50%);
+}
+
+/* Earlier falls: small and faded, a record rather than news */
+.warmap .warmap__mapstamp .stamp {
+  grid-area: 1 / 1;
+  font-size: max(10px, 0.85cqw);
+  border-width: 2px;
+  white-space: nowrap;
+  background: rgb(var(--wm-paper-wash) / 0.7);
+  opacity: 0.75;
+}
+
+/* The newest fall: big enough to read across a room, landing with an impact */
+.warmap .warmap__mapstamp.is-new .stamp {
+  /* Lifted above the anchor (BIG_LIFT in WarMap.tsx) so the dead land shows beneath; the impact
+     ring stays centred on the territory. `translate` composes with the stamp's own rotate. */
+  translate: 0 -2.4cqw;
+  font-size: max(20px, 2.4cqw);
+  border-width: 4px;
+  background: rgb(var(--wm-paper-wash) / 0.88);
+  opacity: 1;
+}
+
+/* One-shot impact: an ink shock ring and a dark blot spreading from under the stamp */
+.warmap__fall-impact {
+  grid-area: 1 / 1;
+  width: 14cqw;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  border: 6px solid var(--wm-red);
+  background: radial-gradient(circle, color-mix(in srgb, var(--color-type-ink) 60%, transparent) 0%, color-mix(in srgb, var(--color-type-ink) 25%, transparent) 45%, transparent 70%);
+  opacity: 0;
+  animation: warmap-fall-impact 1.1s cubic-bezier(0.2, 0.7, 0.3, 1) forwards;
+}
+
+/* Holds strong for the first third, so the hit registers from across a room, then thins out */
+@keyframes warmap-fall-impact {
+  0% { transform: scale(0.15); opacity: 1; }
+  35% { opacity: 0.9; }
+  100% { transform: scale(1.5); opacity: 0; }
 }
 
 /* Event ticker: torn-off telegram slips */
@@ -370,13 +528,12 @@
   list-style: none;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: var(--space-1);
   pointer-events: none;
 }
 
 .warmap__event {
-  padding: 7px 14px;
-  font-family: var(--font-type);
+  padding: var(--space-1) var(--space-2);
   font-size: 13px;
   text-transform: uppercase;
   letter-spacing: 0.1em;
@@ -388,6 +545,11 @@
   opacity: 0.6;
 }
 
+/* Two slips at most, so the log never piles up over the map; the stamps carry the rest */
+.warmap__event:nth-child(n + 3) {
+  display: none;
+}
+
 .warmap__event.is-disqualified {
   border-left-color: var(--wm-red);
   color: var(--wm-red);
@@ -397,24 +559,34 @@
   from { transform: translateY(6px); opacity: 0; }
 }
 
-/* Leaderboard: a typed field dispatch */
+/*
+ * Leaderboard: a typed field dispatch. A column, so the footer always shows: the rows get the space
+ * that is left (and scroll only if they ever outgrow it). Row height steps on the 8px grid, smaller
+ * on short screens, so 10 nations fit a 900px projector with the footer in view.
+ */
 .warmap__board {
+  --row-h: 48px;
   min-height: 0;
-  overflow-y: auto;
-  margin: 20px 16px 20px 0;
-  padding: 20px 20px 18px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  margin: var(--space-3) var(--space-2) var(--space-3) 0;
+  padding: var(--space-3);
+}
+
+@media (max-height: 820px) {
+  .warmap__board {
+    --row-h: 40px;
+  }
 }
 
 .warmap__board-title {
   display: flex;
   align-items: center;
-  gap: 10px;
-  margin: 0 0 14px;
-  font-family: var(--font-stencil);
+  gap: var(--space-1);
+  margin: 0 0 var(--space-2);
   font-size: 18px;
-  font-weight: 700;
   letter-spacing: 0.2em;
-  text-transform: uppercase;
   color: var(--wm-ink);
 }
 
@@ -433,8 +605,15 @@
   border-bottom: 1px solid var(--wm-line);
 }
 
+.warmap__rows-scroll {
+  flex: 0 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+}
+
 .warmap__rows {
   position: relative;
+  height: calc(var(--rows) * var(--row-h));
   margin: 0;
   padding: 0;
   list-style: none;
@@ -445,27 +624,44 @@
   top: 0;
   left: 0;
   right: 0;
-  height: 50px;
+  height: var(--row-h);
   display: grid;
-  grid-template-columns: 26px 12px 1fr auto;
+  grid-template-columns: 24px 12px 1fr auto;
   align-items: center;
-  gap: 10px;
-  padding: 0 10px;
+  gap: var(--space-1);
+  padding: 0 var(--space-1);
   overflow: hidden;
   border-bottom: 1px dashed var(--wm-line);
   border-left: 3px solid var(--nation);
   transition: transform 0.7s cubic-bezier(0.2, 0.8, 0.2, 1), opacity 0.6s ease, border-color 0.6s ease;
 }
 
+/*
+ * The leader, crowned in fire: the board's one use of the accent (it has no primary action). A heavy
+ * fire rule and wash, larger rank, name and score. Text stays in paper inks (rust for the rank), since
+ * fire itself is too light for text on paper. The same nation is outlined in fire on the map.
+ */
 .warmap__row.is-leader.is-active {
-  background: linear-gradient(90deg, color-mix(in srgb, var(--nation) 16%, transparent) 0%, transparent 75%);
+  border-left: 6px solid var(--color-fire);
+  background: linear-gradient(90deg, color-mix(in srgb, var(--color-fire) 22%, transparent) 0%, transparent 85%);
+}
+
+.warmap__row.is-leader.is-active .warmap__name {
+  font-size: 18px;
+}
+
+.warmap__row.is-leader.is-active .warmap__score {
+  font-size: 18px;
+}
+
+.warmap__row.is-leader.is-active .warmap__rank {
+  font-size: 18px;
 }
 
 .warmap__rank {
   font-size: 13px;
   font-weight: 700;
   color: var(--wm-ink-muted);
-  font-variant-numeric: tabular-nums;
 }
 
 .warmap__row.is-active .warmap__rank {
@@ -480,7 +676,7 @@
   width: 12px;
   height: 12px;
   background: var(--nation);
-  box-shadow: inset 0 0 0 1px rgb(35 31 26 / 0.45);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-type-ink) 45%, transparent);
 }
 
 .warmap__name {
@@ -488,13 +684,11 @@
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
-  font-family: var(--font-type);
   font-size: 15px;
 }
 
 .warmap__code {
-  margin-left: 8px;
-  font-family: var(--font-mono);
+  margin-left: var(--space-1);
   font-size: 11px;
   color: var(--wm-ink-muted);
 }
@@ -505,11 +699,9 @@
   align-items: flex-end;
   font-size: 14px;
   font-weight: 700;
-  font-variant-numeric: tabular-nums;
 }
 
 .warmap__tag {
-  font-family: var(--font-type);
   font-size: 11px;
   font-weight: 400;
   letter-spacing: 0.12em;
@@ -569,9 +761,9 @@
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  gap: 1px;
-  max-width: min(196px, 30%);
-  padding: 4px 9px 5px;
+  gap: 2px;
+  max-width: min(200px, 30%);
+  padding: var(--space-1);
   text-align: left;
   text-transform: uppercase;
   border-left: 3px solid var(--wm-brass);
@@ -584,7 +776,6 @@
 }
 
 .warmap__notice-title {
-  font-family: var(--font-type);
   font-size: 12px;
   letter-spacing: 0.12em;
   color: var(--wm-brass);
@@ -604,7 +795,8 @@
 
 /* Public leaderboard: header, column labels, awaiting panel, footer */
 .warmap__board-head {
-  margin: 0 0 14px;
+  flex-shrink: 0;
+  margin: 0 0 var(--space-2);
 }
 
 .warmap__board-head .warmap__board-title {
@@ -613,8 +805,7 @@
 
 /* Whose results these are: "Round 1 · The Prisoner's Dilemma — Final" */
 .warmap__board-round {
-  margin: 10px 0 0;
-  font-family: var(--font-type);
+  margin: var(--space-1) 0 0;
   font-size: 15px;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -625,32 +816,38 @@
 .warmap__board-pending {
   display: flex;
   align-items: center;
-  gap: 8px;
-  margin: 6px 0 0;
+  gap: var(--space-1);
+  margin: var(--space-1) 0 0;
   font-size: 10px;
   font-weight: 700;
-  letter-spacing: 0.16em;
+  /* One line in the 360px board: tighter tracking, and an ellipsis rather than a wrap if a longer
+     status ever arrives (the full text stays in the DOM for screen readers) */
+  letter-spacing: 0.06em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
   text-transform: uppercase;
   color: var(--wm-brass);
 }
 
-/* Lines up with the row grid: rank 26px + gap + swatch 12px = the 48px label column. */
+/* Lines up with the row grid: rank 24px + gap 8px + swatch 12px = the 44px label column;
+   left padding = the row's 3px nation rule + its 8px padding. */
 .warmap__cols {
+  flex-shrink: 0;
   display: grid;
-  grid-template-columns: 48px 1fr auto;
-  gap: 10px;
-  padding: 0 10px 6px 13px;
+  grid-template-columns: 44px 1fr auto;
+  gap: var(--space-1);
+  padding: 0 var(--space-1) var(--space-1) 11px;
   border-bottom: 1.5px solid var(--wm-ink);
-  font-size: 10px;
-  font-weight: 700;
+  font-size: 11px;
   letter-spacing: 0.2em;
   text-transform: uppercase;
   color: var(--wm-ink-muted);
 }
 
 .warmap__board-foot {
-  margin: 10px 0 0;
-  font-family: var(--font-type);
+  flex-shrink: 0;
+  margin: var(--space-1) 0 0;
   font-size: 12px;
   letter-spacing: 0.14em;
   text-transform: uppercase;
@@ -661,25 +858,47 @@
   color: var(--wm-ink);
 }
 
+/* Nothing published yet: a dossier whose standings are censored, with the status stamped on top */
 .warmap__await {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  padding: 16px 14px;
-  border: 1.5px dashed var(--wm-line);
-  border-left: 3px solid var(--wm-brass);
+  align-items: flex-start;
+  gap: var(--space-2);
+  padding: var(--space-2) 0;
   animation: warmap-event-in 0.4s ease-out;
 }
 
-.warmap__await-title {
+.warmap .warmap__await-title {
+  margin: var(--space-1) 0 0 var(--space-1);
+  font-size: 20px;
+}
+
+.warmap__await-sheet {
+  align-self: stretch;
+  display: flex;
+  flex-direction: column;
+  margin-top: var(--space-1);
+  border-top: 1.5px solid var(--wm-ink);
+}
+
+.warmap__await-line {
   display: flex;
   align-items: center;
-  gap: 8px;
-  font-family: var(--font-type);
-  font-size: 15px;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  color: var(--wm-brass);
+  gap: var(--space-2);
+  height: var(--row-h);
+  padding: 0 var(--space-1);
+  border-bottom: 1px dashed var(--wm-line);
+  color: var(--wm-ink);
+}
+
+.warmap__await-line .redaction {
+  opacity: 0.8;
+}
+
+.warmap__await-rank {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--wm-ink-muted);
 }
 
 .warmap__await-dot {
@@ -715,9 +934,9 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 10px;
+  gap: var(--space-1);
   max-width: 440px;
-  padding: 28px 32px;
+  padding: var(--space-4);
   text-align: center;
   border-top: 4px solid var(--wm-red);
 }
@@ -725,8 +944,7 @@
 .warmap__fault-label {
   display: flex;
   align-items: center;
-  gap: 6px;
-  font-family: var(--font-type);
+  gap: var(--space-1);
   font-size: 12px;
   letter-spacing: 0.24em;
   text-transform: uppercase;
@@ -735,25 +953,20 @@
 
 .warmap__fault-title {
   margin: 0;
-  font-family: var(--font-stencil);
-  font-size: 22px;
-  font-weight: 700;
+  font-size: 24px;
   letter-spacing: 0.1em;
-  text-transform: uppercase;
 }
 
 .warmap__fault-detail {
   margin: 0;
-  font-family: var(--font-type);
   font-size: 13px;
   line-height: 1.5;
   color: var(--wm-ink-muted);
 }
 
 .warmap__retry {
-  margin-top: 6px;
-  padding: 7px 18px;
-  font: inherit;
+  margin-top: var(--space-1);
+  padding: var(--space-1) var(--space-2);
   font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.2em;
@@ -885,21 +1098,26 @@
     overflow: visible;
   }
 
-  .warmap__header {
-    margin: 10px 10px 0;
-    padding: 10px 14px;
+  /* DEFCON stamp, tally and clock share the first line; the round details get the full width below */
+  .warmap .warmap__header {
+    margin: var(--space-1) var(--space-1) 0;
+    padding: var(--space-1) var(--space-2);
     flex-wrap: wrap;
-    gap: 10px 16px;
-  }
-
-  /* DEFCON stamp and clock share the first line; the round details get the full width below */
-  .warmap__header {
+    gap: var(--space-1) var(--space-2);
     justify-content: space-between;
   }
 
   .warmap__round {
     order: 3;
     flex-basis: 100%;
+  }
+
+  .warmap__tally {
+    padding-left: var(--space-2);
+  }
+
+  .warmap__tally strong {
+    font-size: 28px;
   }
 
   .warmap__game {
@@ -951,6 +1169,33 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
+  /* Ambient life off: no sweep at all, scanlines still and faint */
+  .warmap__sweep {
+    display: none;
+  }
+  .warmap__scan {
+    animation: none;
+  }
+  /* The newest fall: stamp already down at its tilt, no impact ring */
+  .warmap__fall-impact {
+    display: none;
+  }
+  .warmap__mapstamp .stamp-land {
+    animation: none;
+    transform: rotate(-8deg);
+  }
+  .warmap__country.is-eliminated,
+  .warmap__country.is-disqualified {
+    animation: none;
+  }
+  /* No territory pulses (the hook skips them too); rows land on their new place at once */
+  .warmap__pulses {
+    display: none;
+  }
+  .warmap__row,
+  .warmap__bar {
+    transition: none;
+  }
   .warmap__notice,
   .warmap__await,
   .warmap__await-dot,
@@ -961,5 +1206,10 @@
   .warmap__impact-ring,
   .warmap__burst-ring {
     animation-duration: 0.01s;
+  }
+  /* The ink flashes only fade out through their animation; still, they would stay as solid blots */
+  .warmap__impact-flash,
+  .warmap__burst-flash {
+    display: none;
   }
 }
