@@ -350,7 +350,8 @@ function roundAction(user, action, roundId, body) {
       break
     case 'extend':
       if (round.status !== 'open') return refuse(`Round ${round.number} is ${round.status}, not open.`)
-      round.closesAt += body.minutes * 60_000
+      // v5.4: add to the later of the deadline and now, so extending an ended window gives real time.
+      round.closesAt = Math.max(round.closesAt, now()) + body.minutes * 60_000
       break
     case 'start':
       if (round.status !== 'open') return refuse(`Round ${round.number} is ${round.status}, not open.`)

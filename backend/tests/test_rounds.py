@@ -184,19 +184,28 @@ async def test_extend_adds_to_the_deadline(
     assert gained == timedelta(minutes=10)
 
 
-async def test_extend_works_after_the_deadline(
+async def test_extend_after_the_deadline_counts_from_now(
     client: httpx.AsyncClient,
     organiser: dict[str, str],
     round_ids: dict[int, int],
 ) -> None:
+    """Adding 10 to a deadline an hour gone would leave it in the past at 00:00."""
     await open_round(client, organiser, round_ids[1])
-    await run_sql("UPDATE rounds SET closes_at = now() - interval '1 minute'")
+    await run_sql(
+        "UPDATE rounds SET closes_at = now() - interval '1 hour' WHERE id = :id",
+        id=round_ids[1],
+    )
 
     response = await client.post(
         f"/admin/rounds/{round_ids[1]}/extend", json={"minutes": 10}, headers=organiser
     )
 
     assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "open"
+    closes_at, server_time = parse(body["closes_at"]), parse(body["server_time"])
+    assert closes_at > server_time
+    assert closes_at - server_time == timedelta(minutes=10)
 
 
 async def test_start_runs_the_round_and_closes_the_window(

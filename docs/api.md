@@ -1,9 +1,10 @@
 # DEFCON Zero API Contract
 
-Status: draft v5.3. Changes in v5.3 are marked **[v5.3]**, changes in v5.2 are marked **[v5.2]**, changes in v5.1 are marked **[v5.1]**, and changes in v5 are marked **[v5]**. Older **[v4]** markers are from v4, and **[NEW]** and **[CHANGED]** markers are from v3.
+Status: draft v5.4. Changes in v5.4 are marked **[v5.4]**, changes in v5.3 are marked **[v5.3]**, changes in v5.2 are marked **[v5.2]**, changes in v5.1 are marked **[v5.1]**, and changes in v5 are marked **[v5]**. Older **[v4]** markers are from v4, and **[NEW]** and **[CHANGED]** markers are from v3.
 Owner: Sumedh (backend). Engine signatures owned by Shashwat.
 
 Changelog:
+- v5.4: `POST /admin/rounds/{id}/extend` adds `minutes` to the later of `closes_at` and now, so extending a window that has already ended gives teams real time instead of leaving `closes_at` in the past.
 - v5.3: `GET /rounds/current` is public, like `GET /territories` and `GET /standings`. It never shows scores. `GET /rounds` still needs a token.
 - v5.2: `POST /admin/rounds/{id}/retry` added, to rerun a round's matches after a failed run. `start` now plays the matches in the background, and the round moves to `review` when they are stored. `GET /standings` only shows published results, and its ranking rules are written down in section 6. `GET /territories` and `GET /standings` are public. `publish` applies the cut (top 15, then 8, then 2). `PATCH /admin/teams/{id}` is real. Disqualifying a team before publish moves it to the bottom of its round, and restoring it in `review` gives back its place. `GET /admin/overview` added.
 - v5.1: The engine now supports all three games, so `not available yet` is gone. `check.test_results` has one entry per sample bot, and a bot that fails during a match is `rejected` with its `test_results` still included. Example `opponent` values corrected.
@@ -197,6 +198,8 @@ Response `200`: a single Round object, or `404 NOT_FOUND` if no round has starte
 All return the updated Round object. Invalid transitions return `409 INVALID_ROUND_TRANSITION`.
 
 **[v5]** `open` sets `opens_at` to now and `closes_at` to now plus `minutes`. `extend` adds `minutes` to `closes_at`. `start` sets `closes_at` to now, which closes the window.
+
+**[v5.4]** `extend` adds `minutes` to the later of `closes_at` and now (server UTC, the same clock as `server_time`). While the window is still running this is the same as adding to `closes_at`. Once `closes_at` has passed, `closes_at` becomes now plus `minutes`, so after an extend teams always have at least `minutes` left.
 
 **[v5.2]** After `start`, the matches play in the background and the round stays `running` until every match is stored, then moves to `review` by itself. Poll `GET /rounds/current` to see it change. If the run fails, the round stays `running`, and `retry` plays the matches again from the beginning. `retry` returns `409 INVALID_ROUND_TRANSITION` if the round is not `running`, or if its matches are still being played.
 
