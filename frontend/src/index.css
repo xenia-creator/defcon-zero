@@ -378,6 +378,155 @@ textarea {
   }
 }
 
+/*
+ * Round intro (components/RoundIntro.tsx): the round's scene full screen, a slow push in, one
+ * scanline sweep, then the title and a DEFCON stamp. Transforms and opacity only (no filter,
+ * which Safari re-runs over the whole screen). Under the film grain (z 50), over everything else.
+ * Reduced motion: no movement at all, it simply appears and leaves.
+ */
+.round-intro {
+  position: fixed;
+  inset: 0;
+  z-index: 45;
+  isolation: isolate;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.5rem;
+  cursor: pointer;
+  background: var(--color-ink);
+  animation: round-intro-in 0.35s ease-out both;
+}
+/* The exit: the whole card rushes the viewer, accelerating as it thins out, until it's gone.
+   0.65s, as ZOOM_MS in RoundIntro.tsx. */
+.round-intro--leaving {
+  transform-origin: 50% 50%;
+  will-change: transform, opacity;
+  animation: round-intro-rush 0.65s cubic-bezier(0.55, 0, 1, 0.45) forwards;
+  pointer-events: none;
+}
+.round-intro__scene {
+  position: absolute;
+  inset: 0;
+  z-index: -3;
+  background-size: cover;
+  background-position: center;
+  animation: round-intro-push 2.6s cubic-bezier(0.2, 0.7, 0.3, 1) both;
+}
+/* Dark enough everywhere for paper-coloured text, darkest across the middle band and the edges */
+.round-intro__shade {
+  position: absolute;
+  inset: 0;
+  z-index: -2;
+  background:
+    linear-gradient(180deg, rgb(10 12 13 / 0.55) 0%, rgb(10 12 13 / 0.82) 38%, rgb(10 12 13 / 0.82) 64%, rgb(10 12 13 / 0.6) 100%),
+    radial-gradient(ellipse at center, transparent 40%, rgb(5 6 7 / 0.85) 100%),
+    repeating-linear-gradient(0deg, rgb(0 0 0 / 0.18) 0 1px, transparent 1px 3px);
+}
+/* One bright band passes down the screen as the image arrives */
+.round-intro__sweep {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background: linear-gradient(180deg, transparent 0%, rgb(217 211 195 / 0.14) 45%, rgb(217 211 195 / 0.3) 50%, transparent 56%);
+  background-size: 100% 40%;
+  background-repeat: no-repeat;
+  transform: translate3d(0, -40%, 0);
+  animation: round-intro-sweep 1.1s cubic-bezier(0.4, 0, 0.6, 1) 0.1s forwards;
+}
+.round-intro__text {
+  display: flex;
+  max-width: 64rem;
+  flex-direction: column;
+  align-items: center;
+  gap: 1rem;
+  text-align: center;
+}
+.round-intro__text > :not(.round-intro__stamp) {
+  animation: round-intro-rise 0.6s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+.round-intro__text > :nth-child(1) { animation-delay: 0.25s; }
+.round-intro__text > :nth-child(2) { animation-delay: 0.4s; }
+.round-intro__text > :nth-child(3) { animation-delay: 0.6s; }
+.round-intro__stamp {
+  margin-top: 0.75rem;
+  background: rgb(10 12 13 / 0.55);
+  opacity: 0;
+  animation: stamp-land 0.35s cubic-bezier(0.22, 1, 0.36, 1) 1s forwards;
+}
+.round-intro__hint {
+  position: absolute;
+  bottom: 1.5rem;
+  left: 0;
+  right: 0;
+  text-align: center;
+  animation: round-intro-in 0.6s ease-out 1.4s both;
+}
+@keyframes round-intro-in {
+  from { opacity: 0 }
+  to { opacity: 1 }
+}
+@keyframes round-intro-out {
+  from { opacity: 1 }
+  to { opacity: 0 }
+}
+/* Transparent by 85%, while the push carries on to the end, so it never pops out mid-fade at unmount */
+@keyframes round-intro-rush {
+  0% { transform: scale(1); opacity: 1 }
+  85% { opacity: 0 }
+  100% { transform: scale(1.55); opacity: 0 }
+}
+@keyframes round-intro-push {
+  from { transform: scale(1.12); opacity: 0 }
+  25% { opacity: 1 }
+  to { transform: scale(1); opacity: 1 }
+}
+@keyframes round-intro-sweep {
+  from { transform: translate3d(0, -40%, 0) }
+  to { transform: translate3d(0, 100%, 0) }
+}
+@keyframes round-intro-rise {
+  from { transform: translate3d(0, 14px, 0); opacity: 0 }
+  to { transform: none; opacity: 1 }
+}
+@media (prefers-reduced-motion: reduce) {
+  .round-intro,
+  .round-intro__scene,
+  .round-intro__text > :not(.round-intro__stamp),
+  .round-intro__hint {
+    animation: none;
+  }
+  /* No zoom: it just clears (0.2s, as CLEAR_MS in RoundIntro.tsx) */
+  .round-intro.round-intro--leaving {
+    will-change: auto;
+    animation: round-intro-out 0.2s linear forwards;
+  }
+  .round-intro__sweep {
+    display: none;
+  }
+  .round-intro__stamp {
+    animation: none;
+    opacity: 1;
+    transform: rotate(-8deg);
+  }
+}
+
+/*
+ * The team workspace backdrop (on <main> in App.tsx): workspace-desk.jpg under a dark wash, so the
+ * desk shows in the gutters around the panels while the editor and panels stay readable. As a
+ * background on the scroll container itself it stays put while the workspace scrolls, with no
+ * background-attachment: fixed and no filter (both slow in Safari).
+ */
+.workspace-backdrop {
+  background:
+    radial-gradient(ellipse at center, transparent 50%, rgb(5 6 7 / 0.7) 100%),
+    linear-gradient(180deg, rgb(10 12 13 / 0.72), rgb(10 12 13 / 0.84)),
+    url('/workspace-desk.jpg') center / cover no-repeat,
+    var(--color-ink);
+}
+
 /* Grid pattern background (faint survey grid) */
 .tactical-grid {
   background-image:
