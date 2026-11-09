@@ -1,0 +1,115 @@
+/*
+ * Command Console: the operations desk. Two surfaces only, as everywhere (src/index.css):
+ *   paper  the round's operations order and the team ledger (documents)
+ *   kit    the round controls, with the timer on a brass plate (tools)
+ * Colours come from the tokens only (no new hex values). No filters, no blend modes.
+ */
+
+/* Paper sheets lift off the desk like the login and claim sheets */
+.paper-sheet.ops-sheet {
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 0.15),
+    inset 0 0 0 1px rgb(35 31 26 / 0.18),
+    0 32px 64px -16px rgb(0 0 0 / 0.8),
+    0 12px 32px -8px rgb(0 0 0 / 0.55);
+}
+
+/*
+ * The timer plate: dull brass let into the kit, a rivet in each corner. Dark enough that paper,
+ * khaki and amber type stay readable on it.
+ */
+.ops-plate {
+  position: relative;
+  padding: var(--space-3);
+  border: 1px solid color-mix(in oklab, var(--color-amber) 45%, var(--color-ink));
+  background-color: color-mix(in oklab, var(--color-amber) 18%, var(--color-ink));
+  background-image:
+    radial-gradient(circle, color-mix(in oklab, var(--color-amber) 55%, var(--color-ink)) 0 2px, transparent 2.5px),
+    radial-gradient(circle, color-mix(in oklab, var(--color-amber) 55%, var(--color-ink)) 0 2px, transparent 2.5px),
+    radial-gradient(circle, color-mix(in oklab, var(--color-amber) 55%, var(--color-ink)) 0 2px, transparent 2.5px),
+    radial-gradient(circle, color-mix(in oklab, var(--color-amber) 55%, var(--color-ink)) 0 2px, transparent 2.5px),
+    linear-gradient(180deg, rgb(255 255 255 / 0.05), transparent 40%, rgb(0 0 0 / 0.25));
+  background-size: 8px 8px, 8px 8px, 8px 8px, 8px 8px, 100% 100%;
+  background-position: top 8px left 8px, top 8px right 8px, bottom 8px left 8px, bottom 8px right 8px, 0 0;
+  background-repeat: no-repeat;
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 0.08),
+    inset 0 -2px 0 rgb(0 0 0 / 0.35),
+    0 1px 0 rgb(0 0 0 / 0.5);
+}
+
+/*
+ * Error text in the control kit: the alert red with a little paper mixed in, so it keeps AA over
+ * the panel's lighter grain specks (plain alert measures about 4.2:1 there). Still the danger red.
+ */
+.ops-alert-text {
+  color: color-mix(in oklab, var(--color-alert) 82%, var(--color-paper));
+}
+
+/* A typed field on the order: label, a dotted leader, the value */
+.ops-field {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-1);
+}
+.ops-field > dt {
+  display: flex;
+  flex: 1;
+  align-items: baseline;
+  gap: var(--space-1);
+  white-space: nowrap;
+}
+.ops-field > dt::after {
+  content: '';
+  flex: 1;
+  min-width: var(--space-2);
+  border-bottom: 2px dotted color-mix(in srgb, var(--color-type-muted) 55%, transparent);
+}
+
+/* The team ledger: ruled lines on the sheet, a double rule under the column heads */
+.ops-ledger thead tr {
+  border-bottom: 3px double var(--color-type-muted);
+}
+.ops-ledger tbody tr {
+  border-bottom: 1px solid color-mix(in srgb, var(--color-type-muted) 35%, transparent);
+}
+/* Every cell sits on one baseline, so typewriter and mono cells line up across a row */
+.ops-ledger th,
+.ops-ledger td {
+  vertical-align: baseline;
+}
+.ops-ledger tbody tr.ops-ledger__error {
+  border-bottom-color: transparent;
+}
+/* A disqualified team: a faint red wash across the line, under its red stamp */
+.ops-ledger tbody tr.ops-ledger__row--struck {
+  background: color-mix(in srgb, var(--color-type-red) 7%, transparent);
+}
+
+/* An eliminated team: out of the round, but nothing went wrong, so no colour, just faint hatching across the line */
+.ops-ledger tbody tr.ops-ledger__row--out {
+  background: repeating-linear-gradient(
+    -45deg,
+    color-mix(in srgb, var(--color-type-muted) 6%, transparent) 0 8px,
+    transparent 8px 16px
+  );
+}
+
+/*
+ * A small status stamp in a ledger line: a thinner rim than the big stamps, and solid ink (the
+ * striped wear of .stamp breaks up letters this small).
+ */
+.stamp.ops-stamp-sm {
+  border-width: 2px;
+  font-size: 0.75rem;
+  padding: 0 0.5em;
+  letter-spacing: 0.14em;
+  -webkit-mask-image: none;
+  mask-image: none;
+}
+
+/* Paper fields in the ledger toolbar: the select keeps a light form control on paper */
+.ops-select {
+  color-scheme: light;
+  cursor: pointer;
+}
