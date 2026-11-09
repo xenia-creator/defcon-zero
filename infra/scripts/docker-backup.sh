@@ -25,7 +25,7 @@ backup_database() {
     echo "Backing up $database..."
 
     if ! docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" \
-        exec -T db pg_dump -U postgres -Fc "$database" > "$temporary"; then
+        exec -T db sh -c 'pg_dump -U "$POSTGRES_USER" -Fc "$1"' sh "$database" > "$temporary"; then
         rm -f "$temporary"
         echo "ERROR: Backup failed for $database."
         return 1
