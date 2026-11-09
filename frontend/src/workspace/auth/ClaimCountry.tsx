@@ -220,13 +220,13 @@ export function ClaimCountry({ username }: { username: string }) {
       {/* Claim sheet: the nation is registered on paper */}
       <section className="paper relative flex shrink-0 flex-col gap-4 self-start p-5 max-lg:w-full lg:w-96">
         <header className="border-b-2 border-double border-type-muted pb-3">
-          <p className="font-[family-name:var(--font-type)] text-[11px] tracking-[0.24em] text-type-muted uppercase">
+          <p className="font-label text-[11px] tracking-[0.24em] text-type-muted uppercase">
             Form DZ-2 · Registration of nation
           </p>
           <h2 className="stencil mt-1 text-2xl tracking-[0.08em]">Claim your nation</h2>
         </header>
 
-        <p className="font-[family-name:var(--font-type)] text-sm leading-relaxed text-type-muted">
+        <p className="font-label text-sm leading-relaxed text-type-muted">
           {username}, name your nation and pick its territory. Both are unique, and the choice is final.
         </p>
 
@@ -242,7 +242,7 @@ export function ClaimCountry({ username }: { username: string }) {
             value={nationName}
             onChange={(e) => setNationName(e.target.value)}
           />
-          <span className={`font-[family-name:var(--font-type)] text-xs ${name && nameProblem ? 'text-type-red' : 'text-type-muted'}`}>
+          <span className={`font-label text-xs ${name && nameProblem ? 'text-type-red' : 'text-type-muted'}`}>
             {name && nameProblem ? nameProblem : '3 to 24 letters, numbers or spaces.'}
           </span>
         </label>
@@ -253,7 +253,7 @@ export function ClaimCountry({ username }: { username: string }) {
             <NationEmblem name={name} size={42} />
             <div className="min-w-0">
               <p className="font-mono text-[10px] font-bold tracking-[0.2em] text-type-muted uppercase">Emblem</p>
-              <p className="truncate font-[family-name:var(--font-type)] text-lg tracking-widest">{name.toUpperCase()}</p>
+              <p className="truncate font-label text-lg tracking-widest">{name.toUpperCase()}</p>
             </div>
           </div>
         )}
@@ -264,7 +264,7 @@ export function ClaimCountry({ username }: { username: string }) {
         </div>
 
         {error && (
-          <p role="alert" className="border-l-2 border-type-red bg-type-red/5 px-2 py-1 font-[family-name:var(--font-type)] text-sm text-type-red">
+          <p role="alert" className="border-l-2 border-type-red bg-type-red/5 px-2 py-1 font-label text-sm text-type-red">
             {error}
           </p>
         )}

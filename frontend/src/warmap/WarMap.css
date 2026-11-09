@@ -72,7 +72,7 @@
 .warmap__event,
 .warmap__fault {
   color: var(--wm-ink);
-  background-color: #ddd3bc;
+  background-color: var(--paper-base);
   background-image: linear-gradient(rgb(var(--wm-paper-wash) / 0.35), rgb(var(--wm-paper-wash) / 0.35)), url('/paper.jpg');
   background-size: cover;
   background-position: center;
@@ -302,7 +302,7 @@
    The full ink and the dark seam arrive with .is-nation once it is ranked. */
 .warmap__country.is-claimed-unranked {
   fill: color-mix(in srgb, var(--nation) 62%, transparent);
-  stroke: color-mix(in srgb, var(--nation) 70%, #231f1a);
+  stroke: color-mix(in srgb, var(--nation) 70%, var(--color-type-ink));
   stroke-opacity: 1;
   stroke-width: 1.1px;
 }
@@ -312,7 +312,7 @@
 .warmap__country.is-nation {
   fill: var(--nation);
   fill-opacity: 0.88;
-  stroke: #231f1a;
+  stroke: var(--color-type-ink);
   stroke-opacity: 0.85;
   stroke-width: 0.9px;
 }
