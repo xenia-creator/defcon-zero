@@ -124,16 +124,24 @@ async def open_round(db: AsyncSession, round_id: int, minutes: int) -> Round:
 
 
 async def extend_round(db: AsyncSession, round_id: int, minutes: int) -> Round:
-    """Add minutes to an open round's deadline.
+    """Add minutes to the later of an open round's deadline and the time now.
 
-    The minutes go on the current deadline, not on the time now, so extending by
-    10 always means 10 more than teams were promised. The lock also means two
-    extends at once both count, instead of one overwriting the other.
+    While the window is still running, the minutes go on the current deadline,
+    so extending by 10 means 10 more than teams were promised. Once the deadline
+    has passed, adding to it could leave it still in the past and the clock at
+    00:00, so the minutes go on the time now instead: extend always gives teams
+    real time. The lock also means two extends at once both count, instead of
+    one overwriting the other.
+
+    now is read after the lock, so a request that waited there uses the time it
+    actually ran, and it is passed to build_round, as in open and start, so the
+    response's server_time is the moment the deadline was worked out from.
     """
     row = await lock_round_in_status(db, round_id, "open")
-    row.closes_at = row.closes_at + timedelta(minutes=minutes)
+    now = datetime.now(UTC)
+    row.closes_at = max(row.closes_at, now) + timedelta(minutes=minutes)
     await db.commit()
-    return build_round(row, datetime.now(UTC))
+    return build_round(row, now)
 
 
 async def start_round(db: AsyncSession, round_id: int) -> Round:
