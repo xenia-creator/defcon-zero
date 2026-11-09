@@ -22,18 +22,18 @@ export function WarMapPreview({ showStandings = true }: { showStandings?: boolea
       {mode === 'showcase' && (
         <div
           role="status"
-          className="pointer-events-none absolute top-[84px] left-1/2 z-30 -translate-x-1/2 border border-amber/60 bg-ink/90 px-4 py-1.5 font-mono text-[11px] font-bold tracking-[0.2em] whitespace-nowrap text-amber uppercase shadow-lg"
+          className="field-kit pointer-events-none absolute top-[112px] left-1/2 z-30 -translate-x-1/2 border-amber/60 px-4 py-2 font-data text-[11px] font-bold tracking-[0.2em] whitespace-nowrap text-amber uppercase"
         >
           ▶ Demo data, not live · scripted showcase loop
         </div>
       )}
 
-      <div className="pointer-events-auto absolute bottom-3 left-5 z-30 flex items-center gap-1 border border-steel bg-ink/90 p-1 text-[10px] font-mono tracking-widest uppercase shadow-lg">
+      <div className="field-kit pointer-events-auto absolute bottom-2 left-6 z-30 flex items-center gap-1 p-1 font-data text-[10px] tracking-widest uppercase">
         <button
           type="button"
           aria-pressed={mode === 'live'}
           onClick={() => setMode('live')}
-          className={`cursor-pointer px-2.5 py-1 transition-colors ${
+          className={`cursor-pointer px-2 py-1 transition-colors ${
             mode === 'live' ? 'bg-coop/20 text-coop border border-coop/50 font-bold' : 'text-muted hover:text-paper'
           }`}
         >
@@ -43,7 +43,7 @@ export function WarMapPreview({ showStandings = true }: { showStandings?: boolea
           type="button"
           aria-pressed={mode === 'showcase'}
           onClick={() => setMode('showcase')}
-          className={`cursor-pointer px-2.5 py-1 transition-colors ${
+          className={`cursor-pointer px-2 py-1 transition-colors ${
             mode === 'showcase' ? 'bg-amber/20 text-amber border border-amber/50 font-bold' : 'text-muted hover:text-paper'
           }`}
         >
