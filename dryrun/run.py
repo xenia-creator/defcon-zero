@@ -18,7 +18,7 @@ Team credentials (never printed) come from one of, in this order:
   3. dryrun/teams.json next to this script, if it exists
 
 Usage:
-  python dryrun/run.py --base-url http://localhost:8000 --teams-file teams.json
+  python dryrun/run.py --base-url http://localhost:8002 --teams-file teams.json
 """
 
 from __future__ import annotations
@@ -36,7 +36,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-DEFAULT_BASE_URL = "http://localhost:8000"
+DEFAULT_BASE_URL = "http://localhost:8002"
 SCRIPT_DIR = Path(__file__).resolve().parent
 BOTS_DIR = SCRIPT_DIR / "bots"
 DEFAULT_TEAMS_FILE = SCRIPT_DIR / "teams.json"
@@ -74,6 +74,10 @@ class ApiError(Exception):
 
 class StepError(Exception):
     """A per-team problem that is not an API error (bad bot file, etc.)."""
+
+
+class SkipTeam(Exception):
+    """The team cannot play this round (eliminated or disqualified)."""
 
 
 @dataclass
@@ -283,6 +287,9 @@ def candidate_names(offset: int) -> list[str]:
 def ensure_claim(client: ApiClient, team: Team, index: int) -> None:
     """Claim a free territory with a unique made-up name (skip if already claimed)."""
     me = client.request("GET", "/me", token=team.token, retries=1)
+    status = me.get("status")
+    if status in {"eliminated", "disqualified"}:
+        raise SkipTeam(f"team is {status}")
     if me.get("territory_code") and me.get("nation_name"):
         team.territory_code = str(me["territory_code"])
         team.nation_name = str(me["nation_name"])
@@ -365,6 +372,9 @@ def process_team(client: ApiClient, team: Team, index: int, round_id: int) -> No
               f"submitting {team.bot.name if team.bot else '?'}")
         submit_bot(client, team, round_id)
         team.outcome = "SUBMITTED"
+    except SkipTeam as exc:
+        team.outcome, team.detail = "SKIPPED", str(exc)
+        print(f"[{team.username}] SKIPPED - {team.detail}")
     except ApiError as exc:
         team.outcome, team.detail = "FAILED", f"{exc.code}: {exc.message}"
     except StepError as exc:
@@ -441,8 +451,9 @@ def print_summary(teams: list[Team]) -> None:
 
     accepted = sum(t.outcome == "ACCEPTED" for t in teams)
     rejected = sum(t.outcome == "REJECTED" for t in teams)
-    unresolved = len(teams) - accepted - rejected
-    print(f"\nAccepted: {accepted}   Rejected: {rejected}   "
+    skipped = sum(t.outcome == "SKIPPED" for t in teams)
+    unresolved = len(teams) - accepted - rejected - skipped
+    print(f"\nAccepted: {accepted}   Rejected: {rejected}   Skipped: {skipped}   "
           f"Failed/timed out (no terminal status): {unresolved}   Total teams: {len(teams)}")
 
 
@@ -511,8 +522,8 @@ def main(argv: list[str] | None = None) -> int:
         poll_submissions(client, teams, args.poll_interval, args.poll_timeout)
 
     print_summary(teams)
-    # Rejected is a valid outcome; only teams with no terminal status are errors.
-    return 0 if all(t.outcome in {"ACCEPTED", "REJECTED"} for t in teams) else 1
+    # Rejected and skipped are valid outcomes; only teams with no terminal status are errors.
+    return 0 if all(t.outcome in {"ACCEPTED", "REJECTED", "SKIPPED"} for t in teams) else 1
 
 
 if __name__ == "__main__":

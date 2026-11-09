@@ -4,6 +4,7 @@
 !.env.example
 # Account files for scripts/create_users.py, which hold plain text passwords.
 users*.csv
+dryrun/teams.json
 
 # Python
 __pycache__/
