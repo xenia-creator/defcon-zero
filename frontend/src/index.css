@@ -5,6 +5,32 @@
 @import '@fontsource/stardos-stencil/700.css';
 
 /*
+ * ============================================================================================
+ * DESIGN FOUNDATION (L0). Read before styling anything.
+ *
+ * Colour: four core colours, each with one job.
+ *   ink    the night background and dark field-kit panels          (bg-ink, bg-panel)
+ *   paper  text on dark, and the paper sheets themselves             (text-paper, .paper-sheet)
+ *   khaki  quiet emphasis, rules and secondary type                  (text-khaki)
+ *   fire   the single most important action on a screen, only one   (Button variant="primary")
+ *   alert  danger only: eliminations, disqualification, errors       (text-alert)
+ * Every other token below is a supporting shade (steel rules, muted text, status inks), or an
+ * ink for type printed on paper (type-*). Don't add new hex values in components: add a token.
+ *
+ * Type: three fonts, fixed jobs (role classes below).
+ *   .font-title  Stardos Stencil: screen titles and big headings      (alias: .stencil)
+ *   .font-label  Special Elite typewriter: labels and documents       (see also .label)
+ *   .font-data   JetBrains Mono: code, numbers, timers, ids
+ *
+ * Space: an 8px scale. In markup use Tailwind's even steps (2, 4, 6, 8, 12 = 8, 16, 24, 32, 48px);
+ * in plain CSS use --space-1..--space-6 (8..48px).
+ *
+ * Surfaces: two only.
+ *   .paper-sheet  documents (forms, dispatches, the claim sheet)       (alias: .paper)
+ *   .field-kit    tools (editor, panels, console)                      (used by <Panel>)
+ * Period details (stamp, file number, redaction, torn edge): src/components/period.tsx.
+ * ============================================================================================
+ *
  * WWI trench palette: cold slate sky, mud, olive, khaki, faded paper. One warm accent (fire) for
  * actions and highlights; faded red (alert) only for danger and eliminations. Every text colour
  * here passes WCAG AA (4.5:1) on ink and panel; muted, coop, amber, peace and fire also on steel.
@@ -40,6 +66,39 @@
   --font-stencil: 'Stardos Stencil', 'Special Elite', Georgia, serif;
 }
 
+/* Not in @theme on purpose: --spacing-* there would redefine Tailwind's p-1, gap-2 and so on. */
+:root {
+  --space-1: 8px;
+  --space-2: 16px;
+  --space-3: 24px;
+  --space-4: 32px;
+  --space-5: 40px;
+  --space-6: 48px;
+
+  /* paper.jpg's base tone and the light wash over it (keeps the type-* inks at AA everywhere) */
+  --paper-base: #ddd3bc;
+  --paper-wash: rgb(240 234 218 / 0.35);
+}
+
+/*
+ * Font roles. Utilities (not plain classes), so they sit in the same layer as font-mono and friends.
+ * Always emitted (Tailwind would otherwise drop any not yet used in markup).
+ */
+@source inline("font-title font-label font-data");
+@utility font-title {
+  font-family: var(--font-stencil);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+@utility font-label {
+  font-family: var(--font-type);
+}
+@utility font-data {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
 html,
 body {
   background: var(--color-ink);
@@ -71,12 +130,9 @@ body {
   background-size: 160px 160px;
 }
 
-/* Large stencil headings (Stardos Stencil) */
+/* Large stencil headings: the older name for .font-title, kept for existing markup */
 .stencil {
-  font-family: var(--font-stencil);
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
+  @apply font-title;
 }
 
 /* Worn paint: a fixed noise mask eats small flecks out of the letters. Big headings only. */
@@ -88,20 +144,40 @@ body {
 }
 
 /*
- * A sheet of paper.jpg: covers the box (never tiled), under a light wash that lifts the darkest
- * stains so the type-* inks keep AA contrast everywhere on it. Text on it defaults to type-ink.
+ * SURFACE 1, documents. A sheet of paper.jpg: covers the box (never tiled), under a light wash that
+ * lifts the darkest stains so the type-* inks keep AA contrast everywhere on it. Text on it defaults
+ * to type-ink. A faint ink edge keeps the sheet from melting into light photos behind it.
+ * .paper is the older name, kept for existing markup.
  */
+.paper-sheet,
 .paper {
   color: var(--color-type-ink);
-  background-color: #ddd3bc;
-  background-image: linear-gradient(rgb(240 234 218 / 0.35), rgb(240 234 218 / 0.35)), url('/paper.jpg');
+  background-color: var(--paper-base);
+  background-image: linear-gradient(var(--paper-wash), var(--paper-wash)), url('/paper.jpg');
   background-size: cover;
   background-position: center;
   background-repeat: no-repeat;
   box-shadow:
     0 1px 0 rgb(255 255 255 / 0.15) inset,
+    0 0 0 1px rgb(35 31 26 / 0.18) inset,
     0 18px 40px -12px rgb(0 0 0 / 0.9),
     0 4px 10px rgb(0 0 0 / 0.5);
+}
+
+/*
+ * SURFACE 2, tools. A dark field-kit panel: one thin steel rule, a drop into the background, no
+ * outer ring. Inside it, separate groups with a single rule (border-t border-steel), not another
+ * box. In the components layer, so a border-* or bg-* utility on the same element still wins.
+ */
+@layer components {
+  .field-kit {
+    border: 1px solid var(--color-steel);
+    background-color: color-mix(in oklab, var(--color-panel) 90%, transparent);
+    box-shadow:
+      0 2px 0 0 rgb(0 0 0 / 0.5),
+      0 12px 28px -8px rgb(0 0 0 / 0.85),
+      inset 0 1px 0 0 rgb(217 211 195 / 0.04);
+  }
 }
 
 /* A typed form line on paper: ink underline, no box */
@@ -205,6 +281,58 @@ body {
   text-transform: uppercase;
   border-radius: 4px;
   mask-image: repeating-linear-gradient(115deg, #000 0 6px, rgb(0 0 0 / 0.7) 6px 8px);
+}
+
+/*
+ * Period details (components in src/components/period.tsx). Plain CSS, no images but paper.jpg.
+ * All of them take their ink from currentColor, so they read on a paper sheet and on field kit.
+ */
+
+/* A docket number: typed prefix, mono number, a faint rule above and below */
+.file-number {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.6em;
+  padding: 2px 0;
+  border-block: 1px solid color-mix(in srgb, currentColor 45%, transparent);
+  font-family: var(--font-type);
+  font-size: 0.7rem;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  line-height: 1.4;
+}
+.file-number__no {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.08em;
+}
+
+/* A censor's bar over withheld words: solid ink, slightly ragged ends */
+.redaction {
+  display: inline-block;
+  width: var(--redaction-w, 8ch);
+  height: 0.95em;
+  vertical-align: -0.12em;
+  background: currentColor;
+  clip-path: polygon(0.6% 8%, 99% 0, 100% 86%, 98.4% 100%, 1.2% 94%, 0 40%);
+}
+
+/*
+ * A torn top edge for a .paper-sheet: a strip of the same paper above the sheet, cut ragged. The
+ * sheet needs position: relative. Decorative only.
+ */
+.torn-edge {
+  pointer-events: none;
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 100%;
+  height: var(--space-1);
+  background-color: var(--paper-base);
+  background-image: linear-gradient(var(--paper-wash), var(--paper-wash)), url('/paper.jpg');
+  background-size: cover;
+  background-position: top;
+  clip-path: polygon(0% 100%, 0.0% 25%, 3.57% 10%, 7.14% 40%, 10.71% 60%, 14.29% 15%, 17.86% 45%, 21.43% 15%, 25.0% 5%, 28.57% 25%, 32.14% 15%, 35.71% 60%, 39.29% 70%, 42.86% 5%, 46.43% 45%, 50.0% 25%, 53.57% 35%, 57.14% 45%, 60.71% 40%, 64.29% 40%, 67.86% 70%, 71.43% 40%, 75.0% 5%, 78.57% 45%, 82.14% 40%, 85.71% 35%, 89.29% 70%, 92.86% 35%, 96.43% 5%, 100.0% 40%, 100% 100%);
 }
 
 select,

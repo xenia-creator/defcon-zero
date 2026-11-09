@@ -108,7 +108,7 @@ export function Login() {
             <h1 className="stencil weathered glow text-6xl leading-[0.95] tracking-[0.06em] text-paper sm:text-7xl [@media(max-height:760px)]:sm:text-6xl">
               DEFCON ZERO
             </h1>
-            <p className="mt-2 font-[family-name:var(--font-type)] text-xl tracking-wide text-paper sm:text-2xl">
+            <p className="mt-2 font-label text-xl tracking-wide text-paper sm:text-2xl">
               Trust is a strategy. So is betrayal.
             </p>
           </div>
@@ -123,23 +123,23 @@ export function Login() {
             </span>
 
             <div className="border-b-2 border-double border-type-muted pr-24 pb-2 sm:pr-28">
-              <p className="font-[family-name:var(--font-type)] text-[11px] tracking-[0.24em] text-type-muted uppercase">
+              <p className="font-label text-[11px] tracking-[0.24em] text-type-muted uppercase">
                 Form DZ-1 · Request for clearance
               </p>
-              <p className="mt-1 font-[family-name:var(--font-type)] text-xl tracking-[0.14em] uppercase">Identify yourself</p>
+              <p className="mt-1 font-label text-xl tracking-[0.14em] uppercase">Identify yourself</p>
             </div>
 
             {/* Clearance denied feedback */}
             {denied && (
               <div className="self-start border-2 border-type-red px-2 py-1 -rotate-1">
-                <p className="font-[family-name:var(--font-type)] text-sm tracking-widest text-type-red uppercase">
+                <p className="font-label text-sm tracking-widest text-type-red uppercase">
                   &gt; CLEARANCE DENIED
                 </p>
               </div>
             )}
 
             {expired && !error && (
-              <p className="font-[family-name:var(--font-type)] text-sm text-type-brass">
+              <p className="font-label text-sm text-type-brass">
                 Your session ended. Log in again; your draft is still here.
               </p>
             )}
@@ -179,7 +179,7 @@ export function Login() {
             </label>
 
             {error && (
-              <p role="alert" className="font-[family-name:var(--font-type)] text-sm text-type-red">
+              <p role="alert" className="font-label text-sm text-type-red">
                 {error}
               </p>
             )}
@@ -194,7 +194,7 @@ export function Login() {
 
             <div className="flex items-center gap-3" aria-hidden>
               <span className="h-px flex-1 bg-type-muted/50" />
-              <span className="font-[family-name:var(--font-type)] text-xs tracking-widest text-type-muted uppercase">or</span>
+              <span className="font-label text-xs tracking-widest text-type-muted uppercase">or</span>
               <span className="h-px flex-1 bg-type-muted/50" />
             </div>
 

@@ -556,7 +556,7 @@ function RoundWorkspace({ team, gameKey }: { team: ClaimedTeam; gameKey: string 
   return (
     <div className="grid min-h-full grid-cols-1 gap-3 p-3 lg:h-full lg:grid-cols-[1fr_380px]">
       {/* min-w-0 on both columns: a wide editor or a long line can never push the right column off screen */}
-      <section className="flex min-h-[70vh] min-w-0 flex-col border border-steel bg-panel/90 panel-3d lg:min-h-0">
+      <section className="flex min-h-[70vh] min-w-0 flex-col field-kit lg:min-h-0">
         {placesTroops && (
           <div className="flex flex-wrap items-stretch gap-px border-b border-steel bg-steel/40" role="tablist" aria-label="How to play this round">
             {(
@@ -755,7 +755,7 @@ function RoundWorkspace({ team, gameKey }: { team: ClaimedTeam; gameKey: string 
           )}
           {round && (
             <Guard name="Round rules">
-              <details open className="shrink-0 border border-steel bg-panel/90 panel-3d">
+              <details open className="shrink-0 field-kit">
                 <summary className="label cursor-pointer bg-steel/40 px-4 py-2 !text-paper">Round rules</summary>
                 <div className="flex flex-col gap-2 p-4 text-xs">
                   {game.also && <p className="label !text-amber">{game.also}</p>}

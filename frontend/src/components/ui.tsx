@@ -20,7 +20,7 @@ export function Panel({
   children: ReactNode
 }) {
   return (
-    <section className={`relative flex flex-col border border-steel bg-panel/90 panel-3d ${className}`}>
+    <section className={`relative flex flex-col field-kit ${className}`}>
       {title && (
         <header className="flex items-center justify-between gap-3 border-b border-steel bg-steel/40 px-4 py-2">
           <h2 className="label !text-paper tracking-[0.18em]">{title}</h2>
@@ -192,7 +192,7 @@ export function ConfirmDialog({
   }, [onCancel])
   return (
     <div className="fixed inset-0 z-40 flex items-center justify-center bg-ink/85 p-4 tactical-grid" role="dialog" aria-modal="true">
-      <Panel title={title} className="w-full max-w-md panel-3d">
+      <Panel title={title} className="w-full max-w-md">
         <div className="flex flex-col gap-4 text-sm">
           <div className="text-paper">{body}</div>
           <div className="flex justify-end gap-2">
