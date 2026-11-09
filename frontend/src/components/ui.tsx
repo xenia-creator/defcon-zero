@@ -274,3 +274,55 @@ export function Toasts() {
 export function Empty({ children }: { children: ReactNode }) {
   return <p className="py-6 text-center text-sm text-muted tracking-wide">{children}</p>
 }
+
+/*
+ * Period details (visual-polish foundation, L0). Visual only: no state, no handlers. Built on the
+ * existing period CSS in index.css (.label, .stamp, .stamp-land); only .redaction and .torn-edge are new.
+ * `className` is for placement, size and ink colour, never to restyle the detail itself.
+ */
+
+/**
+ * A dossier reference, typed like a label: "FILE NO. 1983-RG". Real text, so screen readers read it.
+ * .label's muted ink is for dark panels; on a paper sheet pass className="!text-type-muted" to stay readable.
+ */
+export function FileNumber({ value, prefix = 'File No.', className = '' }: { value: string; prefix?: string; className?: string }) {
+  return (
+    <span className={`label whitespace-nowrap ${className}`}>
+      {prefix} {value}
+    </span>
+  )
+}
+
+/**
+ * A rubber stamp (.stamp), in the current text colour, so set the ink with a class: text-danger on
+ * panels, text-type-red / text-type-olive on paper. Real text, so screen readers read it.
+ *   state 'settled' (default)  already down, tilted -8deg
+ *   state 'land'               slams down once (.stamp-land) and ends at the same -8deg tilt
+ */
+export function Stamp({ label, state = 'settled', className = '' }: { label: ReactNode; state?: 'settled' | 'land'; className?: string }) {
+  // .stamp-land animates transform to rotate(-8deg); settled uses the rotate property for the same tilt.
+  // Never both, or the two rotations add up.
+  return <span className={`stamp inline-block whitespace-nowrap ${state === 'land' ? 'stamp-land' : 'rotate-[-8deg]'} ${className}`}>{label}</span>
+}
+
+/**
+ * A censor's ink bar (.redaction), decorative. Sized by `width` (any CSS length, for example '8ch')
+ * or by placeholder `children`, which are hidden under the bar. Ink, so use it on paper sheets.
+ * The placeholder stays in the DOM: never put real information in it.
+ */
+export function RedactionBar({ width = '6ch', children, className = '' }: { width?: string; children?: ReactNode; className?: string }) {
+  return (
+    <span aria-hidden className={`redaction ${className}`} style={children ? undefined : { width }}>
+      {children}
+    </span>
+  )
+}
+
+/**
+ * A torn-off edge (.torn-edge), decorative: a ragged strip just outside the top or bottom of its
+ * parent, in the parent's own background, so the sheet looks torn. The parent must be positioned
+ * (relative) and must not clip overflow.
+ */
+export function TornEdge({ edge = 'bottom' }: { edge?: 'top' | 'bottom' }) {
+  return <span aria-hidden className={`torn-edge torn-edge--${edge}`} />
+}

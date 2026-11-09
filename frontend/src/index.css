@@ -26,6 +26,7 @@
   --color-peace: #8299ad; /* slate blue */
   --color-fire: #d97a35; /* the one warm accent */
   --color-fire-light: #e88f4c;
+  --color-danger: var(--color-alert); /* design-system name for alert: gives text-danger, bg-danger, border-danger */
 
   /* Inks for text printed on paper.jpg (.paper). AA on the darkest 1% of the washed paper. */
   --color-type-ink: #231f1a;
@@ -38,6 +39,51 @@
   --font-mono: 'JetBrains Mono', ui-monospace, Menlo, Consolas, monospace;
   --font-type: 'Special Elite', 'Courier New', ui-monospace, monospace;
   --font-stencil: 'Stardos Stencil', 'Special Elite', Georgia, serif;
+}
+
+/*
+ * DESIGN-SYSTEM COLOUR TOKENS (visual-polish foundation, L0)
+ *
+ * Short names for new work. Each one points at a --color-* value above, so every colour is
+ * defined exactly once and these can never drift from what's on screen today.
+ *
+ * The palette: five brand colours, nothing else.
+ *   --ink    near-black ground                    --paper  cream (text on dark; the paper surface)
+ *   --khaki  secondary accent: kickers, rules     --fire   the ONE most important action per screen
+ *   --danger red, for danger and destructive actions only (never decoration)
+ * On a paper sheet, the dark-ground values don't read; use the paper inks instead:
+ *   --ink-on-paper  body text on paper            --danger-on-paper  danger on paper
+ *
+ * Shades of ink (allowed, they are the ink family, not extra colours):
+ *   panel (field-kit fill), steel / steel-light (rules, borders), muted (secondary text).
+ *
+ * Named exceptions: the ONLY colours outside the palette, each because it carries meaning.
+ *   Status  amber (pending, warnings), coop (good, accepted). Keep them on status, nowhere else.
+ *   Data    nation colours (warmap/palette.ts), Theatre of War front colours (workspace/editor/troops.ts),
+ *           DEFCON levels (3 amber, 2 fire, 1 alert/danger, 0 paper; ui.tsx DEFCON_CONFIG).
+ * Anything else is a bug to fold back into the palette.
+ *
+ * SURFACES: two only, both already in use. Don't add others.
+ *   Paper sheet  .paper   Documents: forms, dossiers, sheets you read (login, claim). paper.jpg under a
+ *                         wash; text defaults to --ink-on-paper. Put the type-* inks on it, never paper/khaki.
+ *   Field kit    <Panel>  Tools: editors, consoles, status (components/ui.tsx). Dark panel, steel border,
+ *                         .panel-3d depth. When the element can't be a Panel (a <details>, a column with
+ *                         its own header), use the .field-kit class: the same look from the same tokens.
+ *
+ * SPACING: an 8px grid, from Tailwind's own scale (1 step = 4px). No spacing variables; use the utilities.
+ *   Use even steps: 2 = 8px, 4 = 16px, 6 = 24px, 8 = 32px, 12 = 48px
+ *   (p-2, px-4, py-6, gap-4, space-y-2, m-8, inset-4 …).
+ *   Avoid odd steps (p-1, p-3, p-5 …) and arbitrary values (p-[13px]) except for true one-offs,
+ *   such as optical nudges and hairline offsets.
+ */
+:root {
+  --ink: var(--color-ink);
+  --paper: var(--color-paper);
+  --khaki: var(--color-khaki);
+  --fire: var(--color-fire);
+  --danger: var(--color-alert);
+  --ink-on-paper: var(--color-type-ink);
+  --danger-on-paper: var(--color-type-red);
 }
 
 html,
@@ -70,6 +116,17 @@ body {
   background-image: url('/grain.png');
   background-size: 160px 160px;
 }
+
+/*
+ * FONT ROLES (visual-polish foundation, L0). Each font has one job; use these, don't add parallel classes.
+ *   Title     .stencil      Stardos Stencil 700, uppercase. Screen and section titles. Big ones may add
+ *                           .weathered (worn paint) and .glow (pressed-ink shadow).
+ *   Label     .label        Special Elite, uppercase, small, muted. Field labels, kickers, captions.
+ *   Document  font-type     Special Elite as typed running text (forms and sheets on paper), no case change.
+ *   Code and  (default)     JetBrains Mono is the body font, so code and numbers need nothing. Use
+ *   numbers   font-mono     font-mono only to force mono back inside a typewriter or stencil block.
+ * Special Elite ships one weight (400): never bold it (no synthetic bold).
+ */
 
 /* Large stencil headings (Stardos Stencil) */
 .stencil {
@@ -250,13 +307,28 @@ textarea {
   font-size: 13px;
 }
 
-/* ---- 3D depth panels ---- */
-.panel-3d {
+/* ---- 3D depth panels ---- (.field-kit shares this shadow, so the two can never differ) */
+.panel-3d,
+.field-kit {
   box-shadow:
     0 0 0 1px rgb(0 0 0 / 0.7),
     0 2px 0 0 rgb(0 0 0 / 0.5),
     0 12px 28px -8px rgb(0 0 0 / 0.85),
     inset 0 1px 0 0 rgb(217 211 195 / 0.04);
+}
+
+/*
+ * The field-kit panel look for elements that can't be the Panel component (a <details>, or a column
+ * with its own header). Same as Panel's `border border-steel bg-panel/90 panel-3d`: same tokens,
+ * same 90% mix Tailwind uses for bg-panel/90, and the shadow from the shared rule above. In the
+ * components layer so utilities on the element (padding, bg-*, border-*) still override it, as on Panel.
+ */
+@layer components {
+  .field-kit {
+    border: 1px solid var(--color-steel);
+    background-color: var(--color-panel);
+    background-color: color-mix(in oklab, var(--color-panel) 90%, transparent);
+  }
 }
 
 /* Vignette overlay — applied as an extra child div absolutely inside a container */
@@ -347,6 +419,52 @@ textarea {
 }
 .stamp-land {
   animation: stamp-land 0.35s cubic-bezier(0.22,1,0.36,1) forwards;
+}
+
+/*
+ * Period details with no earlier style (components/ui.tsx: RedactionBar, TornEdge). Decorative only.
+ *
+ * Redaction: a solid ink bar where censored words would be, sized by `width` or by placeholder text
+ * it hides. Ink, so it belongs on paper sheets (it vanishes on a dark panel). The hidden text is
+ * still in the DOM, so it must never be real information.
+ */
+.redaction {
+  display: inline-block;
+  height: 1.05em;
+  vertical-align: -0.15em;
+  background: var(--ink);
+  color: transparent;
+  border-radius: 1px;
+  user-select: none;
+}
+
+/*
+ * Torn edge: a ragged strip just outside the top or bottom of its parent (which must be positioned),
+ * inheriting the parent's background so the sheet itself looks torn off. The tear is an SVG mask
+ * (as .weathered uses): 69 unevenly spaced points, 3-12px deep, over a 300px repeat whose two ends
+ * meet at the same depth, so it tiles seamlessly without reading as an even zigzag. The top edge
+ * is the same strip flipped.
+ */
+.torn-edge {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 12px;
+  pointer-events: none;
+  background: inherit;
+  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='300' height='12'%3E%3Cpath d='M0 0H300L300 6L295 10L291 7L286 4L283 9L276 12L273 8L270 6L264 10L261 5L254 7L251 11L248 9L242 4L238 6L232 8L229 12L226 9L220 5L217 10L210 7L207 3L203 6L197 11L194 8L188 10L185 4L182 6L175 9L171 5L167 12L160 7L158 10L155 8L149 3L146 6L139 9L136 11L133 5L126 7L123 10L117 4L114 8L111 6L104 12L98 9L96 5L90 8L87 11L81 7L78 4L72 9L69 6L66 10L59 5L53 8L51 12L48 7L41 9L38 3L33 6L27 11L25 8L22 4L16 7L13 10L7 5L4 9L0 6Z'/%3E%3C/svg%3E");
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='300' height='12'%3E%3Cpath d='M0 0H300L300 6L295 10L291 7L286 4L283 9L276 12L273 8L270 6L264 10L261 5L254 7L251 11L248 9L242 4L238 6L232 8L229 12L226 9L220 5L217 10L210 7L207 3L203 6L197 11L194 8L188 10L185 4L182 6L175 9L171 5L167 12L160 7L158 10L155 8L149 3L146 6L139 9L136 11L133 5L126 7L123 10L117 4L114 8L111 6L104 12L98 9L96 5L90 8L87 11L81 7L78 4L72 9L69 6L66 10L59 5L53 8L51 12L48 7L41 9L38 3L33 6L27 11L25 8L22 4L16 7L13 10L7 5L4 9L0 6Z'/%3E%3C/svg%3E");
+  -webkit-mask-size: 300px 12px;
+  mask-size: 300px 12px;
+  -webkit-mask-repeat: repeat-x;
+  mask-repeat: repeat-x;
+}
+.torn-edge--bottom {
+  top: 100%;
+}
+.torn-edge--top {
+  bottom: 100%;
+  transform: scaleY(-1);
 }
 
 /* Window closing: a still, dark edge that slowly breathes (brass at 5 minutes, faded red in the last minute).
