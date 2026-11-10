@@ -36,6 +36,12 @@ docker compose --env-file infra/.env.docker -f infra/compose.yaml run --rm --no-
 
 Verify that the printed database name is `defcon`.
 
+Create the tournament rounds:
+
+```bash
+docker compose --env-file infra/.env.docker -f infra/compose.yaml run --rm --no-deps backend python -m scripts.create_rounds
+```
+
 ## 5. Set organiser passwords
 
 Run once for each existing organiser account:
@@ -68,13 +74,33 @@ docker compose --env-file infra/.env.docker -f infra/compose.yaml run --rm --no-
 
 Replace the example path with the actual absolute path. Verify that the printed database name is `defcon`. Existing usernames are skipped.
 
-## 7. Start the application
+
+## 7. Configure event network access
+
+Update these values in `infra/.env.docker` using the event server's actual LAN IP:
+
+```dotenv
+HOST_BIND_ADDRESS=0.0.0.0
+VITE_API_URL=http://YOUR_LAN_IP:8002
+CORS_ORIGINS=http://YOUR_LAN_IP:5173
+```
+
+Rebuild the frontend because `VITE_API_URL` is baked in at build time:
+
+```bash
+docker compose --env-file infra/.env.docker -f infra/compose.yaml build frontend
+```
+
+Do not commit the actual LAN IP or `.env.docker`.
+
+
+## 8. Start the application
 
 ```bash
 docker compose --env-file infra/.env.docker -f infra/compose.yaml up -d backend frontend
 ```
 
-## 8. Verify service health
+## 9. Verify service health
 
 ```bash
 docker compose --env-file infra/.env.docker -f infra/compose.yaml ps
@@ -84,7 +110,7 @@ curl --fail --head http://127.0.0.1:5173/
 
 Confirm both services are healthy and test organiser login before announcing readiness.
 
-## 9. Safety rules
+## 10. Safety rules
 
 - Never commit environment files, account CSV files, passwords, or backups.
 - Keep PostgreSQL port 5432 private.
