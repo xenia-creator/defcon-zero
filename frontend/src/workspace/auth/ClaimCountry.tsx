@@ -6,6 +6,7 @@ import { ApiError, errorMessage, hasCode, request } from '../../lib/api'
 import { useAuth } from '../../lib/auth'
 import { Team, isClaimed } from '../../lib/contract'
 import { keys, useTerritories } from '../../lib/queries'
+import { useTour } from '../../tour/useTour'
 import './ClaimCountry.css'
 
 const NAME_RULE = /^[A-Za-z0-9 ]{3,24}$/
@@ -145,6 +146,8 @@ export function ClaimCountry({ username }: { username: string }) {
   const setTeam = useAuth((s) => s.setTeam)
   const queries = useQueryClient()
   const { data: territories = [], isPending, isError, refetch } = useTerritories()
+  // The tour waits until the list has loaded (or failed and can be retried)
+  useTour('claim', !isPending, { role: 'team' })
   const [selected, setSelected] = useState<string | null>(null)
   const [nationName, setNationName] = useState('')
   const [filter, setFilter] = useState('')
@@ -261,7 +264,7 @@ export function ClaimCountry({ username }: { username: string }) {
             </button>
           )}
         </div>
-        <div className="relative flex min-h-0 flex-1 flex-col">
+        <div data-tour="claim-list" className="relative flex min-h-0 flex-1 flex-col">
         <div className="min-h-0 flex-1 overflow-y-auto">
           {isPending ? (
             <Empty>Loading territories…</Empty>
@@ -331,7 +334,7 @@ export function ClaimCountry({ username }: { username: string }) {
         >
           {/* Header and intro text leave room on the right for the tag pinned to the corner; the rule runs full width */}
           <div className="flex flex-col gap-4">
-            <header className="flex flex-col gap-2 border-b border-type-muted pb-4 sm:pr-44">
+            <header data-tour="claim-form" className="flex flex-col gap-2 border-b border-type-muted pb-4 sm:pr-44">
               <p className="font-label text-xs tracking-[0.2em] text-type-muted uppercase">Form DZ-2 · Registration of nation</p>
               <h2 className="font-title text-2xl tracking-[0.06em] sm:text-3xl">Claim your nation</h2>
               <FileNumber number={docket} className="self-start text-type-muted" />
@@ -397,6 +400,7 @@ export function ClaimCountry({ username }: { username: string }) {
               Wrapped, so the filed fade reaches it (the paper button pins its own opacity when disabled). */}
           <div className="flex flex-col">
           <Button
+            data-tour="claim-submit"
             variant="primary"
             disabled={!chosen || !!nameProblem || busy}
             className={`py-3 !font-label !text-sm tracking-[0.24em] [-webkit-text-stroke:0.6px_currentColor] ${paperPrimaryClass}`}

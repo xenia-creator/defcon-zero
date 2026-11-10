@@ -1,6 +1,8 @@
 import { useState } from 'react'
 import { useServerNow } from '../lib/clock'
+import { useAuth } from '../lib/auth'
 import { useCurrentRound, useStandings, useTerritoryList } from '../lib/queries'
+import { useTour } from '../tour/useTour'
 import { boardState, connection, liveNotice } from './liveState'
 import type { MapRound, MapTerritory, StandingsNation } from './types'
 import { useMockFeed } from './useMockFeed'
@@ -70,6 +72,9 @@ function LiveWarMap({ showStandings }: { showStandings: boolean }) {
 
   const reads = [roundQ, standingsQ, territoriesQ]
   const conn = connection(reads)
+  // The tour is for organisers only (never the projector), once the map has its territories
+  const role = useAuth((st) => st.session?.role ?? null)
+  useTour('warmap', conn !== 'fault' && territoriesQ.data !== undefined, { role })
   // The polls keep retrying on their own; this is the impatient human's button. "Retrying…" tracks
   // only this press (background polling keeps isFetching true almost constantly).
   const retry = async () => {

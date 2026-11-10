@@ -6,6 +6,9 @@ import { newId } from '../../lib/ids'
 import { generateStrategy, type StrategyConfig } from './generate'
 import { countBlocks, type BlockState, type Layout } from './layout'
 
+/** A value slot: numbers go in as shadows, as the toolbox's pre-filled numbers do, so dropping a value on them replaces them cleanly. */
+const slot = (value: BlockState) => (value.type === 'fa_number' ? { shadow: value } : { block: value })
+
 const ifThen = (condition: BlockState, then: BlockState, next?: BlockState): BlockState => ({
   type: 'ic_if',
   inputs: { IF0: { block: condition }, DO0: { block: then } },
@@ -25,9 +28,9 @@ const pd = (body: BlockState, fallback = 'C'): BlockState => ({ type: 'ic_strate
 
 // Round 3
 const num = (NUM: number): BlockState => ({ type: 'fa_number', fields: { NUM } })
-const send = (amount: BlockState): BlockState => ({ type: 'fa_send', inputs: { AMOUNT: { block: amount } } })
-const sendBack = (amount: BlockState): BlockState => ({ type: 'fa_return', inputs: { AMOUNT: { block: amount } } })
-const compare = (a: BlockState, OP: string, b: BlockState): BlockState => ({ type: 'fa_compare', fields: { OP }, inputs: { A: { block: a }, B: { block: b } } })
+const send = (amount: BlockState): BlockState => ({ type: 'fa_send', inputs: { AMOUNT: slot(amount) } })
+const sendBack = (amount: BlockState): BlockState => ({ type: 'fa_return', inputs: { AMOUNT: slot(amount) } })
+const compare = (a: BlockState, OP: string, b: BlockState): BlockState => ({ type: 'fa_compare', fields: { OP }, inputs: { A: slot(a), B: slot(b) } })
 const fa = (sending: BlockState | undefined, SEND_DEFAULT: number, receiving?: BlockState, RETURN_PCT_DEFAULT = 50): BlockState => ({
   type: 'fa_strategy',
   fields: { SEND_DEFAULT, RETURN_PCT_DEFAULT },

@@ -373,8 +373,11 @@ define('fa_random', () => ({
   tooltip: 'A random whole number in this range, both ends included.',
 }))
 
-/** Actions and maths arrive with numbers already in their slots, so a beginner never starts from an empty slot. */
-const number = (NUM: number) => ({ block: { type: 'fa_number', fields: { NUM } } })
+/**
+ * Actions and maths arrive with numbers already in their slots, so a beginner never starts from an empty slot.
+ * They are shadows: a value dropped on one replaces it cleanly, with no loose number left on the canvas.
+ */
+const number = (NUM: number) => ({ shadow: { type: 'fa_number', fields: { NUM } } })
 const PREFILLED: Record<string, Record<string, unknown>> = {
   fa_send: { inputs: { AMOUNT: number(5) } },
   fa_return: { inputs: { AMOUNT: number(5) } },

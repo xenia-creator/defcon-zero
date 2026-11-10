@@ -1,6 +1,6 @@
 # DEFCON Zero: blocks, guided tutorial and app tour
 
-Design spec. Nothing here is built yet. Read with `docs/api.md` section 8 (the game rules).
+Design spec. Part 1 (blocks) and section 0 are built and merged; parts 2 and 3 are being built. Read with `docs/api.md` section 8 (the game rules).
 
 **Audience:** first-year students who may not know Python.
 **Goal:** someone who has never coded builds a sensible strategy for Round 1 or Round 3 with blocks in 10 minutes, and can never submit a block program that the engine rejects for an invalid move.
@@ -742,11 +742,12 @@ Text is as shown in the popover. The target is the `data-tour` marker.
 2. **`login-submit`**: "Request Clearance signs you in. Your team picks its nation next."
 3. **`login-bigboard`**: "Just watching? The Big Board shows the live war map without signing in."
 
-### Claim your nation (4 steps)
+### Claim your nation (3 steps)
 1. **`claim-form`**: "Name your nation here. Names are unique, and you can't change it later."
 2. **`claim-list`**: "Pick a free territory from the list, or search for one."
-3. **`claim-map`**: "Or click a country on the map. Taken territories are marked."
-4. **`claim-submit`**: "Claim it when you're sure. The choice is final for the whole event."
+3. **`claim-submit`**: "Claim it when you're sure. The choice is final for the whole event."
+
+The claim screen has no map, so there is no map step.
 
 ### Team workspace (6 steps)
 1. **`topbar-clock`**: "The round and its countdown. When the window closes, your latest accepted version plays."
@@ -775,8 +776,8 @@ These are attribute-only changes: no logic or styling changes, plus one hook cal
 
 | File | Owner | Markers |
 |---|---|---|
-| `src/workspace/auth/Login.tsx` | Sumedh | `login-fields` (the wrapper around username and password), `login-submit`, `login-bigboard`; the "Show me around" link |
-| `src/workspace/auth/ClaimCountry.tsx` | Sumedh | `claim-form` (the form header), `claim-list` (a wrapper inside the "Available territories" Panel, so `Panel` in `ui.tsx` needn't change), `claim-map`, `claim-submit` |
+| `src/workspace/auth/Login.tsx` | Sumedh | `login-fields` (the Username field: there is no wrapper around both fields), `login-submit`, `login-bigboard`; the "Show me around" link |
+| `src/workspace/auth/ClaimCountry.tsx` | Sumedh | `claim-form` (the form header), `claim-list` (a wrapper inside the "Available territories" Panel, so `Panel` in `ui.tsx` needn't change), `claim-submit` |
 | `src/workspace/editor/Workspace.tsx` | Nithya | `play-mode` (the tab bar), `examples` (Start from this), `python`, `submit`, `results` (around Latest version and Version history) |
 | `src/warmap/WarMap.tsx` | Nithya | `warmap-round` (`.warmap__round`), `warmap-map` (`section.warmap__map`), `warmap-board` (`aside.warmap__board`), `warmap-clock` (`.warmap__clock`) |
 | `src/workspace/organiser/OrganiserConsole.tsx` | Nithya | `ops-order` (the orders `article`), `ops-controls` (the control `section`), `ops-timer` (the `console-timer` plate), `ops-roster`, `ops-unclaimed` (wrapper around `UnclaimedPanel`) |

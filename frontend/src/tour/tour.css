@@ -1,0 +1,148 @@
+/*
+ * The app tour's look (frontend/docs/BLOCKS.md part 3.2): the paper-sheet card, typewriter text,
+ * fire only on Next, and the brass highlight used elsewhere. Overrides driver.js's own sheet,
+ * which is loaded just before this one. No filters or blend modes.
+ */
+
+.driver-popover.dz-tour {
+  max-width: min(22rem, calc(100vw - 2rem));
+  min-width: 15rem;
+  padding: 1.1rem 1.2rem 1rem;
+  border-radius: 0;
+  color: var(--color-type-ink);
+  background-color: var(--paper-base);
+  background-image: linear-gradient(var(--paper-wash), var(--paper-wash)), url('/paper.jpg');
+  background-size: cover;
+  background-position: center;
+  box-shadow:
+    0 1px 0 rgb(255 255 255 / 0.15) inset,
+    0 0 0 1px rgb(35 31 26 / 0.18) inset,
+    0 18px 40px -12px rgb(0 0 0 / 0.9),
+    0 4px 10px rgb(0 0 0 / 0.5);
+  font-family: var(--font-type);
+}
+
+.driver-popover.dz-tour .driver-popover-description {
+  margin: 0;
+  font-family: var(--font-type);
+  font-size: 15px;
+  line-height: 1.5;
+  color: var(--color-type-ink);
+}
+
+.driver-popover.dz-tour .driver-popover-footer {
+  margin-top: 1rem;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.75rem;
+  border-top: 1px solid var(--color-type-muted);
+  padding-top: 0.75rem;
+}
+
+.driver-popover.dz-tour .driver-popover-progress-text {
+  font-family: var(--font-type);
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-type-muted);
+}
+
+.driver-popover.dz-tour .driver-popover-navigation-btns {
+  margin-left: auto;
+  display: flex;
+  gap: 0.5rem;
+}
+
+/* Back: plain paper. Next and Done: fire, the one warm accent. */
+.driver-popover.dz-tour .driver-popover-footer button {
+  border-radius: 0;
+  text-shadow: none;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  padding: 0.45rem 0.8rem;
+  cursor: pointer;
+}
+
+.driver-popover.dz-tour .driver-popover-prev-btn {
+  color: var(--color-type-ink);
+  background: transparent;
+  border: 1px solid var(--color-type-muted);
+}
+
+.driver-popover.dz-tour .driver-popover-next-btn {
+  color: var(--color-ink);
+  background: var(--color-fire);
+  border: 1px solid var(--color-fire);
+  box-shadow: 0 2px 0 0 rgb(0 0 0 / 0.6);
+}
+
+.driver-popover.dz-tour .driver-popover-next-btn:hover {
+  background: var(--color-fire-light);
+  border-color: var(--color-fire-light);
+}
+
+.driver-popover.dz-tour .driver-popover-btn-disabled {
+  visibility: hidden;
+}
+
+/* "Skip tour" replaces driver.js's ×, so the word Skip is always on screen */
+.driver-popover.dz-tour .driver-popover-footer .dz-tour-skip {
+  padding: 0.25rem 0;
+  border: 0;
+  background: transparent;
+  color: var(--color-type-ink);
+  font-family: var(--font-type);
+  font-size: 13px;
+  font-weight: 400;
+  letter-spacing: 0.04em;
+  text-transform: none;
+  text-decoration: underline;
+  text-decoration-color: var(--color-type-muted);
+  text-underline-offset: 3px;
+}
+
+.driver-popover.dz-tour .driver-popover-footer .dz-tour-skip:hover {
+  color: var(--color-type-red);
+}
+
+.driver-popover.dz-tour button:focus-visible {
+  outline: 2px solid var(--color-type-ink);
+  outline-offset: 2px;
+}
+
+/* The arrow takes the paper's colour, on whichever side it points from */
+.driver-popover.dz-tour .driver-popover-arrow-side-left.driver-popover-arrow {
+  border-left-color: var(--paper-base);
+}
+.driver-popover.dz-tour .driver-popover-arrow-side-right.driver-popover-arrow {
+  border-right-color: var(--paper-base);
+}
+.driver-popover.dz-tour .driver-popover-arrow-side-top.driver-popover-arrow {
+  border-top-color: var(--paper-base);
+}
+.driver-popover.dz-tour .driver-popover-arrow-side-bottom.driver-popover-arrow {
+  border-bottom-color: var(--paper-base);
+}
+
+/* The current target: a slowly pulsing brass outline, still under reduced motion */
+.driver-active .driver-active-element {
+  outline: 2px solid var(--color-amber);
+  outline-offset: 3px;
+  animation: dz-tour-pulse 1.8s ease-in-out infinite;
+}
+
+@keyframes dz-tour-pulse {
+  50% {
+    outline-color: rgb(185 154 94 / 0.35);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .driver-active .driver-active-element {
+    animation: none;
+  }
+}
