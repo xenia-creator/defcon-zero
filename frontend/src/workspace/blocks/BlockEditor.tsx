@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Blockly, setBlockMoves, theme, toolbox, type Layout } from './blocks'
+import { Blockly, GRID, setBlockEndowment, setBlockMoves, theme, toolbox, type Layout } from './blocks'
 
 /**
  * One Blockly workspace for one module. Remount it (with a key) to switch modules.
@@ -11,11 +11,17 @@ export function BlockEditor({
   onChange,
   maxBlocks,
   moves,
+  game = 'prisoners_dilemma',
+  endowment = 10,
 }: {
   layout: Layout
   onChange: (layout: Layout) => void
   maxBlocks: number
   moves: string[]
+  /** Picks the toolbox: Round 1's blocks, or Round 3's. */
+  game?: string
+  /** Round 3's most a bot can send (config.endowment), for the send fields' limit. */
+  endowment?: number
 }) {
   const host = useRef<HTMLDivElement>(null)
   const workspace = useRef<Blockly.WorkspaceSvg | null>(null)
@@ -50,8 +56,9 @@ export function BlockEditor({
 
   function mount() {
     setBlockMoves(moves)
+    setBlockEndowment(endowment)
     const ws = Blockly.inject(host.current!, {
-      toolbox: toolbox(),
+      toolbox: toolbox(game),
       theme,
       renderer: 'zelos',
       maxBlocks,
@@ -59,7 +66,7 @@ export function BlockEditor({
       sounds: false,
       move: { scrollbars: true, drag: true, wheel: true },
       zoom: { controls: true, wheel: false, startScale: 0.8, maxScale: 2, minScale: 0.4 },
-      grid: { spacing: 24, length: 2, colour: '#1c2026', snap: true },
+      grid: GRID,
     })
     workspace.current = ws
     Blockly.Events.disable()
@@ -92,12 +99,14 @@ export function BlockEditor({
     if (!ws) return
     try {
       setBlockMoves(moveKey.split(','))
+      setBlockEndowment(endowment)
       ws.options.maxBlocks = maxBlocks
-      ws.updateToolbox(toolbox())
+      ws.updateToolbox(toolbox(game))
     } catch (err) {
       setFailure(err instanceof Error ? err : new Error(String(err)))
     }
-  }, [maxBlocks, moveKey])
+  }, [maxBlocks, moveKey, game, endowment])
 
-  return <div ref={host} className="h-full w-full" />
+  // isolate: Blockly's own z-indexes (its toolbox is 70) stay inside the canvas, so dialogs always cover it
+  return <div ref={host} className="isolate h-full w-full" />
 }

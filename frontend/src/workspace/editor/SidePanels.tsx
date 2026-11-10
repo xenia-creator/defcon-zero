@@ -2,19 +2,35 @@ import { useState } from 'react'
 import { Badge, Empty, LoadFailed, Panel } from '../../components/ui'
 import { isChecked, type SubmissionDetail } from '../../lib/contract'
 import { useSubmission, useSubmissions } from '../../lib/queries'
-import { assemble, generateModules, handCodeOf } from '../blocks/generate'
+import { assemble, generateModules, generateStrategy, handCodeOf, type StrategyConfig } from '../blocks/generate'
+import { isStrategyLayout } from '../blocks/layout'
 import { type Agent, parseAgent } from './drafts'
 
-/** What POST /submissions takes: the code as one file, and the block layouts. The backend needs blocks even when there are none. */
-export const toSubmission = (agent: Agent, moves: string[], roundId: number) => ({
-  round_id: roundId,
-  code: assemble(agent.hand_code, generateModules(agent.modules, moves)),
-  blocks: { modules: agent.modules },
-})
+/**
+ * What gets sent for an agent: the code as one file, and the block layouts. Whichever tab is open is what is sent:
+ * - Build with blocks: strategy.py generated from the strategy block, which is stored as the one module;
+ * - Write code: the team's code with its block modules after it.
+ * The backend needs blocks even when there are none.
+ */
+export function submissionOf(agent: Agent, game: string, config: StrategyConfig) {
+  if (agent.mode === 'blocks' && agent.strategy_blocks) {
+    return { code: generateStrategy(agent.strategy_blocks, game, config).code, blocks: { modules: [agent.strategy_blocks] } }
+  }
+  return { code: assemble(agent.hand_code, generateModules(agent.modules, config.moves)), blocks: { modules: agent.modules } }
+}
 
-/** A stored version back in the editor: the team's own code and its blocks. */
-export const agentFromDetail = (detail: SubmissionDetail): Agent | null =>
-  parseAgent({ hand_code: handCodeOf(detail.code), modules: detail.blocks?.modules ?? [] })
+/** The POST /submissions body (docs/api.md section 5). */
+export const toSubmission = (agent: Agent, game: string, config: StrategyConfig, roundId: number) => ({ round_id: roundId, ...submissionOf(agent, game, config) })
+
+/**
+ * A stored version back in the editor. One strategy-block layout means it was built with blocks, so it opens
+ * in Build with blocks, and its Python goes into Write code to start from there. Anything else opens in Write code.
+ */
+export const agentFromDetail = (detail: SubmissionDetail): Agent | null => {
+  const modules = detail.blocks?.modules ?? []
+  if (modules.length === 1 && isStrategyLayout(modules[0])) return parseAgent({ hand_code: detail.code, modules: [], strategy_blocks: modules[0], mode: 'blocks' })
+  return parseAgent({ hand_code: handCodeOf(detail.code), modules, mode: 'code' })
+}
 
 /** tit_for_tat reads as "Tit for tat". */
 const botName = (key: string) => {

@@ -66,18 +66,18 @@ The editor gets a tab pair above the canvas in Rounds 1 and 3, the same pattern 
 - `LOGIC_OPERATION_AND` = "and", `LOGIC_OPERATION_OR` = "or"
 - `LOGIC_NEGATE_TITLE` = "not %1"
 
-**Categories and colours** (both rounds; block text is white, so check AA contrast when building):
+**Categories and colours** (both rounds). Muted printing inks, set in `categories.ts` (`INK`) and applied through the Blockly theme (`dz_field_kit` in `blocks.ts`). Block text is white: every ink passes WCAG AA with it, and stands at least 3:1 against the dark canvas.
 
-| Category | Colour | Holds |
-|---|---|---|
-| Actions | red `#c0392b` | what the strategy does: play, send, send back |
-| Logic | blue `#3867d6` | if, and, or, not, comparisons |
-| Opponent | amber `#d68910` | facts about the opponent |
-| Me & match | violet `#8e44ad` | facts about me and the turn |
-| Numbers | slate `#5d6d7e` | Round 3 only: numbers and maths |
-| Chance | teal `#16a085` | randomness |
+| Category | Colour | White text | Holds |
+|---|---|---|---|
+| Actions | rust `#a8482a` | 5.79:1 | what the strategy does: play, send, send back |
+| Logic | slate blue `#4a6a94` | 5.55:1 | if, and, or, not, comparisons |
+| Opponent | ochre `#8a631c` | 5.41:1 | facts about the opponent |
+| Me & match | plum `#86507b` | 6.09:1 | facts about me and the turn |
+| Numbers | olive `#666c2c` | 5.61:1 | Round 3 only: numbers and maths |
+| Chance | moss `#36735a` | 5.59:1 | randomness |
 
-Actions are the only statement blocks with a red, notched shape. Everything else is a condition or a value that plugs into a slot. This keeps logic and actions visually apart.
+Actions are the only statement blocks with a rust, notched shape. Everything else is a condition or a value that plugs into a slot. This keeps logic and actions visually apart.
 
 ---
 
@@ -237,6 +237,11 @@ def return_rate(opp_returned, my_sent):   # (if used)
 def ever_short_changed(my_sent, opp_returned):   # (if used)
     """True if the opponent ever sent back less than I sent them."""
     return any(back < sent for sent, back in zip(my_sent, opp_returned))
+
+
+def divide(a, b):                  # (if used)
+    """a divided by b, or 0 when b is 0."""
+    return a / b if b != 0 else 0
 ```
 
 **Why `split_history` is correct.** The engine checked this: `engine/games.py` `ForeignAidGame.collect_actions` gives each bot one history entry per turn, and the receiver's `opp_history` also has the current send at the end.
@@ -310,7 +315,9 @@ On screen, "return" becomes **send back**. It means the same in the game, and it
 | On screen | ID | Category | Tooltip | Generated Python |
 |---|---|---|---|---|
 | `[5]` | `fa_number` | Numbers | A whole number from 0 to 100. | `5` |
-| ⬭ `[+ ▼ / − / × / ÷]` ⬭ | `fa_arith` | Numbers | Adds, takes away, multiplies or divides. Dividing by 0 gives 0. | `(A + B)`, `(A - B)`, `(A * B)`, `(A / B if B != 0 else 0)` |
+| ⬭ `[+ ▼ / − / × / ÷]` ⬭ | `fa_arith` | Numbers | Adds, takes away, multiplies or divides. Dividing by 0 gives 0. | `(A + B)`, `(A - B)`, `(A * B)`, `divide(A, B)` |
+
+Dividing goes through the `divide` helper, so B is worked out once. Written inline as `(A / B if B != 0 else 0)`, a random B would be drawn twice: the check could see 1 and the division 0, which raises `ZeroDivisionError` and forfeits the match.
 | `[50]` **% of** ⬭ | `fa_percent_of` | Numbers | This percentage of a number, for example 50 % of 12 is 6. | `(50 / 100 * X)` |
 | **random number from** `[0]` **to** `[10]` | `fa_random` | Chance | A random whole number in this range, both ends included. | `random.randint(0, 10)` (the generator swaps the ends if the first is bigger) |
 | `[10]` **% chance** | `ic_chance` | Chance | (as Round 1) | `random.random() < 0.1` |

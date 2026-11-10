@@ -33,7 +33,14 @@ async function claim(page: Page, country = 'India', nation = 'Red Fox Republic')
   await page.getByRole('button', { name: country }).click()
   await page.getByRole('button', { name: 'Lock in' }).click()
   await page.getByRole('dialog').getByRole('button', { name: 'Lock in' }).click()
+  // A new team opens on Build with blocks; these tests work in the code editor
+  await page.getByRole('tab', { name: '</> Write code' }).click()
   await expect(page.getByRole('tab', { name: 'strategy.py' })).toBeVisible()
+}
+
+/** Waits for the switch to Write code to be autosaved, so a draft a test writes into storage next isn't overwritten on reload. */
+async function draftSettled(page: Page) {
+  await expect(page.getByText('Draft saved in this browser.')).toBeVisible()
 }
 
 async function readyWorkspace(page: Page) {
@@ -84,6 +91,7 @@ test.describe('bad saved data', () => {
   test('a module layout Blockly cannot open stays contained and can be reset', async ({ page }) => {
     await login(page)
     await claim(page)
+    await draftSettled(page)
     await page.evaluate(() =>
       localStorage.setItem(
         'draft:1:prisoners_dilemma',
@@ -196,6 +204,7 @@ test.describe('claiming a country', () => {
     await nation(page).fill('Red Fox')
     await claimButton(page).click()
     await confirmButton(page).click()
+    await page.getByRole('tab', { name: '</> Write code' }).click()
     await expect(page.getByRole('tab', { name: 'strategy.py' })).toBeVisible()
     await expect(page.locator('header').getByText('Red Fox')).toBeVisible()
   })
@@ -221,6 +230,7 @@ test.describe('claiming a country', () => {
       await r.continue()
     })
     await confirmButton(page).click()
+    await page.getByRole('tab', { name: '</> Write code' }).click()
     await expect(page.getByRole('tab', { name: 'strategy.py' })).toBeVisible()
   })
 
@@ -267,6 +277,7 @@ test.describe('submitting', () => {
   test('code over the limit blocks submitting with a clear reason', async ({ page }) => {
     await login(page)
     await claim(page)
+    await draftSettled(page)
     await page.evaluate(() =>
       localStorage.setItem('draft:1:prisoners_dilemma', JSON.stringify({ saved_at: Date.now() + 100000, agent: { hand_code: 'def strategy(m,o):\n' + '#'.repeat(70000), modules: [] } })),
     )
@@ -326,12 +337,15 @@ test.describe('submitting', () => {
   test('sends the code as one file that runs on its own, with the round and the layout', async ({ page }) => {
     await readyWorkspace(page)
     await page.getByRole('button', { name: '+ Block module' }).click()
-    await page.getByLabel('Start from an example').selectOption({ index: 1 })
+    await page.getByLabel('Start from an example').selectOption('Tit for Tat')
     await page.getByRole('button', { name: 'Use as my strategy' }).click()
     await page.getByRole('dialog').getByRole('button', { name: 'Use as my strategy' }).click()
     await submitButton(page).click()
     await expect(page.getByTestId('latest-result')).toContainText('vs Tit for tat')
     const [stored] = await (await mock(page, 'submissions')).json()
+    // The first turn reaches no play block, so the module ends with the round's first move, never None
+    expect(stored.code).toContain('# No block above decided, so play the safe default\n    return "C"')
+    expect(stored.code).not.toContain('return None')
     expect(stored.roundId).toBe(1)
     expect(stored.blocks.modules).toHaveLength(1)
     expect(stored.code.indexOf('def strategy')).toBeLessThan(stored.code.indexOf('def module1'))
@@ -663,17 +677,20 @@ test.describe('blocks', () => {
     return count
   }
 
-  test('the toolbox offers exactly six blocks', async ({ page }) => {
+  test('the toolbox offers exactly eleven blocks, in five categories', async ({ page }) => {
     await addModule(page)
-    let total = 0
-    for (const category of ['Moves', 'Logic', 'Opponent', 'Chance']) total += await flyoutCount(page, category)
-    expect(total).toBe(6)
+    const counts: number[] = []
+    for (const category of ['Actions', 'Logic', 'Opponent', 'Me & match', 'Chance']) counts.push(await flyoutCount(page, category))
+    expect(counts).toEqual([1, 4, 3, 2, 1])
+    expect(counts.reduce((a, b) => a + b)).toBe(11)
   })
 
   test('dragging a block changes the Python, and that Python runs', async ({ page }) => {
     await addModule(page)
-    await expect(page.getByTestId('generated')).toContainText('return None')
-    await page.getByRole('treeitem', { name: 'Moves' }).click()
+    // An empty module already plays: it falls back to the round's first move
+    await expect(page.getByTestId('generated')).toContainText('# No block above decided, so play the safe default\n    return "C"')
+    await expect(page.getByTestId('generated')).not.toContainText('return None')
+    await page.getByRole('treeitem', { name: 'Actions' }).click()
     const play = page.locator('.blocklyFlyout .blocklyDraggable').first()
     const from = (await play.boundingBox())!
     const target = (await page.locator('.blocklyMainWorkspaceDiv, .blocklySvg').first().locator('.blocklyBlockCanvas .blocklyDraggable').first().boundingBox())!
@@ -681,6 +698,8 @@ test.describe('blocks', () => {
     await page.mouse.down()
     await page.mouse.move(target.x + 60, target.y + 44, { steps: 12 })
     await page.mouse.up()
+    // The play block now decides every turn, so the fallback is gone and the block's own move is played
+    await expect(page.getByTestId('generated')).not.toContainText('# No block above decided, so play the safe default')
     await expect(page.getByTestId('generated')).toContainText('return "C"')
 
     const code = await page.getByTestId('generated').innerText()
@@ -691,6 +710,7 @@ test.describe('blocks', () => {
   test('a full layout gives Python that plays correctly, and an unfinished one blocks submit', async ({ page }) => {
     await login(page)
     await claim(page)
+    await draftSettled(page)
     const ifElse = (condition: unknown, then: unknown, otherwise: unknown) => ({ type: 'controls_ifelse', inputs: { IF0: { block: condition }, DO0: { block: then }, ELSE: { block: otherwise } } })
     const play = (MOVE: string) => ({ type: 'ic_play', fields: { MOVE } })
     const body = ifElse(
@@ -730,6 +750,7 @@ test.describe('blocks for round 1', () => {
   async function open(page: Page, body: unknown) {
     await login(page)
     await claim(page)
+    await draftSettled(page)
     await page.evaluate(
       (b) => {
         const module = { type: 'ic_module', x: 24, y: 24, deletable: false, fields: { NAME: 'plan' }, inputs: { BODY: { block: b } } }
@@ -786,8 +807,12 @@ test.describe('building a strategy with blocks only', () => {
     await readyWorkspace(page)
     await page.getByRole('button', { name: '+ Block module' }).click()
     await expect(page.getByText("This module won't play yet")).toBeVisible()
-    await expect(page.getByText('Some situations reach no move')).toBeVisible()
-    await picker(page).selectOption({ index: 1 })
+    // An empty module is no longer flagged: it ends with a legal fallback move instead
+    await expect(page.getByText('Some situations reach no move')).toHaveCount(0)
+    await expect(page.getByTestId('generated')).toContainText('# No block above decided, so play the safe default\n    return "C"')
+    await picker(page).selectOption('Always Betray')
+    // Every path now plays betray, so no fallback is added
+    await expect(page.getByTestId('generated')).toHaveText('def module1(my_history, opp_history):\n    return "D"')
     await expect(page.getByText('Some situations reach no move')).toHaveCount(0)
     await page.getByRole('button', { name: 'Use as my strategy' }).click()
     await page.getByRole('dialog').getByRole('button', { name: 'Use as my strategy' }).click()
@@ -804,11 +829,12 @@ test.describe('building a strategy with blocks only', () => {
   test('picking an example asks before replacing blocks already there', async ({ page }) => {
     await readyWorkspace(page)
     await page.getByRole('button', { name: '+ Block module' }).click()
-    await picker(page).selectOption({ index: 1 })
+    await picker(page).selectOption('Tit for Tat')
     await expect(page.getByTestId('generated')).toContainText('len(opp_history) > 0')
-    await picker(page).selectOption({ index: 2 })
+    await picker(page).selectOption('Grudger')
     await page.getByRole('button', { name: 'Cancel' }).click()
     await expect(page.getByTestId('generated')).toContainText('len(opp_history) > 0')
+    await expect(page.getByTestId('generated')).not.toContainText('"D" in opp_history')
   })
 })
 
@@ -955,5 +981,73 @@ test.describe('layout and wording', () => {
     await expect(page.getByText('nothing more can be submitted')).toBeVisible()
     await expect(page.getByTestId('timer')).toHaveCount(0)
     await expect(submitButton(page)).toHaveCount(0)
+  })
+})
+
+test.describe('build with blocks', () => {
+  /** A new team, straight after claiming: Build with blocks is open. */
+  async function blocksWorkspace(page: Page, round = 1) {
+    if (round > 1) await mock(page, 'goto', { index: round })
+    await login(page)
+    await page.getByLabel('Nation name').fill('Red Fox Republic')
+    await page.getByRole('button', { name: 'India' }).click()
+    await page.getByRole('button', { name: 'Lock in' }).click()
+    await page.getByRole('dialog').getByRole('button', { name: 'Lock in' }).click()
+    await expect(page.getByRole('tab', { name: '▦ Build with blocks' })).toHaveAttribute('aria-selected', 'true')
+    await expect(page.locator('.blocklySvg').first()).toBeVisible()
+    await expect(page.getByTestId('submitting')).toHaveText('Submitting: your blocks')
+  }
+  const startFrom = async (page: Page, name: string) => {
+    await page.getByRole('button', { name: 'Start from this' }).click()
+    const list = page.getByRole('region', { name: 'Start from this' })
+    await expect(list).toContainText('identical bots tie, and ties are a coin toss')
+    await list.getByRole('button', { name: new RegExp(`^${name}`) }).click()
+  }
+
+  test('submitting a Round 1 example unchanged asks first: Cancel sends nothing, Submit anyway sends it', async ({ page }) => {
+    await blocksWorkspace(page)
+    await startFrom(page, 'Tit for Tat')
+    const python = page.getByTestId('strategy-python')
+    await expect(python).toContainText('opp_history[-1] == "D"')
+    await expect(page.getByTestId('check')).toHaveText('Ready to submit')
+
+    await submitButton(page).click()
+    const dialog = page.getByRole('dialog')
+    await expect(dialog).toContainText('This is exactly the Tit for Tat example. Other teams may submit it too, and identical bots tie, broken by a coin toss. Change something to stand out?')
+    await dialog.getByRole('button', { name: 'Cancel' }).click()
+    await expect(dialog).toHaveCount(0)
+    expect(await (await mock(page, 'submissions')).json()).toEqual([])
+
+    // Never blocked: Submit anyway sends it
+    await submitButton(page).click()
+    await page.getByRole('dialog').getByRole('button', { name: 'Submit anyway' }).click()
+    await expect(page.getByText('accepted', { exact: true }).first()).toBeVisible()
+    const [stored] = await (await mock(page, 'submissions')).json()
+    // One module: the strategy block. The code is exactly the generated Python shown under the canvas
+    expect(stored.blocks.modules).toHaveLength(1)
+    expect(stored.blocks.modules[0].blocks.blocks[0].type).toBe('ic_strategy')
+    expect(stored.code.trim()).toBe((await python.innerText()).trim())
+    expect(execFileSync('python3', ['-c', `${stored.code}\nprint(strategy([], []), strategy(["C"], ["D"]))`]).toString().trim()).toBe('C D')
+  })
+
+  test('a Round 3 example unchanged asks first too, and an empty strategy does not', async ({ page }) => {
+    await blocksWorkspace(page, 3)
+    // The empty strategy is not an example, so it submits straight away
+    await submitButton(page).click()
+    await expect(page.getByText('v1', { exact: true })).toBeVisible()
+    await expect(page.getByRole('dialog')).toHaveCount(0)
+
+    await startFrom(page, 'Grudger')
+    await expect(page.getByTestId('strategy-python')).toContainText('return legal_send(0)')
+    await submitButton(page).click()
+    const dialog = page.getByRole('dialog')
+    await expect(dialog).toContainText('This is exactly the Grudger example.')
+    await dialog.getByRole('button', { name: 'Submit anyway' }).click()
+    await expect(page.getByText('v2', { exact: true })).toBeVisible()
+    const stored = await (await mock(page, 'submissions')).json()
+    expect(stored).toHaveLength(2)
+    const grudger = stored.find((s: { version: number }) => s.version === 2)
+    expect(grudger.blocks.modules[0].blocks.blocks[0].type).toBe('fa_strategy')
+    expect(grudger.code).toContain('ENDOWMENT = 10')
   })
 })

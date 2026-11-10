@@ -51,3 +51,22 @@ export function newModule(existing: string[]): Layout {
     },
   }
 }
+
+/**
+ * A blocks-mode canvas: just the strategy block, which can't be deleted.
+ * Round 1 falls back to the round's first move; Round 3 sends 5 and sends back 50 %.
+ */
+export function newStrategy(game: string, moves: string[]): Layout {
+  const strategy =
+    game === 'foreign_aid'
+      ? { type: 'fa_strategy', fields: { SEND_DEFAULT: 5, RETURN_PCT_DEFAULT: 50 } }
+      : { type: 'ic_strategy', fields: { FALLBACK: moves[0] ?? 'C' } }
+  return { blocks: { languageVersion: 0, blocks: [{ ...strategy, id: newId(), x: 24, y: 24, deletable: false }] } }
+}
+
+/** True when a saved layout is a blocks-mode strategy (it opens in Build with blocks), not a Write-code module. */
+export const isStrategyLayout = (layout: Layout): boolean => topBlocks(layout).some((b) => b.type === 'ic_strategy' || b.type === 'fa_strategy')
+
+/** True when a layout holds this game's strategy block, so it can open on this game's canvas. */
+export const isStrategyFor = (layout: Layout | undefined, game: string): boolean =>
+  !!layout && topBlocks(layout).some((b) => b.type === (game === 'foreign_aid' ? 'fa_strategy' : 'ic_strategy'))
