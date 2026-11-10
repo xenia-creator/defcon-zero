@@ -1,9 +1,10 @@
 # DEFCON Zero API Contract
 
-Status: draft v5.5. Changes in v5.5 are marked **[v5.5]**, changes in v5.4 are marked **[v5.4]**, changes in v5.3 are marked **[v5.3]**, changes in v5.2 are marked **[v5.2]**, changes in v5.1 are marked **[v5.1]**, and changes in v5 are marked **[v5]**. Older **[v4]** markers are from v4, and **[NEW]** and **[CHANGED]** markers are from v3.
+Status: draft v5.6. Changes in v5.6 are marked **[v5.6]**, changes in v5.5 are marked **[v5.5]**, changes in v5.4 are marked **[v5.4]**, changes in v5.3 are marked **[v5.3]**, changes in v5.2 are marked **[v5.2]**, changes in v5.1 are marked **[v5.1]**, and changes in v5 are marked **[v5]**. Older **[v4]** markers are from v4, and **[NEW]** and **[CHANGED]** markers are from v3.
 Owner: Sumedh (backend). Engine signatures owned by Shashwat.
 
 Changelog:
+- v5.6: `GET /admin/overview`'s round gains `run_state` (`"playing"` or `"failed"`) and `run_error`, so the console can tell a round whose matches are still playing from one whose run failed and needs `retry`. Both are `null` unless the round is `running`. The round's status machine does not change.
 - v5.5: Each round stores its own cut, shown as `config.cut` and as `cut` on `GET /admin/overview`'s round. `PATCH /admin/rounds/{id}` changes a round's cut until it is published, except the final round's, which is fixed at 2. `POST /admin/rounds/{id}/set-time` sets an open round to close a given number of minutes from now, so it can shorten the window as well as lengthen it. `publish` applies the round's stored cut.
 - v5.4: `POST /admin/rounds/{id}/extend` adds `minutes` to the later of `closes_at` and now, so extending a window that has already ended gives teams real time instead of leaving `closes_at` in the past.
 - v5.3: `GET /rounds/current` is public, like `GET /territories` and `GET /standings`. It never shows scores. `GET /rounds` still needs a token.
@@ -206,7 +207,7 @@ All return the updated Round object. Invalid transitions return `409 INVALID_ROU
 
 **[v5.4]** `extend` adds `minutes` to the later of `closes_at` and now (server UTC, the same clock as `server_time`). While the window is still running this is the same as adding to `closes_at`. Once `closes_at` has passed, `closes_at` becomes now plus `minutes`, so after an extend teams always have at least `minutes` left.
 
-**[v5.2]** After `start`, the matches play in the background and the round stays `running` until every match is stored, then moves to `review` by itself. Poll `GET /rounds/current` to see it change. If the run fails, the round stays `running`, and `retry` plays the matches again from the beginning. `retry` returns `409 INVALID_ROUND_TRANSITION` if the round is not `running`, or if its matches are still being played.
+**[v5.2]** After `start`, the matches play in the background and the round stays `running` until every match is stored, then moves to `review` by itself. Poll `GET /rounds/current` to see it change. If the run fails, the round stays `running`, and `retry` plays the matches again from the beginning. `retry` returns `409 INVALID_ROUND_TRANSITION` if the round is not `running`, or if its matches are still being played. **[v5.6]** `GET /admin/overview` shows which of the two a `running` round is in, as `run_state`. A successful `retry` sets it back to `playing`.
 
 **[v5.5]** `set-time` sets `closes_at` to now plus `minutes` (server UTC), whatever `closes_at` was. So it can shorten the window as well as lengthen it, and after `closes_at` has passed it gives teams exactly `minutes` again. `opens_at` does not change. `minutes` must be 1 to 240, as for `open` and `extend`.
 
@@ -387,7 +388,9 @@ Response `200`:
     "status": "review",
     "opens_at": "2026-11-12T10:00:00Z",
     "closes_at": "2026-11-12T10:45:00Z",
-    "cut": 15
+    "cut": 15,
+    "run_state": null,
+    "run_error": null
   },
   "teams": [
     {
@@ -413,6 +416,11 @@ Response `200`:
 ```
 
 - `round`: the current round, the same one as `GET /rounds/current`. **[v5.5]** `cut` is the round's `config.cut`, the one setting of `config` the overview carries. Before any round has started, it is the first round, so the console works before the event. `404 NOT_FOUND` only if no rounds exist yet.
+- **[v5.6]** `run_state`: while `status` is `running`, whether its matches are being played. Always present, `null` in every other status.
+  - `"playing"`: the matches are being played, or are about to be. Wait for the round to move to `review` by itself; `retry` would return `409`.
+  - `"failed"`: the last run failed and nothing is playing. The round stays `running` until an organiser calls `retry`.
+  - A successful `retry` sets it back to `"playing"`, as does a server restart, which plays a `running` round again by itself.
+- **[v5.6]** `run_error`: a short reason the run failed, for organisers, such as `"Bot checks did not finish in time."` or `"The match run crashed (RuntimeError: engine down)"`. At most 200 characters. A string only when `run_state` is `"failed"`, otherwise `null`. Show it as text; do not branch on it.
 - `teams`: every team that has claimed a territory, sorted by `username`. `team_id` is always set. `nation_name` and `territory_code` are typed nullable, but are always set for a listed team.
 - `is_bot`: always `false`.
 - `submission`: the team's latest submission in `round`, whatever its status, or `null` if it has none.

@@ -21,6 +21,8 @@ import {
   checkMinutes,
   cutErrorMessage,
   isCutEditable,
+  isRunFailed,
+  isRunPlaying,
   isTournamentComplete,
   nextRound,
   type RoundActionKind,
@@ -256,7 +258,7 @@ export function OrganiserConsole() {
           </h2>
         </header>
         <div className="flex flex-col gap-6 p-6">
-          {round && <ConsoleTimer status={round.status} closesAt={ms(round.closes_at)} />}
+          {round && <ConsoleTimer status={round.status} closesAt={ms(round.closes_at)} runFailed={isRunFailed(round)} />}
 
           {roundError && (
             <p role="alert" data-testid="round-error" className="ops-alert-text border-l-2 border-alert py-1 pl-4 font-label text-sm">
@@ -365,17 +367,29 @@ export function OrganiserConsole() {
             </div>
           )}
 
-          {round && can('retry') && (
-            <div className="flex flex-col gap-2">
+          {/* v5.6: while running, the overview's run_state says whether to wait or to retry */}
+          {round && isRunPlaying(round) && (
+            <div data-testid="run-playing" role="status" className="flex flex-col gap-2">
               <p className={KIT_LABEL}>Matches playing…</p>
+              <p className="font-label text-sm text-muted">Results move to review by themselves once every match is stored. Nothing to press.</p>
+            </div>
+          )}
+
+          {round && can('retry') && (
+            <div data-testid="run-failed" className="flex flex-col gap-3 border-l-2 border-alert pl-4">
+              <p className={`${KIT_LABEL} ops-alert-text`}>Match run failed</p>
+              <p role="alert" data-testid="run-error" className="font-label text-sm text-paper">
+                {round.run_error ?? 'The server did not say why.'}
+              </p>
+              <p className="font-label text-sm text-muted">No results were saved. Retry plays every match again from the start.</p>
               <Button
-                variant="ghost"
-                className={`w-full ${KIT_BUTTON}`}
+                variant="primary"
+                className={`w-full ${KIT_PRIMARY}`}
                 disabled={!!busy}
                 onClick={() =>
                   ask({
                     title: `Retry Round ${round.number}?`,
-                    body: `Replay all of Round ${round.number}'s matches from the start? Only use this if the run failed.`,
+                    body: `Replay all of Round ${round.number}'s matches from the start.`,
                     confirmLabel: 'Replay matches',
                     run: () => void run('retry', `Replaying Round ${round.number}'s matches`, () => admin.retry(round.id)),
                   })
@@ -606,9 +620,10 @@ const WAITING: Record<RoundStatus, string> = {
 
 /**
  * Time left in the window: closes_at against server time (lib/clock), never this laptop's clock.
- * On a brass plate, the one thing the organiser reads first. Without a window it states the round's status.
+ * On a brass plate, the one thing the organiser reads first. Without a window it states the round's status,
+ * or that the match run failed (v5.6), so "Matches are being played" never shows over a failed run.
  */
-function ConsoleTimer({ status, closesAt }: { status: RoundStatus; closesAt: number | null }) {
+function ConsoleTimer({ status, closesAt, runFailed }: { status: RoundStatus; closesAt: number | null; runFailed: boolean }) {
   const now = useServerNow()
   const synced = useClock((s) => s.synced)
   const seconds = windowRemaining({ status, closesAt }, now)
@@ -616,7 +631,7 @@ function ConsoleTimer({ status, closesAt }: { status: RoundStatus; closesAt: num
     return (
       <div className="ops-plate flex flex-col gap-2">
         <span className="font-label text-xs tracking-[0.2em] text-khaki uppercase">Round status</span>
-        <p className="font-label text-2xl text-paper">{WAITING[status]}</p>
+        <p className="font-label text-2xl text-paper">{runFailed ? 'The match run failed' : WAITING[status]}</p>
       </div>
     )
   }

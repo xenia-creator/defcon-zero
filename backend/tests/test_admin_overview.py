@@ -4,6 +4,7 @@ import json
 from collections.abc import Awaitable, Callable
 
 import httpx
+import pytest
 
 from tests.conftest import assert_error, create_user, run_sql
 from tests.tournament_helpers import (
@@ -76,6 +77,7 @@ async def test_before_the_event_it_shows_round_1_and_every_team(
     assert overview["round"] == {
         "id": round_ids[1], "number": 1, "game": "prisoners_dilemma",
         "status": "waiting", "opens_at": None, "closes_at": None, "cut": 15,
+        "run_state": None, "run_error": None,
     }
     # Sorted by username, so the list does not jump around between polls.
     assert [team["username"] for team in overview["teams"]] == ["team_a", "team_b"]
@@ -133,6 +135,55 @@ async def test_round_shows_the_stored_cut(
     assert edited.status_code == 200
 
     assert (await get_overview(client, organiser))["round"]["cut"] == 11
+
+
+@pytest.mark.parametrize("status", ["waiting", "open", "review", "published"])
+async def test_run_state_is_null_unless_the_round_is_running(
+    client: httpx.AsyncClient,
+    organiser: dict[str, str],
+    round_ids: dict[int, int],
+    status: str,
+) -> None:
+    # Even a leftover error is hidden: there is no run to report on.
+    await run_sql(
+        "UPDATE rounds SET status = :s, run_error = 'old' WHERE id = :id",
+        s=status, id=round_ids[1],
+    )
+
+    round_ = (await get_overview(client, organiser))["round"]
+
+    assert (round_["run_state"], round_["run_error"]) == (None, None)
+
+
+async def test_a_running_round_with_no_failure_is_playing(
+    client: httpx.AsyncClient,
+    organiser: dict[str, str],
+    round_ids: dict[int, int],
+) -> None:
+    await run_sql("UPDATE rounds SET status = 'running' WHERE id = :id", id=round_ids[1])
+
+    round_ = (await get_overview(client, organiser))["round"]
+
+    assert (round_["status"], round_["run_state"], round_["run_error"]) == (
+        "running", "playing", None
+    )
+
+
+async def test_a_running_round_with_a_failure_shows_failed_and_why(
+    client: httpx.AsyncClient,
+    organiser: dict[str, str],
+    round_ids: dict[int, int],
+) -> None:
+    await run_sql(
+        "UPDATE rounds SET status = 'running', run_error = 'engine down' WHERE id = :id",
+        id=round_ids[1],
+    )
+
+    round_ = (await get_overview(client, organiser))["round"]
+
+    assert (round_["status"], round_["run_state"], round_["run_error"]) == (
+        "running", "failed", "engine down"
+    )
 
 
 # --- submission ---

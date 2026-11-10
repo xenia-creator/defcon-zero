@@ -99,6 +99,8 @@ test.describe('round actions', () => {
     await page.getByLabel('Add minutes to the window').fill('30')
     await startRound(page, 1)
     await expect(page.getByText('Matches playing…')).toBeVisible()
+    // v5.6: nothing to press while the matches play
+    await expect(consoleButtons(page, /Retry/)).toHaveCount(0)
     await publishRound(page, 1, 15)
     await expect(page.getByLabel('Submission window, in minutes')).toHaveValue('45')
     await page.getByRole('button', { name: 'Open Round 2' }).click()
@@ -113,16 +115,24 @@ test.describe('round actions', () => {
     await expect(consoleButtons(page, /Open Round|Publish|Retry|Start|Extend/)).toHaveCount(0)
   })
 
-  test('a failed run stays playing until Retry replays it', async ({ page }) => {
+  test('v5.6: a failed run shows its reason and Retry, and Retry replays it', async ({ page }) => {
     await openConsole(page)
     await mock(page, 'failrun')
     await startRound(page, 1)
-    await expect(page.getByText('Matches playing…')).toBeVisible()
-    await page.waitForTimeout(2_500)
-    await expect(page.getByText('Matches playing…')).toBeVisible()
+    // Playing: no Retry until the run has actually failed
+    await expect(page.getByTestId('run-playing')).toBeVisible()
+    await expect(consoleButtons(page, /Retry/)).toHaveCount(0)
+    // Failed: the reason from run_error, the plate says so, and Retry is the one fire action
+    await expect(page.getByTestId('run-failed')).toBeVisible({ timeout: 10_000 })
+    await expect(page.getByTestId('run-error')).toHaveText('The match run crashed (RuntimeError: engine down)')
+    await expect(page.getByText('The match run failed')).toBeVisible()
+    await expect(page.getByTestId('run-playing')).toHaveCount(0)
+    await expect(consoleButtons(page, /Retry|Publish|Start|Extend|Open Round/)).toHaveCount(1)
     await page.getByRole('button', { name: 'Retry Matches' }).click()
-    await expect(dialog(page)).toContainText("Replay all of Round 1's matches from the start? Only use this if the run failed.")
+    await expect(dialog(page)).toContainText("Replay all of Round 1's matches from the start.")
     await dialog(page).getByRole('button', { name: 'Replay matches' }).click()
+    // Retry clears it at once: back to playing, then review
+    await expect(page.getByTestId('run-failed')).toHaveCount(0)
     await expect(page.getByRole('button', { name: 'Publish Results' })).toBeVisible({ timeout: 10_000 })
   })
 })
@@ -153,9 +163,12 @@ test.describe('errors, by code', () => {
     await expect(page.getByTestId('round-error')).toHaveCount(0)
   })
 
-  test('Retry while the matches still play says so', async ({ page }) => {
+  test('Retry answered 409 (the run started again meanwhile) says the matches are playing', async ({ page }) => {
     await openConsole(page)
+    await mock(page, 'failrun')
     await startRound(page, 1)
+    await expect(page.getByTestId('run-failed')).toBeVisible({ timeout: 10_000 })
+    await page.route('**/admin/rounds/1/retry', (r) => r.fulfill(apiError(409, 'INVALID_ROUND_TRANSITION', "This round's matches are still being played.")))
     await page.getByRole('button', { name: 'Retry Matches' }).click()
     await dialog(page).getByRole('button', { name: 'Replay matches' }).click()
     await expect(page.getByTestId('round-error')).toHaveText('Matches are still playing. Retry only works after a failed run.')

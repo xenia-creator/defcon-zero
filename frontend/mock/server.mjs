@@ -83,14 +83,14 @@ function reset() {
     nextSubmissionId: 1,
     /** username (lowercase) → user. A team account's `team` holds its claim; `team.id` is null until it claims. */
     users: {},
-    rounds: ROUND_DEFINITIONS.map((d) => ({ id: d.number, number: d.number, game: d.game, status: 'waiting', opensAt: null, closesAt: null, config: structuredClone(d.config), playing: false })),
+    rounds: ROUND_DEFINITIONS.map((d) => ({ id: d.number, number: d.number, game: d.game, status: 'waiting', opensAt: null, closesAt: null, config: structuredClone(d.config), playing: false, runError: null })),
     /** round id → [{ teamId, score, rank }], the round's ranked results once its run has finished. */
     results: {},
     submissions: [],
     tokens: new Map(),
     fail: {}, // path → HTTP status to answer with, for testing failures
     rejectNext: null, // the next check is rejected with this message
-    failNextRun: false, // the next match run fails and leaves the round running, for retry
+    failNextRun: false, // the next match run fails and leaves the round running, for retry (v5.6: with runError set)
   }
   addUser('admin', 'organiser')
   addUser('team1', 'team')
@@ -307,13 +307,18 @@ function scoreRound(round) {
   round.playing = false
 }
 
+/** v5.6: the reason a failed run gives on the overview, worded as the backend words a crash. */
+const MOCK_RUN_ERROR = 'The match run crashed (RuntimeError: engine down)'
+
 function startRun(round) {
   round.playing = true
+  round.runError = null // v5.6: every run, start or retry, begins as playing
   setTimeout(() => {
     if (round.status !== 'running') return
     if (db.failNextRun) {
       db.failNextRun = false
       round.playing = false // the round stays running; retry plays it again
+      round.runError = MOCK_RUN_ERROR
       return
     }
     scoreRound(round)
@@ -465,8 +470,12 @@ function overview(user) {
     })
   const unclaimed = teamAccounts().filter((u) => u.team.id === null).map((u) => u.username).sort()
   const { config, server_time, ...roundFields } = roundOut(round)
+  // v5.6: run_state and run_error only while running; failed exactly when the last run left a reason
+  const running = round.status === 'running'
+  const runState = running ? (round.runError ? 'failed' : 'playing') : null
+  const runError = running ? (round.runError ?? null) : null
   // v5.5: the overview's round carries the cut, the one setting of config it shows
-  return ok({ round: { ...roundFields, cut: config.cut }, teams, unclaimed, server_time: iso(now()) })
+  return ok({ round: { ...roundFields, cut: config.cut, run_state: runState, run_error: runError }, teams, unclaimed, server_time: iso(now()) })
 }
 
 // ---------------------------------------------------------------------------
@@ -537,12 +546,12 @@ function control(path, body) {
     /** Make round `index` open with a fresh window, every earlier round published, every later one waiting. 0: no round started yet. */
     case '/__mock/goto':
       for (const r of db.rounds) {
-        if (r.number < body.index) Object.assign(r, { status: 'published', opensAt: r.opensAt ?? now(), closesAt: r.closesAt ?? now() })
+        if (r.number < body.index) Object.assign(r, { status: 'published', opensAt: r.opensAt ?? now(), closesAt: r.closesAt ?? now(), runError: null })
         else if (r.number === body.index) openWindow(r, DEFAULT_WINDOW_MINUTES)
-        else Object.assign(r, { status: 'waiting', opensAt: null, closesAt: null })
+        else Object.assign(r, { status: 'waiting', opensAt: null, closesAt: null, runError: null })
       }
       return currentRound() ? roundOut(currentRound()) : {}
-    /** Change the current round directly (no transition rules): status, config, closes_in seconds. */
+    /** Change the current round directly (no transition rules): status, config, closes_in seconds, runError (v5.6). */
     case '/__mock/round': {
       const round = currentRound() ?? db.rounds[0]
       const { closes_in: closesIn, config, ...change } = body

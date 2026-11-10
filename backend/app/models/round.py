@@ -8,7 +8,7 @@ config.cut, though it is stored in its own column.
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import BigInteger, CheckConstraint, DateTime, UniqueConstraint
+from sqlalchemy import BigInteger, CheckConstraint, DateTime, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -49,3 +49,11 @@ class Round(Base):
     # turn and betray on it. The Round schema has no seed field, so it never
     # reaches a response. BigInteger because it is a 63-bit number.
     seed: Mapped[int | None] = mapped_column(BigInteger)
+    # Why the last background run of this round failed, or null if it has not.
+    # Only meaningful while the round is running: the run writes it when it
+    # crashes, and every new run (start, retry, a resume at startup) clears it.
+    # Stored rather than kept in memory so GET /admin/overview can tell "still
+    # playing" from "failed" even in the moment between start committing and the
+    # background run beginning, when nothing is in memory yet. It is not a
+    # status: the round stays running either way (docs/api.md section 4).
+    run_error: Mapped[str | None] = mapped_column(Text)

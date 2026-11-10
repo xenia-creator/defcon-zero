@@ -69,7 +69,8 @@ async def reset_all_rounds(db: AsyncSession, cuts: dict[int, int]) -> int:
     """Put every round back to waiting, as scripts/create_rounds.py made it.
 
     The times are cleared because a waiting round has none (docs/api.md section 4),
-    and the seed because a new one is drawn when the round is next run. Each cut
+    the seed because a new one is drawn when the round is next run, and the run
+    failure because it belongs to a run that is over. Each cut
     goes back to its value in cuts, by round number, so a cut changed during a dry
     run does not carry into the real event. number, game and config are left
     alone, so the rounds stay the same three rounds. Returns how many rounds were
@@ -84,6 +85,8 @@ async def reset_all_rounds(db: AsyncSession, cuts: dict[int, int]) -> int:
             opens_at=None,
             closes_at=None,
             seed=None,
+            # A failure belongs to a run, and a waiting round has none.
+            run_error=None,
             cut=case(cuts, value=Round.number, else_=Round.cut),
         )
     )
