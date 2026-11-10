@@ -5,6 +5,7 @@ import { ErrorBoundary } from '../../components/ErrorBoundary'
 import { Button, Empty, Guard, Panel, WindowTimer, inputClass, useConfirm } from '../../components/ui'
 import { ApiError, errorMessage, request } from '../../lib/api'
 import { newId } from '../../lib/ids'
+import { useTour } from '../../tour/useTour'
 import { serverNow, windowRemaining } from '../../lib/clock'
 import { SubmissionDetail, Submitted, isChecked, type ClaimedTeam, type Round } from '../../lib/contract'
 import { useLive } from '../../lib/live'
@@ -282,6 +283,8 @@ function RoundWorkspace({ team, gameKey }: { team: ClaimedTeam; gameKey: string 
   const blocksGame = game.blocks
   const modulesAllowed = game.blocks && moves.length > 0
   const blocksMode = blocksGame && agent?.mode === 'blocks'
+  // The screen tour waits for the workspace to load
+  useTour('workspace', agent !== null, { role: 'team', game: gameKey, mode: mapMode ? 'map' : blocksMode ? 'blocks' : 'code' })
   const endowment = round?.config.endowment ?? UNTIL_ROUND_ARRIVES.endowment
   const multiplier = round?.config.multiplier
   const strategyConfig = useMemo<StrategyConfig>(() => ({ moves, endowment, multiplier }), [moves, endowment, multiplier])
@@ -622,7 +625,7 @@ function RoundWorkspace({ team, gameKey }: { team: ClaimedTeam; gameKey: string 
       {/* min-w-0 on both columns: a wide editor or a long line can never push the right column off screen */}
       <section className="flex min-h-[70vh] min-w-0 flex-col field-kit lg:min-h-0">
         {placesTroops && (
-          <div className="flex flex-wrap items-stretch gap-px border-b border-steel bg-steel/40" role="tablist" aria-label="How to play this round">
+          <div data-tour="play-mode" className="flex flex-wrap items-stretch gap-px border-b border-steel bg-steel/40" role="tablist" aria-label="How to play this round">
             {(
               [
                 ['map', '◈ Place troops on the map'],
@@ -909,7 +912,7 @@ function RoundWorkspace({ team, gameKey }: { team: ClaimedTeam; gameKey: string 
             </div>
           </Panel>
         </Guard>
-        <div className="flex flex-col gap-3 lg:min-h-0 lg:flex-1 lg:overflow-y-auto">
+        <div data-tour="results" className="flex flex-col gap-3 lg:min-h-0 lg:flex-1 lg:overflow-y-auto">
           {newest && (
             <Guard name="Latest version">
               <LatestResult version={newest.version} detail={latestDetail?.id === newest.id ? latestDetail : undefined} />

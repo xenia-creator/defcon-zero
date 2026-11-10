@@ -157,7 +157,7 @@ export function WarMap({
         <Stamp tilt={-3} className="warmap__defcon text-type-red">
           <span className="warmap__defcon-label">DEFCON</span> <span className="warmap__defcon-level font-title">{defconLevel(round) || 'ZERO'}</span>
         </Stamp>
-        <div className="warmap__round">
+        <div data-tour="warmap-round" className="warmap__round">
           <span className="warmap__file" aria-hidden="true">
             <FileNumber number={round ? `DZ-R${round.number}` : 'DZ-R0'} />
           </span>
@@ -180,7 +180,7 @@ export function WarMap({
             </span>
           )}
         </div>
-        <div className="warmap__clock">
+        <div data-tour="warmap-clock" className="warmap__clock">
           {signalLost ? (
             <span className="warmap__live is-lost font-label" role="status">
               <span className="warmap__live-dot" /> Signal lost · retrying
@@ -195,7 +195,7 @@ export function WarMap({
       </header>
 
       <main className={`warmap__body ${showStandings ? '' : 'is-map-only'}`}>
-        <section className="warmap__map" aria-label="World map">
+        <section data-tour="warmap-map" className="warmap__map" aria-label="World map">
           <div className="warmap__frame" style={{ ['--map-ratio' as string]: MAP_WIDTH / MAP_HEIGHT }}>
             <svg
               viewBox={`0 0 ${MAP_WIDTH} ${MAP_HEIGHT}`}
@@ -328,7 +328,7 @@ export function WarMap({
         </section>
 
         {showStandings && (
-          <aside className="warmap__board paper-sheet" aria-label={heading ? `Leaderboard: ${heading.title}` : 'Leaderboard'}>
+          <aside data-tour="warmap-board" className="warmap__board paper-sheet" aria-label={heading ? `Leaderboard: ${heading.title}` : 'Leaderboard'}>
             <header className="warmap__board-head">
               <h2 className="warmap__board-title font-title">Standings</h2>
               {heading && (

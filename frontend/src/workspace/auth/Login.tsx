@@ -4,6 +4,7 @@ import { Button, paperPrimaryClass } from '../../components/ui'
 import { errorMessage, hasCode, request } from '../../lib/api'
 import { SPECTATOR_SESSION, useAuth } from '../../lib/auth'
 import { LoginOut, Team } from '../../lib/contract'
+import { replayTour, useTour } from '../../tour/useTour'
 
 // Field telegraph, typed out one line at a time
 const BOOT_LINES = [
@@ -46,6 +47,8 @@ export function Login() {
   const [password, setPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  // Anyone may see the login tour; this screen has nothing to load first
+  useTour('login', true, { role: null })
   const [denied, setDenied] = useState(false)
   const sending = useRef(false)
 
@@ -128,7 +131,7 @@ export function Login() {
               </p>
             )}
 
-            <label className="flex flex-col gap-2">
+            <label data-tour="login-fields" className="flex flex-col gap-2">
               <span className="font-label text-xs tracking-[0.2em] text-type-muted uppercase">Callsign</span>
               <input
                 className={inputClass}
@@ -174,6 +177,7 @@ export function Login() {
 
             {/* Special Elite has a single weight: a hairline stroke in the text colour makes it bolder (paint, not a filter) */}
             <Button
+              data-tour="login-submit"
               variant="primary"
               disabled={busy || !username.trim() || !password}
               className={`py-3 !font-label !text-sm tracking-[0.24em] [-webkit-text-stroke:0.6px_currentColor] ${paperPrimaryClass}`}
@@ -182,6 +186,7 @@ export function Login() {
             </Button>
 
             <Button
+              data-tour="login-bigboard"
               type="button"
               variant="ghost"
               disabled={busy}
@@ -192,6 +197,14 @@ export function Login() {
               View Big Board · War Map
             </Button>
           </form>
+          {/* Replays the login screen's tour (frontend/docs/BLOCKS.md part 3) */}
+          <button
+            type="button"
+            onClick={replayTour}
+            className="cursor-pointer self-center font-label text-sm tracking-[0.12em] text-paper/80 underline decoration-paper/40 underline-offset-4 transition-colors hover:text-fire"
+          >
+            Show me around
+          </button>
         </div>
       </main>
       <div className="film-grain" aria-hidden />

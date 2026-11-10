@@ -8,6 +8,7 @@ import { USE_MOCK_API } from '../../lib/config'
 import type { RoundStatus } from '../../lib/contract'
 import { useLive } from '../../lib/live'
 import { admin, useAdminOverview, useRefreshAfterAdmin, useRounds } from '../../lib/queries'
+import { useTour } from '../../tour/useTour'
 import { ROUNDS, gameName, roundByGame } from '../../lib/rounds'
 import {
   DEFAULT_EXTEND_MINUTES,
@@ -50,6 +51,8 @@ export function OrganiserConsole() {
 
   // One source for the timer and the buttons: the overview, and its server_time for the clock
   const { data: overview, dataUpdatedAt, isPending, isError, refetch } = useAdminOverview()
+  // The tour waits for the overview: its steps point at the orders, controls and roster
+  useTour('command', overview !== undefined && overview !== null, { role: 'organiser' })
   useEffect(() => {
     // The shared hook doesn't record when the request left, so the answer's arrival stands in for both ends
     if (overview) syncClock(dataUpdatedAt, ms(overview.server_time), dataUpdatedAt)
@@ -134,7 +137,7 @@ export function OrganiserConsole() {
       )}
 
       {/* The round's operations order: a typed document, its status stamped on it */}
-      <article className="paper-sheet ops-sheet relative flex flex-col gap-6 p-6 sm:p-8 lg:col-span-7" aria-labelledby="ops-order-title">
+      <article data-tour="ops-order" className="paper-sheet ops-sheet relative flex flex-col gap-6 p-6 sm:p-8 lg:col-span-7" aria-labelledby="ops-order-title">
         <header className="flex items-start justify-between gap-4 border-b border-type-muted pb-4">
           <div className="flex flex-col gap-2">
             <p className="font-label text-xs tracking-[0.2em] text-type-muted uppercase">Operations order · Command console</p>
@@ -201,13 +204,13 @@ export function OrganiserConsole() {
           </dl>
         )}
 
-        <div className="mt-auto border-t border-type-muted pt-4">
+        <div data-tour="ops-unclaimed" className="mt-auto border-t border-type-muted pt-4">
           <UnclaimedPanel usernames={overview.unclaimed} />
         </div>
       </article>
 
       {/* The control kit: the timer plate, then the one action the round allows (fire) */}
-      <section className="field-kit flex flex-col lg:col-span-5 lg:self-start" aria-labelledby="ops-controls-title">
+      <section data-tour="ops-controls" className="field-kit flex flex-col lg:col-span-5 lg:self-start" aria-labelledby="ops-controls-title">
         <header className="border-b border-steel px-6 py-4">
           <h2 id="ops-controls-title" className="font-title text-lg tracking-[0.1em] text-paper">
             {round ? `Round ${round.number} Control` : 'Round Control'}
@@ -395,7 +398,7 @@ export function OrganiserConsole() {
       </section>
 
       {/* Full width: the team ledger has six columns plus its buttons */}
-      <div className="lg:col-span-12">
+      <div data-tour="ops-roster" className="lg:col-span-12">
         <Roster teams={overview.teams} round={overview.round} />
       </div>
     </div>
@@ -503,7 +506,7 @@ function ConsoleTimer({ status, closesAt }: { status: RoundStatus; closesAt: num
   }
   const tone = seconds < 60 ? 'text-alert' : seconds < 300 ? 'text-amber' : 'text-paper'
   return (
-    <div data-testid="console-timer" className="ops-plate flex flex-col gap-2">
+    <div data-testid="console-timer" data-tour="ops-timer" className="ops-plate flex flex-col gap-2">
       <span className="font-label text-xs tracking-[0.2em] text-khaki uppercase">{seconds > 0 ? 'Window closes in' : 'Window closing'}</span>
       <p className={`font-data text-6xl leading-none font-bold tabular-nums ${tone}`}>{formatDuration(seconds)}</p>
       {!synced && <p className="font-label text-sm text-amber">Syncing with the server clock…</p>}

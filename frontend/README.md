@@ -54,6 +54,8 @@ npm test            # logic: clock, saved data, Python from blocks
 npm run test:e2e    # real browser: tries to break the screens (starts its own mock on port 8022)
 ```
 
+The logic tests run the generated Python in the engine with `python3`, which must be **Python 3.11 or newer** (the engine uses `ast.TryStar`). macOS's built-in Python 3.9 fails 8 of them. The event server runs Python 3.14.
+
 ## Following the API
 
 The screens follow `docs/api.md` v2, and `src/lib/contract.ts` checks every server answer against it. If the contract changes, change that file and `mock/server.mjs`.
