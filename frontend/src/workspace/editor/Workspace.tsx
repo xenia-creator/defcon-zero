@@ -688,8 +688,9 @@ function RoundWorkspace({ team, gameKey }: { team: ClaimedTeam; gameKey: string 
     </div>
   )
 
+  // lg:min-h: on a short laptop screen the page scrolls a little rather than squeeze the block canvas
   return (
-    <div className="grid min-h-full grid-cols-1 gap-3 p-3 lg:h-full lg:grid-cols-[1fr_380px]">
+    <div className="grid min-h-full grid-cols-1 gap-3 p-3 lg:h-full lg:min-h-[37rem] lg:grid-cols-[1fr_380px]">
       {/* min-w-0 on both columns: a wide editor or a long line can never push the right column off screen */}
       <section className="flex min-h-[70vh] min-w-0 flex-col field-kit lg:min-h-0">
         {placesTroops && (
@@ -779,7 +780,8 @@ function RoundWorkspace({ team, gameKey }: { team: ClaimedTeam; gameKey: string 
               </div>
               {blocksMode && agent.strategy_blocks && (
                 <div className="absolute inset-0 flex flex-col">
-                  <div className="min-h-0 flex-1">
+                  {/* The canvas keeps room for its blocks and the zoom and trash controls; the Python below gives way first */}
+                  <div className="min-h-[22.5rem] flex-1">
                     <ErrorBoundary
                       resetKey={strategyKey}
                       fallback={() => (
@@ -793,7 +795,7 @@ function RoundWorkspace({ team, gameKey }: { team: ClaimedTeam; gameKey: string 
                       <BlockEditor key={strategyKey} layout={agent.strategy_blocks} onChange={setStrategy} maxBlocks={blockLimit} moves={moves} game={gameKey} endowment={endowment} onWorkspace={setBlocksWorkspace} />
                     </ErrorBoundary>
                   </div>
-                  <div className="grid max-h-72 shrink-0 grid-cols-[1fr_minmax(0,16rem)] gap-4 overflow-y-auto border-t border-steel bg-ink/80 p-3">
+                  <div className="grid max-h-72 min-h-24 grid-cols-[1fr_minmax(0,16rem)] gap-4 overflow-y-auto border-t border-steel bg-ink/80 p-3">
                     <div className="min-w-0">
                       <span className="label !text-[10px]">Generated Python · read only · this is what the server runs</span>
                       {overLimit && (
@@ -864,7 +866,8 @@ function RoundWorkspace({ team, gameKey }: { team: ClaimedTeam; gameKey: string 
               )}
               {!blocksMode && activeModule !== null && (
                 <div className="absolute inset-0 flex flex-col">
-                  <div className="min-h-0 flex-1">
+                  {/* The canvas keeps room for its blocks and the zoom and trash controls; the Python below gives way first */}
+                  <div className="min-h-[22.5rem] flex-1">
                     <ErrorBoundary
                       resetKey={moduleKeys[activeModule]}
                       fallback={() => (
@@ -884,7 +887,7 @@ function RoundWorkspace({ team, gameKey }: { team: ClaimedTeam; gameKey: string 
                       />
                     </ErrorBoundary>
                   </div>
-                  <div className="grid max-h-64 shrink-0 grid-cols-[1fr_minmax(0,16rem)] gap-4 overflow-y-auto border-t border-steel bg-ink/80 p-3">
+                  <div className="grid max-h-64 min-h-24 grid-cols-[1fr_minmax(0,16rem)] gap-4 overflow-y-auto border-t border-steel bg-ink/80 p-3">
                     <div className="min-w-0">
                       <span className="label !text-[10px]">Generated Python</span>
                       {overLimit && (

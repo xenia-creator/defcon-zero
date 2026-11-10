@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Blockly, GRID, setBlockEndowment, setBlockMoves, theme, toolbox, type Layout } from './blocks'
+import { BLOCK_FONT_CSS, Blockly, GRID, setBlockEndowment, setBlockMoves, theme, toolbox, type Layout } from './blocks'
 
 /**
  * One Blockly workspace for one module. Remount it (with a key) to switch modules.
@@ -39,9 +39,9 @@ export function BlockEditor({
   useEffect(() => {
     let disposed = false
     let cleanup = () => {}
-    // Blockly measures text when it renders, so wait for the app's fonts first
-    const faces = ['11px "JetBrains Mono"', 'bold 11px "JetBrains Mono"'].map((f) => document.fonts.load(f))
-    Promise.all(faces)
+    // Blockly measures text when it renders, so wait for the block font first
+    document.fonts
+      .load(BLOCK_FONT_CSS)
       .catch(() => {})
       .then(() => {
         if (disposed) return
@@ -64,6 +64,8 @@ export function BlockEditor({
     setBlockEndowment(endowment)
     const ws = Blockly.inject(host.current!, {
       toolbox: toolbox(game),
+      // Blockly's icons (zoom, trash) and cursors from this app, never from static.blockly.com
+      media: `${import.meta.env.BASE_URL}blockly-media/`,
       theme,
       renderer: 'zelos',
       maxBlocks,
@@ -88,11 +90,24 @@ export function BlockEditor({
       if (event.isUiEvent || event.type === Blockly.Events.FINISHED_LOADING) return
       changed.current(Blockly.serialization.workspaces.save(ws) as Layout)
     })
-    const resize = new ResizeObserver(() => Blockly.svgResize(ws))
+    // Every size change (a window resize, Build with blocks opening again) re-fits the canvas, so the
+    // toolbox, its flyout, the trash and the zoom controls sit where they should. In the next frame,
+    // so the resize never re-triggers the observer within the same frame.
+    let frame = 0
+    const resize = new ResizeObserver(() => {
+      cancelAnimationFrame(frame)
+      frame = requestAnimationFrame(() => Blockly.svgResize(ws))
+    })
     resize.observe(host.current!)
+    // Once every font has loaded, measure each field again, in case one was still loading
+    document.fonts.ready.then(() => {
+      if (workspace.current !== ws) return
+      for (const block of ws.getAllBlocks(false)) for (const input of block.inputList) for (const field of input.fieldRow) field.forceRerender()
+    })
     announce.current?.(ws)
     return () => {
       announce.current?.(null)
+      cancelAnimationFrame(frame)
       resize.disconnect()
       ws.dispose()
       workspace.current = null

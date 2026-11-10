@@ -427,6 +427,15 @@ blockStyles.logic_blocks = blockStyles[style('logic')]
 /** The app's tokens (index.css): ink for the field, panel and steel for the kit around it, paper for type. */
 const APP = { ink: '#0e1011', panel: '#191c1b', steel: '#2b302d', steelLight: '#4a514b', paper: '#d9d3c3', fire: '#d97a35' }
 
+/**
+ * The one font every block's text is drawn and measured in: Blockly sizes each field from this
+ * (on a canvas) and draws the text with the same font through its own CSS. Nothing else may set
+ * the font of .blocklyText, or the text and its box stop matching.
+ */
+export const BLOCK_FONT = { family: '"JetBrains Mono", monospace', weight: 'bold', size: 11 } as const
+/** BLOCK_FONT as a CSS font, for loading it before Blockly measures. Blockly reads size in pt. */
+export const BLOCK_FONT_CSS = `${BLOCK_FONT.weight} ${BLOCK_FONT.size}pt ${BLOCK_FONT.family}`
+
 export const theme = Blockly.Theme.defineTheme('dz_field_kit', {
   name: 'dz_field_kit',
   base: Blockly.Themes.Classic,
@@ -447,7 +456,7 @@ export const theme = Blockly.Theme.defineTheme('dz_field_kit', {
     cursorColour: APP.fire,
     selectedGlowColour: APP.fire,
   },
-  fontStyle: { family: 'JetBrains Mono, monospace', size: 11 },
+  fontStyle: BLOCK_FONT,
 })
 
 /** A faint grid on the field: the steel rule colour, drawn as full lines. */
