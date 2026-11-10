@@ -3,7 +3,15 @@ import { newId } from '../../lib/ids'
 
 export type Layout = Record<string, unknown>
 
-export type BlockState = { type?: unknown; fields?: Record<string, unknown>; inputs?: Record<string, { block?: BlockState; shadow?: BlockState } | null>; next?: { block?: BlockState } }
+export type BlockState = { type?: unknown; fields?: Record<string, unknown>; inputs?: Record<string, SlotState | null>; next?: { block?: BlockState } }
+type SlotState = { block?: BlockState; shadow?: BlockState }
+
+/**
+ * What a value slot holds: the block dropped in it, else its shadow (a pre-filled number that a
+ * dropped block replaces cleanly, with nothing popping out). A covered shadow is kept by Blockly
+ * but never counts.
+ */
+export const slotValue = (slot: SlotState | null | undefined): BlockState | undefined => slot?.block ?? slot?.shadow
 
 const MAX_DEPTH = 5000
 
@@ -12,12 +20,12 @@ export function topBlocks(layout: Layout): BlockState[] {
   return Array.isArray(blocks) ? blocks.filter((b): b is BlockState => typeof b === 'object' && b !== null) : []
 }
 
-/** Every block in a layout, counted the same way as the server. */
+/** Every block in a layout as the team sees it: a shadow counts only while no block covers it. */
 export function countBlocks(layout: Layout): number {
   const walk = (b: BlockState | undefined, depth: number): number => {
     if (!b || depth > MAX_DEPTH) return 0
     let n = 1
-    for (const slot of Object.values(b.inputs ?? {})) n += walk(slot?.block, depth + 1) + walk(slot?.shadow, depth + 1)
+    for (const slot of Object.values(b.inputs ?? {})) n += walk(slotValue(slot), depth + 1)
     return n + walk(b.next?.block, depth + 1)
   }
   return topBlocks(layout).reduce((n, b) => n + walk(b, 0), 0)
@@ -29,7 +37,7 @@ export function blockTypes(layout: Layout): string[] {
   const walk = (b: BlockState | undefined, depth: number) => {
     if (!b || depth > MAX_DEPTH) return
     types.push(String(b.type))
-    for (const slot of Object.values(b.inputs ?? {})) walk(slot?.block, depth + 1)
+    for (const slot of Object.values(b.inputs ?? {})) walk(slotValue(slot), depth + 1)
     walk(b.next?.block, depth + 1)
   }
   topBlocks(layout).forEach((b) => walk(b, 0))

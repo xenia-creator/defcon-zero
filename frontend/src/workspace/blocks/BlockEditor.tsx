@@ -13,6 +13,7 @@ export function BlockEditor({
   moves,
   game = 'prisoners_dilemma',
   endowment = 10,
+  onWorkspace,
 }: {
   layout: Layout
   onChange: (layout: Layout) => void
@@ -22,11 +23,15 @@ export function BlockEditor({
   game?: string
   /** Round 3's most a bot can send (config.endowment), for the send fields' limit. */
   endowment?: number
+  /** Hands the Blockly workspace up while it exists (null once it is gone), so the guided tutorial can point at blocks and categories. */
+  onWorkspace?: (workspace: Blockly.WorkspaceSvg | null) => void
 }) {
   const host = useRef<HTMLDivElement>(null)
   const workspace = useRef<Blockly.WorkspaceSvg | null>(null)
   const changed = useRef(onChange)
   changed.current = onChange
+  const announce = useRef(onWorkspace)
+  announce.current = onWorkspace
   // Errors in here happen outside React's render, so rethrow them for the error boundary
   const [failure, setFailure] = useState<unknown>(null)
   if (failure) throw failure
@@ -85,7 +90,9 @@ export function BlockEditor({
     })
     const resize = new ResizeObserver(() => Blockly.svgResize(ws))
     resize.observe(host.current!)
+    announce.current?.(ws)
     return () => {
+      announce.current?.(null)
       resize.disconnect()
       ws.dispose()
       workspace.current = null

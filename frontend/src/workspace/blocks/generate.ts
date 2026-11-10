@@ -11,7 +11,7 @@
  */
 import { UNTIL_ROUND_ARRIVES } from '../editor/games'
 import { FA_MISPLACED, FA_TOOLBOX, MODULE_ARGS, TOOLBOX, moveLabel } from './categories'
-import { moduleName, topBlocks, type BlockState, type Layout } from './layout'
+import { moduleName, slotValue, topBlocks, type BlockState, type Layout } from './layout'
 
 /** Problems stop a submit. There is nothing to warn about: every path ends in a legal move. */
 export type Generated = { name: string; code: string; problems: string[] }
@@ -282,7 +282,7 @@ function foreignAidStrategy(layout: Layout, config: StrategyConfig): GeneratedSt
       return '0'
     }
     if (!usable(block)) return '0'
-    const inner = (slot: string, why: string) => value(block.inputs?.[slot]?.block, section, why, depth + 1)
+    const inner = (slot: string, why: string) => value(slotValue(block.inputs?.[slot]), section, why, depth + 1)
     switch (block.type) {
       case 'fa_number':
         return String(wholeField(block.fields?.NUM, 0, 100, 0))
@@ -338,7 +338,7 @@ function foreignAidStrategy(layout: Layout, config: StrategyConfig): GeneratedSt
     switch (block.type) {
       case 'fa_compare': {
         const why = 'A comparison needs a number on both sides. Drag one in from Numbers.'
-        return `(${value(block.inputs?.A?.block, section, why, depth + 1)} ${COMPARE[String(block.fields?.OP)] ?? '>'} ${value(block.inputs?.B?.block, section, why, depth + 1)})`
+        return `(${value(slotValue(block.inputs?.A), section, why, depth + 1)} ${COMPARE[String(block.fields?.OP)] ?? '>'} ${value(slotValue(block.inputs?.B), section, why, depth + 1)})`
       }
       case 'fa_opp_ever_short':
         helpers.add('ever_short_changed')
@@ -373,14 +373,14 @@ function foreignAidStrategy(layout: Layout, config: StrategyConfig): GeneratedSt
         // reported; the rest of the chain is still read
       } else if (block.type === 'fa_send') {
         if (section === 'SEND') {
-          lines.push(`${pad}return legal_send(${value(block.inputs?.AMOUNT?.block, section, 'The send block needs a number. Drag one in from Numbers.', depth + 1)})`)
+          lines.push(`${pad}return legal_send(${value(slotValue(block.inputs?.AMOUNT), section, 'The send block needs a number. Drag one in from Numbers.', depth + 1)})`)
           decides = true
         } else note(FA_MISPLACED.sendInReceive)
       } else if (block.type === 'fa_return' || block.type === 'fa_return_pct') {
         if (section === 'RECEIVE') {
           const amount =
             block.type === 'fa_return'
-              ? value(block.inputs?.AMOUNT?.block, section, 'The send back block needs a number. Drag one in from Numbers.', depth + 1)
+              ? value(slotValue(block.inputs?.AMOUNT), section, 'The send back block needs a number. Drag one in from Numbers.', depth + 1)
               : `received * ${wholeField(block.fields?.PERCENT, 0, 100, 0)} // 100`
           lines.push(`${pad}return legal_return(${amount}, received)`)
           decides = true

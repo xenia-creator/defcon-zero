@@ -1,11 +1,15 @@
 import Editor, { type OnMount } from '@monaco-editor/react'
 import { useQueryClient } from '@tanstack/react-query'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
+import type { WorkspaceSvg } from 'blockly/core'
 import { ErrorBoundary } from '../../components/ErrorBoundary'
 import { Button, Empty, Guard, Panel, WindowTimer, inputClass, useConfirm } from '../../components/ui'
 import { ApiError, errorMessage, request } from '../../lib/api'
 import { newId } from '../../lib/ids'
+import { activeTour, isAutomated, subscribeTour, tourSettled } from '../../tour/tour'
 import { useTour } from '../../tour/useTour'
+import { TutorialCard } from '../blocks/TutorialCard'
+import { canvasEmpty, hasTutorial, readSession, readTutorialState, shouldAutoStartTutorial, writeSession, writeTutorialState, type TutorialSession } from '../blocks/tutorial'
 import { serverNow, windowRemaining } from '../../lib/clock'
 import { SubmissionDetail, Submitted, isChecked, type ClaimedTeam, type Round } from '../../lib/contract'
 import { useLive } from '../../lib/live'
@@ -283,7 +287,7 @@ function RoundWorkspace({ team, gameKey }: { team: ClaimedTeam; gameKey: string 
   const blocksGame = game.blocks
   const modulesAllowed = game.blocks && moves.length > 0
   const blocksMode = blocksGame && agent?.mode === 'blocks'
-  // The screen tour waits for the workspace to load
+  // The screen tour waits for the workspace to load; the blocks tutorial (part 2) waits for the tour
   useTour('workspace', agent !== null, { role: 'team', game: gameKey, mode: mapMode ? 'map' : blocksMode ? 'blocks' : 'code' })
   const endowment = round?.config.endowment ?? UNTIL_ROUND_ARRIVES.endowment
   const multiplier = round?.config.multiplier
@@ -514,6 +518,70 @@ function RoundWorkspace({ team, gameKey }: { team: ClaimedTeam; gameKey: string 
   const unused = (i: number) => !agent?.hand_code.includes(`${names[i]}(`)
   const fallen = team.status !== 'active'
   const windowOpen = round?.status === 'open'
+
+  // The guided blocks tutorial (frontend/docs/BLOCKS.md part 2), in Rounds 1 and 3 only. Its place is
+  // kept for this browser tab, so a reload resumes it.
+  const tutorialGame = hasTutorial(gameKey) ? gameKey : null
+  const [tutorial, setTutorial] = useState<TutorialSession | null>(() => (hasTutorial(gameKey) ? readSession(gameKey) : null))
+  // Re-checked when the screen tour starts or ends: the tutorial waits for it
+  const tourRunning = useSyncExternalStore(subscribeTour, activeTour)
+  const strategyNow = agent?.strategy_blocks
+  const [blocksWorkspace, setBlocksWorkspace] = useState<WorkspaceSvg | null>(null)
+  /** Start on the canvas as it is (empty), or on an empty strategy with the team's blocks kept to put back. */
+  const beginTutorial = useCallback(
+    (saved: Layout | null) => {
+      if (!tutorialGame) return
+      const session: TutorialSession = { read: [], saved, startVersion: newest?.version ?? 0 }
+      writeSession(tutorialGame, session)
+      setTutorial(session)
+      if (saved) {
+        setStrategy(newStrategy(gameKey, moves))
+        setStrategyKey(newId())
+      }
+    },
+    [tutorialGame, newest?.version, setStrategy, gameKey, moves],
+  )
+  const endTutorial = (state: 'done' | 'skipped', restore: boolean) => {
+    if (!tutorialGame) return
+    if (restore && tutorial?.saved) {
+      setStrategy(tutorial.saved)
+      setStrategyKey(newId())
+    }
+    writeTutorialState(tutorialGame, state)
+    writeSession(tutorialGame, null)
+    setTutorial(null)
+  }
+  /** The Guided tutorial button: over existing work it asks first, and keeps the team's blocks. */
+  function replayTutorial() {
+    if (!strategyNow || canvasEmpty(strategyNow)) return beginTutorial(null)
+    const saved = strategyNow
+    ask({
+      title: 'Guided tutorial',
+      body: 'The tutorial starts on an empty strategy. Your blocks are kept, and you can put them back at the end.',
+      confirmLabel: 'Start tutorial',
+      run: () => beginTutorial(saved),
+    })
+  }
+  const readTutorialStep = (stepId: string) => {
+    if (!tutorialGame || !tutorial || tutorial.read.includes(stepId)) return
+    const next = { ...tutorial, read: [...tutorial.read, stepId] }
+    writeSession(tutorialGame, next)
+    setTutorial(next)
+  }
+  useEffect(() => {
+    if (!tutorialGame || tutorial || agent === null) return
+    const start = shouldAutoStartTutorial({
+      game: gameKey,
+      blocksMode,
+      fallen,
+      canvasEmpty: canvasEmpty(strategyNow),
+      stored: readTutorialState(tutorialGame),
+      automated: isAutomated(),
+      tourSettled: tourRunning === null && tourSettled('workspace', { role: 'team', game: gameKey, mode: blocksMode ? 'blocks' : 'code' }),
+    })
+    if (start) beginTutorial(null)
+  }, [tutorialGame, tutorial, agent, gameKey, blocksMode, fallen, strategyNow, tourRunning, beginTutorial])
+  const tutorialShown = !!tutorialGame && !!tutorial && blocksMode && !fallen && !!strategyNow
   const problems = blockProblems + (noStrategy ? 1 : 0)
   // In map mode the troop placement is what gets sent; otherwise the editor's code, as before
   const outgoing = mapMode ? mapAgent : agent
@@ -664,7 +732,17 @@ function RoundWorkspace({ team, gameKey }: { team: ClaimedTeam; gameKey: string 
                 {label}
               </button>
             ))}
-            <span className="ml-auto flex items-center px-4 text-[11px] text-muted">Whichever is open is what you submit</span>
+            {tutorialGame && blocksMode && !fallen && (
+              <button
+                type="button"
+                onClick={replayTutorial}
+                disabled={!!tutorial}
+                className="ml-auto cursor-pointer px-4 py-2.5 text-xs font-bold tracking-widest text-amber uppercase transition-colors hover:text-paper disabled:cursor-default disabled:text-steel-light"
+              >
+                Guided tutorial
+              </button>
+            )}
+            <span className={`${tutorialGame && blocksMode && !fallen ? '' : 'ml-auto '}flex items-center px-4 text-[11px] text-muted`}>Whichever is open is what you submit</span>
           </div>
         )}
         {mapMode ? (
@@ -712,7 +790,7 @@ function RoundWorkspace({ team, gameKey }: { team: ClaimedTeam; gameKey: string 
                         </div>
                       )}
                     >
-                      <BlockEditor key={strategyKey} layout={agent.strategy_blocks} onChange={setStrategy} maxBlocks={blockLimit} moves={moves} game={gameKey} endowment={endowment} />
+                      <BlockEditor key={strategyKey} layout={agent.strategy_blocks} onChange={setStrategy} maxBlocks={blockLimit} moves={moves} game={gameKey} endowment={endowment} onWorkspace={setBlocksWorkspace} />
                     </ErrorBoundary>
                   </div>
                   <div className="grid max-h-72 shrink-0 grid-cols-[1fr_minmax(0,16rem)] gap-4 overflow-y-auto border-t border-steel bg-ink/80 p-3">
@@ -743,6 +821,20 @@ function RoundWorkspace({ team, gameKey }: { team: ClaimedTeam; gameKey: string 
                       )}
                     </div>
                   </div>
+                  {tutorialShown && tutorialGame && tutorial && strategyNow && (
+                    <TutorialCard
+                      game={tutorialGame}
+                      layout={strategyNow}
+                      events={{ read: tutorial.read, submitted: (newest?.version ?? 0) > (tutorial.startVersion ?? 0), windowClosed: !windowOpen }}
+                      workspace={blocksWorkspace}
+                      canRestore={!!tutorial.saved}
+                      onRead={readTutorialStep}
+                      // Skip puts the team's own blocks back, if the tutorial replaced them
+                      onSkip={() => endTutorial('skipped', true)}
+                      onKeep={() => endTutorial('done', false)}
+                      onRestore={() => endTutorial('done', true)}
+                    />
+                  )}
                   {showExamples && (
                     <div role="region" aria-label="Start from this" className="absolute right-3 bottom-3 z-20 flex max-h-[70%] w-[min(30rem,calc(100%-1.5rem))] flex-col field-kit !bg-panel shadow-[0_8px_24px_rgb(0_0_0/0.6)]">
                       <div className="flex items-center justify-between border-b border-steel bg-steel/40 px-3 py-2">
