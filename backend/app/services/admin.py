@@ -18,7 +18,13 @@ from app.repositories import standings as standings_repository
 from app.repositories import submissions as submissions_repository
 from app.repositories import teams as teams_repository
 from app.repositories import users as users_repository
-from app.schemas.admin import AdminOverview, OverviewRound, OverviewSubmission, OverviewTeam
+from app.schemas.admin import (
+    AdminOverview,
+    OverviewRound,
+    OverviewSubmission,
+    OverviewTeam,
+    RunState,
+)
 
 
 async def get_overview_round(db: AsyncSession) -> RoundRow:
@@ -63,6 +69,17 @@ def build_submission(row: Any) -> OverviewSubmission:
     )
 
 
+def run_state_of(round_row: RoundRow) -> RunState | None:
+    """Whether a running round's matches are playing or its last run failed.
+
+    Worked out from the stored failure rather than stored itself, so the two can
+    never disagree. A round that is not running has no run, so both are null.
+    """
+    if round_row.status != "running":
+        return None
+    return "failed" if round_row.run_error is not None else "playing"
+
+
 async def get_overview(db: AsyncSession) -> AdminOverview:
     """Return the GET /admin/overview body."""
     round_row = await get_overview_round(db)
@@ -81,6 +98,10 @@ async def get_overview(db: AsyncSession) -> AdminOverview:
             opens_at=round_row.opens_at,
             closes_at=round_row.closes_at,
             cut=round_row.cut,
+            run_state=run_state_of(round_row),
+            # Only shown while running. A stale error on a round that has moved
+            # on cannot normally exist, but this keeps the two fields consistent.
+            run_error=round_row.run_error if round_row.status == "running" else None,
         ),
         teams=[
             OverviewTeam(

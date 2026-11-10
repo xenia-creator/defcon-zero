@@ -1,5 +1,5 @@
 /**
- * What the server sends, exactly as written in docs/api.md (v5.5). Every answer is
+ * What the server sends, exactly as written in docs/api.md (v5.6). Every answer is
  * checked against these before use, so a change on the server gives a clear message
  * instead of a broken screen. Keep this file, mock/server.mjs and docs/api.md in step:
  * change one, align the others. Never add a field the contract does not have.
@@ -16,10 +16,13 @@ export const TEAM_STATUSES = ['active', 'eliminated', 'disqualified'] as const
 export const ROUND_STATUSES = ['waiting', 'open', 'running', 'review', 'published'] as const
 export const GAMES = ['prisoners_dilemma', 'theatre_of_war', 'foreign_aid'] as const satisfies readonly GameKey[]
 export const SUBMISSION_STATUSES = ['pending', 'running', 'accepted', 'rejected'] as const
+/** v5.6: a running round's background run: still playing its matches, or failed and waiting for Retry. */
+export const RUN_STATES = ['playing', 'failed'] as const
 
 export type Role = (typeof ROLES)[number]
 export type TeamStatus = (typeof TEAM_STATUSES)[number]
 export type RoundStatus = (typeof ROUND_STATUSES)[number]
+export type RunState = (typeof RUN_STATES)[number]
 export type SubmissionStatus = (typeof SUBMISSION_STATUSES)[number]
 
 /** Section 1, error codes. Branch on these, never on the message. */
@@ -278,6 +281,10 @@ export const AdminOverview = z.object({
     closes_at: z.string().nullable(),
     /** v5.5: the round's config.cut, how many teams it keeps at publish. */
     cut: z.number().int().positive(),
+    /** v5.6: while running, whether the matches are playing or the run failed. Null in every other status. */
+    run_state: z.enum(RUN_STATES).nullable(),
+    /** v5.6: why the run failed, at most 200 characters. Set only when run_state is failed. Shown as text, never branched on. */
+    run_error: z.string().nullable(),
   }),
   /** Every claimed team, sorted by username. */
   teams: z.array(

@@ -102,6 +102,19 @@ async def test_reset_puts_the_starting_cuts_back(
     assert await run_sql("SELECT cut FROM rounds ORDER BY number") == [(15,), (8,), (2,)]
 
 
+async def test_reset_clears_a_failed_run(client, claimed_team, organiser, round_ids):
+    """A failure from the dry run must not show on the console in the real event."""
+    await play_dry_run(client, claimed_team, organiser, round_ids)
+    await run_sql(
+        "UPDATE rounds SET status = 'running', run_error = 'engine down' WHERE id = :id",
+        id=round_ids[2],
+    )
+
+    await reset_script.run()
+
+    assert await run_sql("SELECT run_error FROM rounds") == [(None,), (None,), (None,)]
+
+
 async def test_delete_team_accounts_also_deletes_team_logins_only(
     client, claimed_team, organiser, round_ids, capsys
 ):

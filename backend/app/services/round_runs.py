@@ -10,6 +10,11 @@ the end. A crash before that leaves no matches stored and the round still
 running, so an organiser can call POST /admin/rounds/{id}/retry, and a server
 restart resumes it, with nothing half-saved to clean up first.
 
+A crash also stores a short reason in rounds.run_error, and every run clears it
+as it begins. GET /admin/overview shows it as run_state and run_error, so the
+console can tell "matches still playing" from "the run failed, press Retry"
+without the round's status changing (docs/api.md section 7, v5.6).
+
 ASSUMES ONE SERVER PROCESS, like submission checks (see app/main.py).
 """
 
@@ -48,6 +53,18 @@ CHECK_POLL_SECONDS = 1.0
 # enough because the server is one process. It is what stops two runs of the
 # same round at once, for example after two quick retries.
 RUNS_IN_PROGRESS: set[int] = set()
+
+# The longest reason stored in rounds.run_error. Long enough for an exception's
+# type and a line of its message, short enough to read on the console at a glance.
+RUN_ERROR_MAX_LENGTH = 200
+
+
+class ChecksDidNotFinish(TimeoutError):
+    """The run gave up waiting for submission checks in its round.
+
+    Its own class, rather than a plain TimeoutError, so describe_failure can name
+    this case exactly without catching some other timeout by mistake.
+    """
 
 
 class RoundPlan(NamedTuple):
@@ -100,7 +117,7 @@ async def wait_for_checks(round_id: int) -> None:
             if not await submissions_repository.has_unfinished_in_round(db, round_id):
                 return
         if time.monotonic() > deadline:
-            raise TimeoutError(f"Checks in round {round_id} did not finish in time.")
+            raise ChecksDidNotFinish(f"Checks in round {round_id} did not finish in time.")
         await asyncio.sleep(CHECK_POLL_SECONDS)
 
 
@@ -195,22 +212,76 @@ async def play_round(round_id: int) -> None:
     await save_results(round_id, result, standings)
 
 
+def describe_failure(error: Exception) -> str:
+    """Turn a run's exception into the short reason organisers see.
+
+    Only organisers see it, so naming the exception is fine and helps them tell
+    the organiser on call what broke. It is cut to RUN_ERROR_MAX_LENGTH so one
+    huge engine message cannot flood the console.
+    """
+    if isinstance(error, ChecksDidNotFinish):
+        return "Bot checks did not finish in time."
+    detail = type(error).__name__
+    if str(error):
+        detail = f"{detail}: {error}"
+    reason = f"The match run crashed ({detail})"
+    if len(reason) > RUN_ERROR_MAX_LENGTH:
+        reason = reason[: RUN_ERROR_MAX_LENGTH - 1] + "…"
+    return reason
+
+
+async def mark_playing(round_id: int) -> None:
+    """Clear the round's last failure, as this run is about to play it.
+
+    Every run does this, whether started by start, retry or a resume at server
+    startup, so a round that failed before a restart shows as playing again while
+    the restart replays it.
+    """
+    async with SessionLocal() as db:
+        await rounds_repository.clear_run_error(db, round_id)
+        await db.commit()
+
+
+async def record_failure(round_id: int, error: Exception) -> None:
+    """Store why the run failed. Logs, rather than raises, a failure to store it.
+
+    If the database itself is what failed, this cannot write either. The round
+    then shows as playing, the state it was in before, and the log has the cause.
+    """
+    try:
+        async with SessionLocal() as db:
+            await rounds_repository.set_run_error_if_running(
+                db, round_id, describe_failure(error)
+            )
+            await db.commit()
+    except Exception:
+        logger.exception("Could not record the failed run of round %s", round_id)
+
+
 async def run_round(round_id: int) -> None:
     """Run a round in the background. Never raises an Exception.
 
     A background task has no caller to report to, so any failure is logged and
-    the round stays running, ready to retry. The check for a run in progress and
-    the add to the set have no await between them, so no other task can run in
-    between: in asyncio, tasks only switch at an await.
+    stored on the round, which stays running, ready to retry. The check for a run
+    in progress and the add to the set have no await between them, so no other
+    task can run in between: in asyncio, tasks only switch at an await.
+
+    The failure is stored before the round leaves RUNS_IN_PROGRESS, not after.
+    retry answers 409 while the round is in the set, so no retry can clear the
+    error and start a new run before this one has finished writing it. In the
+    other order, a quick retry could start playing and then this late write
+    would show the new run as failed.
     """
     if is_in_progress(round_id):
         logger.info("Round %s is already being run", round_id)
         return
     RUNS_IN_PROGRESS.add(round_id)
     try:
+        await mark_playing(round_id)
         await play_round(round_id)
-    except Exception:
+    except Exception as error:
         logger.exception("Run crashed for round %s; it stays running", round_id)
+        await record_failure(round_id, error)
     finally:
         RUNS_IN_PROGRESS.discard(round_id)
 

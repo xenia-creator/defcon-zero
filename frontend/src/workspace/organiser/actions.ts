@@ -5,7 +5,7 @@
  *
  *   waiting    Open (minutes)
  *   open       Extend (minutes), Set time left (minutes), Start
- *   running    Retry
+ *   running    nothing while the matches play; Retry once the run has failed (v5.6 run_state)
  *   review     Publish
  *   published  Open the next round, or "Tournament complete" after the last one
  *
@@ -13,7 +13,7 @@
  * change in any status until the round is published, except on the final round.
  */
 import { errorMessage, hasCode } from '../../lib/api'
-import { MAX_WINDOW_MINUTES, MIN_WINDOW_MINUTES, type RoundStatus } from '../../lib/contract'
+import { MAX_WINDOW_MINUTES, MIN_WINDOW_MINUTES, type RoundStatus, type RunState } from '../../lib/contract'
 
 /** Minutes the inputs start at. */
 export const DEFAULT_OPEN_MINUTES = 45
@@ -36,8 +36,11 @@ export type RoundAction =
 
 export type RoundActionKind = RoundAction['kind']
 
-/** The round as the console knows it: only what decides the actions. */
-type RoundState = { number: number; status: RoundStatus }
+/**
+ * The round as the console knows it: only what decides the actions. run_state (v5.6, from the
+ * overview) is only read while running; leaving it out counts as playing.
+ */
+type RoundState = { number: number; status: RoundStatus; run_state?: RunState | null }
 
 /** The actions this round allows, in the order they're shown. No round, no actions. */
 export function allowedActions(round: RoundState | null | undefined): RoundAction[] {
@@ -48,7 +51,9 @@ export function allowedActions(round: RoundState | null | undefined): RoundActio
     case 'open':
       return [{ kind: 'extend', defaultMinutes: DEFAULT_EXTEND_MINUTES }, { kind: 'set-time', defaultMinutes: DEFAULT_SET_TIME_MINUTES }, { kind: 'start' }]
     case 'running':
-      return [{ kind: 'retry' }]
+      // Retry only after a failed run: while the matches play the server answers it with a 409, and
+      // replaying from the start would only throw away progress. Anything but 'failed' is playing.
+      return isRunFailed(round) ? [{ kind: 'retry' }] : []
     case 'review':
       return [{ kind: 'publish' }]
     case 'published':
@@ -57,6 +62,12 @@ export function allowedActions(round: RoundState | null | undefined): RoundActio
       return []
   }
 }
+
+/** v5.6: the round is running but its last run failed, so it waits for Retry. */
+export const isRunFailed = (round: RoundState | null | undefined): boolean => !!round && round.status === 'running' && round.run_state === 'failed'
+
+/** v5.6: the round is running and its matches are being played: wait, it moves to review by itself. */
+export const isRunPlaying = (round: RoundState | null | undefined): boolean => !!round && round.status === 'running' && !isRunFailed(round)
 
 /** The last round has been published: nothing is left to run. */
 export const isTournamentComplete = (round: RoundState | null | undefined): boolean =>

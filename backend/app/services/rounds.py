@@ -185,14 +185,19 @@ async def start_round(db: AsyncSession, round_id: int) -> Round:
     row.status = "running"
     row.closes_at = now
     row.seed = round_runs.new_seed()
+    # A fresh round has no failure, but a round reset by hand could carry one.
+    row.run_error = None
     await db.commit()
     return build_round(row, now)
 
 
 async def retry_round(db: AsyncSession, round_id: int) -> Round:
-    """Accept a retry of a running round whose run crashed. Changes nothing itself.
+    """Accept a retry of a running round whose run crashed, and clear its failure.
 
-    The router starts the run again once this returns. The lock makes a retry
+    The router starts the run again once this returns. The failure is cleared
+    here, in this commit, and not only when the run begins: the run starts after
+    the response is sent, and the console refetches the overview straight after
+    a retry, so it must already see the round as playing. The lock makes a retry
     that arrives as the run finishes wait, and then see review and get a 409.
 
     A round being run right now also gets a 409. That check is the polite answer
@@ -207,9 +212,10 @@ async def retry_round(db: AsyncSession, round_id: int) -> Round:
             "This round's matches are still being played.",
             409,
         )
-    # Nothing changed, but the transaction must still end here to release the
-    # lock. FastAPI runs background tasks before it closes the request's session,
-    # so a lock left open would make the run's own save wait on it forever.
+    row.run_error = None
+    # The commit also releases the lock. FastAPI runs background tasks before it
+    # closes the request's session, so a lock left open would make the run's own
+    # save wait on it forever.
     await db.commit()
     return build_round(row, datetime.now(UTC))
 

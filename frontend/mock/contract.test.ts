@@ -161,17 +161,28 @@ describe('the mock follows docs/api.md', () => {
     expect(errorCode(await act('1/publish'))).toBe('INVALID_ROUND_TRANSITION')
     expect(shaped(Round, (await act('1/extend', { minutes: 5 })).json).status).toBe('open')
 
+    // v5.6: the overview's run_state and run_error, through playing, failed, retry and review
+    const runOf = async () => {
+      const { status, run_state, run_error } = shaped(AdminOverview, (await call('GET', '/admin/overview', { token: admin })).json).round
+      return { status, run_state, run_error }
+    }
+    expect(await runOf()).toEqual({ status: 'open', run_state: null, run_error: null })
+
     await control('failrun')
     expect(shaped(Round, (await act('1/start')).json).status).toBe('running')
+    expect(await runOf()).toEqual({ status: 'running', run_state: 'playing', run_error: null })
     expect(errorCode(await act('1/retry'))).toBe('INVALID_ROUND_TRANSITION') // still playing
     await wait(1800)
     expect(shaped(Round, (await call('GET', '/rounds/current')).json).status).toBe('running') // the run failed
+    expect(await runOf()).toEqual({ status: 'running', run_state: 'failed', run_error: 'The match run crashed (RuntimeError: engine down)' })
     await act('1/retry')
+    expect(await runOf()).toEqual({ status: 'running', run_state: 'playing', run_error: null }) // retry clears it straight away
     await until(async () => (await call('GET', '/rounds/current')).json.status === 'review')
 
     // Review: organisers see scores, the public board still shows nothing published
     const overview = shaped(AdminOverview, (await call('GET', '/admin/overview', { token: admin })).json)
     expect(overview.round.status).toBe('review')
+    expect([overview.round.run_state, overview.round.run_error]).toEqual([null, null])
     expect(overview.teams.length).toBe(8)
     expect(overview.unclaimed).toEqual(['demo09', 'demo10', 'team1', 'team2'])
     expect(overview.teams.every((t) => t.score > 0 && t.submission?.status === 'accepted')).toBe(true)

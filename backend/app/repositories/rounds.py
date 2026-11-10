@@ -2,7 +2,7 @@
 
 from typing import Any
 
-from sqlalchemy import exists, select
+from sqlalchemy import exists, select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -132,6 +132,25 @@ async def list_running_ids(db: AsyncSession) -> list[int]:
         select(Round.id).where(Round.status == "running").order_by(Round.number)
     )
     return list(result.scalars())
+
+
+async def set_run_error_if_running(db: AsyncSession, round_id: int, message: str) -> None:
+    """Record why a round's run failed, but only if the round is still running.
+
+    The status test is in the UPDATE itself, so it is checked by Postgres at the
+    moment of writing. A round that something else already moved on, such as a
+    reset back to waiting, is left alone rather than given a stale error.
+    """
+    await db.execute(
+        update(Round)
+        .where(Round.id == round_id, Round.status == "running")
+        .values(run_error=message)
+    )
+
+
+async def clear_run_error(db: AsyncSession, round_id: int) -> None:
+    """Forget a round's last run failure, as a new run is about to play it."""
+    await db.execute(update(Round).where(Round.id == round_id).values(run_error=None))
 
 
 async def get_latest_started_round_for_share(db: AsyncSession) -> Round | None:

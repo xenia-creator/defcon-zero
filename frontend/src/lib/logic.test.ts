@@ -171,7 +171,7 @@ describe('reading the contract', () => {
 
   it('reads the admin overview example from docs/api.md', () => {
     const overview = AdminOverview.parse({
-      round: { id: 1, number: 1, game: 'prisoners_dilemma', status: 'review', opens_at: '2026-11-12T10:00:00Z', closes_at: '2026-11-12T10:45:00Z', cut: 15 },
+      round: { id: 1, number: 1, game: 'prisoners_dilemma', status: 'review', opens_at: '2026-11-12T10:00:00Z', closes_at: '2026-11-12T10:45:00Z', cut: 15, run_state: null, run_error: null },
       teams: [
         {
           team_id: 7, username: 'team_kremlin', nation_name: 'Red Dawn', territory_code: 'RU', status: 'active', is_bot: false,
@@ -182,6 +182,15 @@ describe('reading the contract', () => {
       server_time: '2026-11-12T10:50:03Z',
     })
     expect([overview.teams[0].submission?.passed, overview.unclaimed, overview.round.cut]).toEqual([7, ['team_nautilus'], 15])
+  })
+
+  it('v5.6: the overview round needs run_state and run_error, and run_state is playing, failed or null', () => {
+    const round = { id: 1, number: 1, game: 'prisoners_dilemma', status: 'running', opens_at: '2026-11-12T10:00:00Z', closes_at: '2026-11-12T10:45:00Z', cut: 15 }
+    const body = (extra: object) => ({ round: { ...round, ...extra }, teams: [], unclaimed: [], server_time: '2026-11-12T10:50:03Z' })
+    expect(AdminOverview.parse(body({ run_state: 'failed', run_error: 'Bot checks did not finish in time.' })).round.run_error).toBe('Bot checks did not finish in time.')
+    expect(AdminOverview.parse(body({ run_state: 'playing', run_error: null })).round.run_state).toBe('playing')
+    expect(AdminOverview.safeParse(body({})).success).toBe(false)
+    expect(AdminOverview.safeParse(body({ run_state: 'crashed', run_error: null })).success).toBe(false)
   })
 
   it('an unknown game gets a working editor with no blocks', () => {

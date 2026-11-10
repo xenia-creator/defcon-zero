@@ -13,6 +13,8 @@ import {
   checkMinutes,
   cutErrorMessage,
   isCutEditable,
+  isRunFailed,
+  isRunPlaying,
   isTournamentComplete,
   nextRound,
 } from './actions'
@@ -35,8 +37,21 @@ describe('allowedActions follows the contract table', () => {
     expect(DEFAULT_SET_TIME_MINUTES).toBe(10)
   })
 
-  it('running: Retry only', () => {
-    expect(kinds(2, 'running')).toEqual(['retry'])
+  it('running and playing: no actions, nothing to press while the matches play', () => {
+    expect(allowedActions({ number: 2, status: 'running', run_state: 'playing' })).toEqual([])
+  })
+
+  it('running and failed: Retry only', () => {
+    expect(allowedActions({ number: 2, status: 'running', run_state: 'failed' })).toEqual([{ kind: 'retry' }])
+  })
+
+  it('running with no run_state counts as playing, so Retry never shows without a failure', () => {
+    expect(kinds(2, 'running')).toEqual([])
+    expect(allowedActions({ number: 2, status: 'running', run_state: null })).toEqual([])
+  })
+
+  it('run_state is ignored outside running', () => {
+    expect(allowedActions({ number: 2, status: 'review', run_state: 'failed' })).toEqual([{ kind: 'publish' }])
   })
 
   it('review: Publish only', () => {
@@ -209,5 +224,21 @@ describe('checkMinutes', () => {
   it('explains the range when it rejects', () => {
     const result = checkMinutes('0')
     expect(result).toEqual({ ok: false, message: 'Enter a whole number of minutes from 1 to 240.' })
+  })
+})
+
+describe('v5.6 run state while running', () => {
+  it('failed only when running with run_state failed', () => {
+    expect(isRunFailed({ number: 1, status: 'running', run_state: 'failed' })).toBe(true)
+    expect(isRunFailed({ number: 1, status: 'running', run_state: 'playing' })).toBe(false)
+    expect(isRunFailed({ number: 1, status: 'review', run_state: 'failed' })).toBe(false)
+    expect(isRunFailed(null)).toBe(false)
+  })
+
+  it('playing whenever running and not failed', () => {
+    expect(isRunPlaying({ number: 1, status: 'running', run_state: 'playing' })).toBe(true)
+    expect(isRunPlaying({ number: 1, status: 'running', run_state: null })).toBe(true)
+    expect(isRunPlaying({ number: 1, status: 'running', run_state: 'failed' })).toBe(false)
+    for (const status of ROUND_STATUSES.filter((s) => s !== 'running')) expect(isRunPlaying({ number: 1, status })).toBe(false)
   })
 })
