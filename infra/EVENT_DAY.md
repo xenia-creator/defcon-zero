@@ -93,14 +93,56 @@ docker compose --env-file infra/.env.docker -f infra/compose.yaml build frontend
 
 Do not commit the actual LAN IP or `.env.docker`.
 
+## 8. Configure Windows Firewall and WSL networking
 
-## 8. Start the application
+### Windows Firewall
+
+On the Windows event server, open PowerShell as Administrator.
+
+Set the trusted Wi-Fi network profile to Private:
+
+```powershell
+Get-NetConnectionProfile
+Set-NetConnectionProfile -InterfaceIndex <WIFI_INTERFACE_INDEX> -NetworkCategory Private
+```
+
+Allow inbound connections to the backend and frontend:
+
+```powershell
+New-NetFirewallRule -DisplayName "DEFCON backend" -Direction Inbound -Protocol TCP -LocalPort 8002 -Action Allow -Profile Private
+
+New-NetFirewallRule -DisplayName "DEFCON frontend" -Direction Inbound -Protocol TCP -LocalPort 5173 -Action Allow -Profile Private
+```
+
+Replace `<WIFI_INTERFACE_INDEX>` with the Wi-Fi interface index shown by `Get-NetConnectionProfile`.
+
+### WSL networking
+
+If Docker Engine runs inside WSL, configure mirrored networking in `%UserProfile%\.wslconfig` (for example, `C:\Users\YourUser\.wslconfig`):
+
+```ini
+[wsl2]
+networkingMode=mirrored
+```
+
+Save the file, then run in PowerShell:
+
+```powershell
+wsl --shutdown
+```
+
+Reopen WSL and restart Docker services.
+
+**Docker Desktop users can skip the WSL mirrored networking setup.**
+
+
+## 9. Start the application
 
 ```bash
 docker compose --env-file infra/.env.docker -f infra/compose.yaml up -d backend frontend
 ```
 
-## 9. Verify service health
+## 10. Verify service health
 
 ```bash
 docker compose --env-file infra/.env.docker -f infra/compose.yaml ps
@@ -110,7 +152,7 @@ curl --fail --head http://127.0.0.1:5173/
 
 Confirm both services are healthy and test organiser login before announcing readiness.
 
-## 10. Safety rules
+## 11. Safety rules
 
 - Never commit environment files, account CSV files, passwords, or backups.
 - Keep PostgreSQL port 5432 private.
