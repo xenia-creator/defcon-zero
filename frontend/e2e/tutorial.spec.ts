@@ -217,3 +217,107 @@ test('a deleted block sends the tutorial back to its step, with Back re-showing 
   await loadCanvas(page, 'prisoners_dilemma', pd())
   await expectStep(page, 2, 'Add a decision')
 })
+
+// ---- the movable card ----
+const handle = (page: Page) => page.getByTestId('tutorial-card-handle')
+const cardBox = async (page: Page) => (await card(page).boundingBox())!
+/** The card's container: the canvas with its Python strip. */
+const canvasBox = async (page: Page) => (await card(page).locator('xpath=..').boundingBox())!
+const expectInside = async (page: Page) => {
+  const [c, a] = [await cardBox(page), await canvasBox(page)]
+  expect(c.x).toBeGreaterThanOrEqual(a.x - 1)
+  expect(c.y).toBeGreaterThanOrEqual(a.y - 1)
+  expect(c.x + c.width).toBeLessThanOrEqual(a.x + a.width + 1)
+  expect(c.y + c.height).toBeLessThanOrEqual(a.y + a.height + 1)
+}
+const expectDocked = async (page: Page) => {
+  const [c, a] = [await cardBox(page), await canvasBox(page)]
+  expect(Math.abs(a.x + a.width - (c.x + c.width) - 12)).toBeLessThanOrEqual(1)
+  expect(Math.abs(c.y - a.y - 12)).toBeLessThanOrEqual(1)
+}
+/** Drags the card by its title line, away from the header's buttons. */
+async function dragCard(page: Page, dx: number, dy: number) {
+  const h = (await handle(page).boundingBox())!
+  const from = { x: h.x + 30, y: h.y + h.height - 8 }
+  await page.mouse.move(from.x, from.y)
+  await page.mouse.down()
+  await page.mouse.move(from.x + dx, from.y + dy, { steps: 12 })
+  await page.mouse.up()
+}
+/** Where the canvas is scrolled and where the strategy block sits: a drag on the card must change neither. */
+const canvasState = (page: Page) =>
+  Promise.all([page.locator('.blocklyBlockCanvas').first().getAttribute('transform'), page.locator('.blocklyBlockCanvas > g').first().getAttribute('transform')])
+
+test('the card drags by its header, stays inside the canvas, still works after, and Dock puts it back', async ({ page }) => {
+  await blocksWorkspace(page)
+  await guided(page).click()
+  await expectStep(page, 1, 'Meet your strategy')
+  await expectDocked(page)
+  const before = await cardBox(page)
+  const canvasBefore = await canvasState(page)
+
+  await dragCard(page, -400, 120)
+  const after = await cardBox(page)
+  expect(after.x).toBeLessThan(before.x - 350)
+  expect(after.y).toBeGreaterThan(before.y + 80)
+  await expectInside(page)
+  // Blockly never saw the drag: the canvas didn't pan and no block moved
+  expect(await canvasState(page)).toEqual(canvasBefore)
+
+  // Dragged far past the corner, it stops at the canvas's edge
+  await dragCard(page, -3000, 3000)
+  await expectInside(page)
+  const corner = [await cardBox(page), await canvasBox(page)]
+  expect(Math.abs(corner[0].x - corner[1].x)).toBeLessThanOrEqual(1)
+  expect(Math.abs(corner[0].y + corner[0].height - (corner[1].y + corner[1].height))).toBeLessThanOrEqual(1)
+
+  // Its buttons still click, and it stays where it was put, also after a reload in this tab
+  const moved = await cardBox(page)
+  await card(page).getByRole('button', { name: 'Next' }).click()
+  await expectStep(page, 2, 'Add a decision')
+  expect((await cardBox(page)).x).toBeCloseTo(moved.x, 0)
+  await page.reload()
+  await expectStep(page, 2, 'Add a decision')
+  expect((await cardBox(page)).x).toBeCloseTo(moved.x, 0)
+
+  await card(page).getByRole('button', { name: 'Dock' }).click()
+  await expectDocked(page)
+  await expect(card(page).getByRole('button', { name: 'Dock' })).toHaveCount(0)
+})
+
+test('Minimise folds the card to its header, the header moves by keyboard, and a new tutorial starts docked', async ({ page }) => {
+  await blocksWorkspace(page)
+  await guided(page).click()
+  await expectStep(page, 1, 'Meet your strategy')
+
+  const full = await cardBox(page)
+  await card(page).getByRole('button', { name: 'Minimise' }).click()
+  await expect(card(page).getByRole('button', { name: 'Skip tutorial' })).toHaveCount(0)
+  await expect(card(page)).toContainText('Step 1 of 7')
+  expect((await cardBox(page)).height).toBeLessThan(full.height / 2)
+  await card(page).getByRole('button', { name: 'Expand' }).click()
+  await expect(card(page).getByRole('button', { name: 'Skip tutorial' })).toBeVisible()
+
+  // Arrow keys move it 16px with the header focused; Home docks it
+  await handle(page).focus()
+  await page.keyboard.press('ArrowLeft')
+  await page.keyboard.press('ArrowLeft')
+  await page.keyboard.press('ArrowDown')
+  const nudged = await cardBox(page)
+  expect(Math.round(full.x - nudged.x)).toBe(32)
+  expect(Math.round(nudged.y - full.y)).toBe(16)
+  await page.keyboard.press('Home')
+  await expectDocked(page)
+
+  // Moved, then ended: the next tutorial starts docked and expanded
+  await dragCard(page, -300, 60)
+  await card(page).getByRole('button', { name: 'Minimise' }).click()
+  await card(page).getByRole('button', { name: 'Expand' }).focus()
+  await page.keyboard.press('Escape')
+  await expect(card(page)).toHaveCount(0)
+  expect(await stored(page, 'prisoners_dilemma')).toBe('skipped')
+  await guided(page).click()
+  await expectStep(page, 1, 'Meet your strategy')
+  await expectDocked(page)
+  await expect(card(page).getByRole('button', { name: 'Skip tutorial' })).toBeVisible()
+})
