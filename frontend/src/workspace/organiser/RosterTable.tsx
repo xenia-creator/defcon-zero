@@ -48,12 +48,12 @@ const NATION_CLASS: Record<TeamStatus, string> = {
   disqualified: 'line-through decoration-type-red decoration-2',
 }
 
-/** A typed line on the sheet, as on the login form: mono for what is typed, the placeholder typed. */
-const PAPER_FIELD =
+/** A typed line on the sheet, as on the login form: mono for what is typed, the placeholder typed. Also the order sheet's cut field. */
+export const PAPER_FIELD =
   'paper-input !bg-transparent !px-0 !font-data placeholder:font-label focus:!border-type-ink focus:!shadow-[0_2px_0_0_var(--color-type-ink)]'
 
-/** Row buttons, restyled for paper: small and outlined, Disqualify in type-red, Restore in ink. */
-const ROW_BUTTON = '!px-4 !py-1 !font-label !text-xs !font-normal tracking-[0.16em] !bg-transparent'
+/** Row buttons, restyled for paper: small and outlined, Disqualify in type-red, Restore in ink. Also the cut's Save. */
+export const ROW_BUTTON = '!px-4 !py-1 !font-label !text-xs !font-normal tracking-[0.16em] !bg-transparent'
 const PAPER_ROW_ACTION: Record<RowAction, string> = {
   disqualify: '!border-type-red !text-type-red hover:!bg-type-red/10',
   restore: '!border-type-ink !text-type-ink hover:!bg-type-ink/10',

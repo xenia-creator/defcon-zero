@@ -518,6 +518,30 @@ test.describe('the timer', () => {
     await expect(page.getByRole('button', { name: 'Submissions closed' })).toBeDisabled()
   })
 
+  test('follows the organisers setting the time left: shorter, with the deadline alert, then longer', async ({ page }) => {
+    /** The organiser's real action, through the mock's contract route (v5.5), not a /__mock control. */
+    const setTime = async (minutes: number) => {
+      const login = await page.request.post('http://localhost:8022/auth/login', { data: { username: 'admin', password: 'demo' } })
+      const token = (await login.json()).access_token
+      const answer = await page.request.post('http://localhost:8022/admin/rounds/1/set-time', { data: { minutes }, headers: { Authorization: `Bearer ${token}` } })
+      expect(answer.status()).toBe(200)
+    }
+    const time = page.getByTestId('timer').locator('p').first()
+    await readyWorkspace(page)
+    await expect(time).toHaveText(/^(29:\d\d|30:00)$/)
+
+    await setTime(2)
+    await expect(time).toHaveText(/^(01:\d\d|02:00)$/)
+    // Cut past the 5 minute mark in one go: that alert, and not the 1 minute one yet
+    await expect(page.getByText('5 minutes left')).toBeVisible()
+    await expect(page.getByText('1 minute left')).toHaveCount(0)
+    await expect(submitButton(page)).toBeEnabled()
+
+    await setTime(90)
+    await expect(time).toHaveText(/^(1:29:\d\d|1:30:00)$/)
+    await expect(submitButton(page)).toBeEnabled()
+  })
+
   test('uses server time when this laptop’s clock is wrong', async ({ page }) => {
     await page.addInitScript(() => {
       const skew = 3 * 3600 * 1000

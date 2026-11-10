@@ -70,7 +70,7 @@ describe('stored session', () => {
 describe('reading the contract', () => {
   const round = {
     id: 1, number: 1, game: 'prisoners_dilemma', status: 'open', opens_at: '2026-11-12T10:00:00Z', closes_at: '2026-11-12T10:45:00Z',
-    config: { moves: ['C', 'D'], max_modules: 3, block_limit: 40, rounds_per_match: 200, repetitions: 5 },
+    config: { moves: ['C', 'D'], max_modules: 3, block_limit: 40, rounds_per_match: 200, repetitions: 5, cut: 15 },
     server_time: '2026-11-12T10:12:03Z',
   }
 
@@ -78,6 +78,7 @@ describe('reading the contract', () => {
     const parsed = Round.parse(round)
     expect(parsed.game).toBe('prisoners_dilemma')
     expect(parsed.config.block_limit).toBe(40)
+    expect(parsed.config.cut).toBe(15)
     expect((parsed.closesAt! - parsed.serverTime!) / 1000).toBe(32 * 60 + 57)
   })
 
@@ -92,6 +93,12 @@ describe('reading the contract', () => {
     expect(Round.safeParse({ ...round, game: 'chess' }).success).toBe(false)
     expect(Round.safeParse({ ...round, config: { ...round.config, moves: undefined } }).success).toBe(false)
     expect(Round.safeParse({ ...round, game: undefined }).success).toBe(false)
+  })
+
+  it('v5.5: every round carries its cut, a whole number of at least 1', () => {
+    expect(Round.safeParse({ ...round, config: { ...round.config, cut: undefined } }).success).toBe(false)
+    expect(Round.safeParse({ ...round, config: { ...round.config, cut: 0 } }).success).toBe(false)
+    expect(Round.safeParse({ ...round, config: { ...round.config, cut: 2.5 } }).success).toBe(false)
   })
 
   it('reads rounds 2 and 3, which have no moves and their own limits', () => {
@@ -164,7 +171,7 @@ describe('reading the contract', () => {
 
   it('reads the admin overview example from docs/api.md', () => {
     const overview = AdminOverview.parse({
-      round: { id: 1, number: 1, game: 'prisoners_dilemma', status: 'review', opens_at: '2026-11-12T10:00:00Z', closes_at: '2026-11-12T10:45:00Z' },
+      round: { id: 1, number: 1, game: 'prisoners_dilemma', status: 'review', opens_at: '2026-11-12T10:00:00Z', closes_at: '2026-11-12T10:45:00Z', cut: 15 },
       teams: [
         {
           team_id: 7, username: 'team_kremlin', nation_name: 'Red Dawn', territory_code: 'RU', status: 'active', is_bot: false,
@@ -174,7 +181,7 @@ describe('reading the contract', () => {
       unclaimed: ['team_nautilus'],
       server_time: '2026-11-12T10:50:03Z',
     })
-    expect([overview.teams[0].submission?.passed, overview.unclaimed]).toEqual([7, ['team_nautilus']])
+    expect([overview.teams[0].submission?.passed, overview.unclaimed, overview.round.cut]).toEqual([7, ['team_nautilus'], 15])
   })
 
   it('an unknown game gets a working editor with no blocks', () => {
@@ -238,7 +245,7 @@ describe('layouts', () => {
 })
 
 describe('rounds 2 and 3 in the editor', () => {
-  const config = { moves: [], max_modules: 3, block_limit: 40, rounds_per_match: 200, repetitions: 5 }
+  const config = { moves: [], max_modules: 3, block_limit: 40, rounds_per_match: 200, repetitions: 5, cut: 8 }
 
   it('take their limits from the round config, not from fixed numbers', () => {
     const war = gameInfo('theatre_of_war', { ...config, troops: 60, regions: 3 })

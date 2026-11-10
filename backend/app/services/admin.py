@@ -80,6 +80,7 @@ async def get_overview(db: AsyncSession) -> AdminOverview:
             status=round_row.status,
             opens_at=round_row.opens_at,
             closes_at=round_row.closes_at,
+            cut=round_row.cut,
         ),
         teams=[
             OverviewTeam(

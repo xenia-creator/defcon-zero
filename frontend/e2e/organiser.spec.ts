@@ -51,10 +51,11 @@ async function publishRound(page: Page, n: number, cut: number) {
 }
 
 test.describe('round actions', () => {
-  test('an open round offers Extend and Start only, and no mock controls in a build', async ({ page }) => {
+  test('an open round offers Extend, Set time left and Start only, and no mock controls in a build', async ({ page }) => {
     await openConsole(page)
     await expect(timer(page)).toHaveText(/^(29:\d\d|30:00)$/)
     await expect(page.getByRole('button', { name: 'Extend window' })).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Set time left' })).toBeVisible()
     await expect(page.getByRole('button', { name: 'Close Window · Start Matches' })).toBeVisible()
     await expect(consoleButtons(page, /Re-open|Open Round|Publish|Retry/)).toHaveCount(0)
     await expect(page.getByText('Mock demo')).toHaveCount(0)
@@ -186,6 +187,159 @@ test.describe('errors, by code', () => {
     await expect(page.getByRole('button', { name: 'Close Window · Start Matches' })).toBeDisabled()
     await expect(page.getByRole('button', { name: 'Extend window' })).toBeEnabled({ timeout: 5_000 })
     expect(sent).toBe(1)
+  })
+})
+
+test.describe('set time left (v5.5)', () => {
+  const field = (page: Page) => page.getByLabel('Or end the window this many minutes from now')
+  const setTime = async (page: Page, minutes: string) => {
+    await field(page).fill(minutes)
+    await page.getByRole('button', { name: 'Set time left' }).click()
+    await expect(dialog(page)).toContainText(`Set Round 1 to end ${minutes} minutes from now?`)
+  }
+
+  test('checks its minutes like Extend, 10 by default', async ({ page }) => {
+    await openConsole(page)
+    await expect(field(page)).toHaveValue('10')
+    for (const bad of ['0', '241', '4.5', '']) {
+      await field(page).fill(bad)
+      await expect(page.getByText('Enter a whole number of minutes from 1 to 240.')).toBeVisible()
+      await expect(page.getByRole('button', { name: 'Set time left' })).toBeDisabled()
+    }
+  })
+
+  test('shortens and lengthens the window after a confirm, and Cancel changes nothing', async ({ page }) => {
+    await openConsole(page)
+    await expect(timer(page)).toHaveText(/^(29:\d\d|30:00)$/)
+
+    await setTime(page, '5')
+    await dialog(page).getByRole('button', { name: 'Cancel' }).click()
+    await expect(dialog(page)).toHaveCount(0)
+    await expect(timer(page)).toHaveText(/^(29:\d\d|30:00)$/)
+
+    await setTime(page, '5')
+    await expect(dialog(page)).toContainText('it can shorten the window as well as lengthen it')
+    await dialog(page).getByRole('button', { name: 'Set time left' }).click()
+    await expect(timer(page)).toHaveText(/^(04:\d\d|05:00)$/)
+    await expect(toasts(page)).toContainText('Round 1 now ends 5 minutes from now')
+
+    await setTime(page, '90')
+    await dialog(page).getByRole('button', { name: 'Set time left' }).click()
+    await expect(timer(page)).toHaveText(/^(1:29:\d\d|1:30:00)$/)
+  })
+
+  test('gives real time back after the deadline has passed', async ({ page }) => {
+    await openConsole(page)
+    await mock(page, 'round', { closes_in: -60 })
+    await expect(timer(page)).toHaveText('00:00')
+    await setTime(page, '3')
+    await dialog(page).getByRole('button', { name: 'Set time left' }).click()
+    await expect(timer(page)).toHaveText(/^(02:\d\d|03:00)$/)
+  })
+
+  test('errors by code: the round moved on, or the server message', async ({ page }) => {
+    await openConsole(page)
+    await page.route('**/admin/rounds/1/set-time', (r) => r.fulfill(apiError(409, 'INVALID_ROUND_TRANSITION', 'Round 1 is running, not open.')))
+    await setTime(page, '5')
+    await dialog(page).getByRole('button', { name: 'Set time left' }).click()
+    await expect(page.getByTestId('round-error')).toHaveText("That action isn't allowed right now, the round may have changed.")
+    await page.unroute('**/admin/rounds/1/set-time')
+    await page.route('**/admin/rounds/1/set-time', (r) => r.fulfill(apiError(400, 'VALIDATION_ERROR', 'minutes must be a whole number from 1 to 240.')))
+    await setTime(page, '5')
+    await dialog(page).getByRole('button', { name: 'Set time left' }).click()
+    await expect(page.getByTestId('round-error')).toHaveText('minutes must be a whole number from 1 to 240.')
+  })
+
+  test('is not offered once the round has started', async ({ page }) => {
+    await openConsole(page)
+    await startRound(page, 1)
+    await expect(page.getByText('Matches playing…')).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Set time left' })).toHaveCount(0)
+  })
+})
+
+test.describe('the cut (v5.5)', () => {
+  const cutField = (page: Page, n = 1) => page.getByLabel(`Round ${n} cut`)
+  const saveButton = (page: Page) => page.locator('[data-tour="ops-order"]').getByRole('button', { name: 'Save' })
+  const setCut = async (page: Page, n: number, cut: string) => {
+    await cutField(page, n).fill(cut)
+    await saveButton(page).click()
+    await expect(dialog(page)).toContainText(`Set Round ${n}'s cut to ${cut}?`)
+    await expect(dialog(page)).toContainText(`When Round ${n} is published, the top ${cut} advance and everyone else is eliminated.`)
+  }
+
+  test('reads the round\'s cut, and Save stays off until it changes to a whole number', async ({ page }) => {
+    await openConsole(page)
+    await expect(cutField(page)).toHaveValue('15')
+    await expect(saveButton(page)).toBeDisabled()
+    for (const bad of ['0', '-1', '2.5', 'ten', '']) {
+      await cutField(page).fill(bad)
+      await expect(page.getByText('Enter a whole number of teams, at least 1.')).toBeVisible()
+      await expect(saveButton(page)).toBeDisabled()
+    }
+    await cutField(page).fill('15')
+    await expect(saveButton(page)).toBeDisabled()
+    await cutField(page).fill('12')
+    await expect(saveButton(page)).toBeEnabled()
+  })
+
+  test('saves after a confirm naming the new cut, and publish uses it', async ({ page }) => {
+    await openConsole(page)
+    await setCut(page, 1, '10')
+    await dialog(page).getByRole('button', { name: 'Cancel' }).click()
+    await expect(cutField(page)).toHaveValue('10') // the draft stays for another go
+    const before = await page.request.get('http://localhost:8022/rounds/current')
+    expect((await before.json()).config.cut).toBe(15)
+
+    await saveButton(page).click()
+    await dialog(page).getByRole('button', { name: 'Set cut to 10' }).click()
+    await expect(toasts(page)).toContainText('Round 1 now keeps the top 10')
+    await expect(saveButton(page)).toBeDisabled()
+    expect((await (await page.request.get('http://localhost:8022/rounds/current')).json()).config.cut).toBe(10)
+
+    await page.getByLabel('Add minutes to the window').fill('10')
+    await startRound(page, 1)
+    await publishRound(page, 1, 10)
+    // Published: the cut is read only now
+    await expect(page.getByTestId('cut-value')).toHaveText('Top 10 advance')
+    await expect(cutField(page)).toHaveCount(0)
+  })
+
+  test('a cut the neighbouring rounds do not allow shows the server message under the field', async ({ page }) => {
+    await openConsole(page)
+    await setCut(page, 1, '5')
+    await dialog(page).getByRole('button', { name: 'Set cut to 5' }).click()
+    await expect(page.getByTestId('cut-error')).toHaveText("Round 2 keeps 8 teams, so Round 1 must keep at least 8. Lower Round 2's cut first.")
+    await expect(toasts(page)).toContainText("Lower Round 2's cut first.")
+    // A good save clears it
+    await setCut(page, 1, '9')
+    await dialog(page).getByRole('button', { name: 'Set cut to 9' }).click()
+    await expect(page.getByTestId('cut-error')).toHaveCount(0)
+    await expect(cutField(page)).toHaveValue('9')
+  })
+
+  test('INVALID_ROUND_TRANSITION: the round was published meanwhile', async ({ page }) => {
+    await openConsole(page)
+    await page.route('**/admin/rounds/1', (r) =>
+      r.request().method() === 'PATCH' ? r.fulfill(apiError(409, 'INVALID_ROUND_TRANSITION', 'This round is published.')) : r.continue(),
+    )
+    await setCut(page, 1, '12')
+    await dialog(page).getByRole('button', { name: 'Set cut to 12' }).click()
+    await expect(page.getByTestId('cut-error')).toHaveText('This round has been published, so its cut has already been applied.')
+  })
+
+  test('round 2 can be edited too, while round 3 is fixed and read only', async ({ page }) => {
+    await openConsole(page)
+    await mock(page, 'goto', { index: 2 })
+    await expect(cutField(page, 2)).toHaveValue('8')
+    await setCut(page, 2, '4')
+    await dialog(page).getByRole('button', { name: 'Set cut to 4' }).click()
+    await expect(toasts(page)).toContainText('Round 2 now keeps the top 4')
+
+    await mock(page, 'goto', { index: 3 })
+    await expect(page.getByTestId('cut-value')).toHaveText('Top 2 advance · fixed')
+    await expect(page.locator('[data-tour="ops-order"]').getByRole('textbox')).toHaveCount(0)
+    await expect(saveButton(page)).toHaveCount(0)
   })
 })
 

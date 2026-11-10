@@ -75,7 +75,7 @@ async def test_before_the_event_it_shows_round_1_and_every_team(
     assert list(overview) == ["round", "teams", "unclaimed", "server_time"]
     assert overview["round"] == {
         "id": round_ids[1], "number": 1, "game": "prisoners_dilemma",
-        "status": "waiting", "opens_at": None, "closes_at": None,
+        "status": "waiting", "opens_at": None, "closes_at": None, "cut": 15,
     }
     # Sorted by username, so the list does not jump around between polls.
     assert [team["username"] for team in overview["teams"]] == ["team_a", "team_b"]
@@ -120,6 +120,19 @@ async def test_round_is_the_current_round(
         round_ids[2], 2, "theatre_of_war", "open"
     )
     assert round_["opens_at"] is not None and round_["closes_at"] is not None
+
+
+async def test_round_shows_the_stored_cut(
+    client: httpx.AsyncClient,
+    organiser: dict[str, str],
+    round_ids: dict[int, int],
+) -> None:
+    edited = await client.patch(
+        f"/admin/rounds/{round_ids[1]}", json={"cut": 11}, headers=organiser
+    )
+    assert edited.status_code == 200
+
+    assert (await get_overview(client, organiser))["round"]["cut"] == 11
 
 
 # --- submission ---

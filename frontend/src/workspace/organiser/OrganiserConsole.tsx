@@ -13,20 +13,23 @@ import { ROUNDS, gameName, roundByGame } from '../../lib/rounds'
 import {
   DEFAULT_EXTEND_MINUTES,
   DEFAULT_OPEN_MINUTES,
+  DEFAULT_SET_TIME_MINUTES,
   UNREACHABLE,
   actionErrorMessage,
   allowedActions,
+  checkCut,
   checkMinutes,
-  cutFor,
+  cutErrorMessage,
+  isCutEditable,
   isTournamentComplete,
   nextRound,
   type RoundActionKind,
 } from './actions'
 import './OrganiserConsole.css'
-import { Roster, UnclaimedPanel } from './RosterTable'
+import { PAPER_FIELD, ROW_BUTTON, Roster, UnclaimedPanel } from './RosterTable'
 import { formatTime } from './roster'
 
-const ROUND_ACTION_KINDS: readonly string[] = ['open', 'extend', 'start', 'retry', 'publish', 'open-next'] satisfies RoundActionKind[]
+const ROUND_ACTION_KINDS: readonly string[] = ['open', 'extend', 'set-time', 'start', 'retry', 'publish', 'open-next'] satisfies RoundActionKind[]
 const isRoundAction = (key: string): key is RoundActionKind => ROUND_ACTION_KINDS.includes(key)
 
 /** A date from the server as milliseconds, or null when missing or unreadable. */
@@ -48,6 +51,9 @@ export function OrganiserConsole() {
   const [roundError, setRoundError] = useState<string | null>(null)
   const [openMinutes, setOpenMinutes] = useState(String(DEFAULT_OPEN_MINUTES))
   const [extendMinutes, setExtendMinutes] = useState(String(DEFAULT_EXTEND_MINUTES))
+  const [setTimeMinutes, setSetTimeMinutes] = useState(String(DEFAULT_SET_TIME_MINUTES))
+  /** The last failed cut save, shown under the cut on the order sheet until a save works or the round moves on. */
+  const [cutError, setCutError] = useState<string | null>(null)
 
   // One source for the timer and the buttons: the overview, and its server_time for the clock
   const { data: overview, dataUpdatedAt, isPending, isError, refetch } = useAdminOverview()
@@ -66,18 +72,21 @@ export function OrganiserConsole() {
   const rounds = useRounds()
   const next = round && can('open-next') ? nextRound(rounds.data, round) : undefined
 
-  // A new round or status starts both fields from their defaults again
+  // A new round or status starts every field from its default again, and drops a stale cut error
   useEffect(() => {
     setOpenMinutes(String(DEFAULT_OPEN_MINUTES))
     setExtendMinutes(String(DEFAULT_EXTEND_MINUTES))
+    setSetTimeMinutes(String(DEFAULT_SET_TIME_MINUTES))
+    setCutError(null)
   }, [round?.id, round?.status])
 
   /**
    * Runs one action at a time, then refetches everything it can change, whether it worked or not:
    * after INVALID_ROUND_TRANSITION the screen catches up with the round as it is now.
-   * `key` is a round action's kind (its errors are explained by code) or any other label.
+   * `key` is a round action's kind (its errors are explained by code) or any other label, and
+   * `explain` turns another action's error into words, by code too.
    */
-  async function run(key: RoundActionKind | string, done: string, action: () => Promise<unknown>) {
+  async function run(key: RoundActionKind | string, done: string, action: () => Promise<unknown>, explain?: (err: unknown) => string) {
     // A second click before the re-render must not send the request twice
     if (inFlight.current) return
     inFlight.current = true
@@ -87,7 +96,7 @@ export function OrganiserConsole() {
       toast('good', done)
       if (isRoundAction(key)) setRoundError(null)
     } catch (err) {
-      const message = isRoundAction(key) ? actionErrorMessage(key, err) : errorMessage(err, UNREACHABLE)
+      const message = isRoundAction(key) ? actionErrorMessage(key, err) : explain ? explain(err) : errorMessage(err, UNREACHABLE)
       toast('bad', message)
       if (isRoundAction(key)) setRoundError(message)
     } finally {
@@ -99,6 +108,31 @@ export function OrganiserConsole() {
 
   const openCheck = checkMinutes(openMinutes)
   const extendCheck = checkMinutes(extendMinutes)
+  const setTimeCheck = checkMinutes(setTimeMinutes)
+
+  /** Saves a new cut for this round, after a confirm that names it. A failure stays under the field. */
+  function saveCut(target: { id: number; number: number }, cut: number) {
+    ask({
+      title: `Set Round ${target.number}'s cut to ${cut}?`,
+      body: `When Round ${target.number} is published, the top ${cut} advance and everyone else is eliminated.`,
+      confirmLabel: `Set cut to ${cut}`,
+      run: () =>
+        void run(
+          'cut',
+          `Round ${target.number} now keeps the top ${cut}`,
+          async () => {
+            try {
+              await admin.setCut(target.id, cut)
+              setCutError(null)
+            } catch (err) {
+              setCutError(cutErrorMessage(err))
+              throw err
+            }
+          },
+          cutErrorMessage,
+        ),
+    })
+  }
 
   const teams = overview?.teams ?? []
   const readyCount = teams.filter((t) => t.submission?.status === 'accepted').length
@@ -120,7 +154,6 @@ export function OrganiserConsole() {
     )
   }
 
-  const cut = round ? cutFor(round.number) : undefined
   const theatre = round ? roundByGame(round.game) : undefined
   /** The window as typed times (this browser's clock face, the server's timestamps). */
   const windowOpened = round?.opens_at ? formatTime(round.opens_at) : null
@@ -170,15 +203,21 @@ export function OrganiserConsole() {
             <div className="ops-field">
               <dt className={FIELD_LABEL}>The cut</dt>
               <dd className="font-label text-lg">
-                {cut === undefined ? (
-                  'Top teams advance'
+                {isCutEditable(round) ? (
+                  <CutField round={round} disabled={!!busy} busy={busy === 'cut'} onSave={(cut) => saveCut(round, cut)} />
                 ) : (
-                  <>
-                    Top <span className="font-data font-bold">{cut}</span> advance
-                  </>
+                  <span data-testid="cut-value">
+                    Top <span className="font-data font-bold">{round.cut}</span> advance
+                    {round.status !== 'published' && <span className="text-sm text-type-muted"> · fixed</span>}
+                  </span>
                 )}
               </dd>
             </div>
+            {cutError && (
+              <p role="alert" data-testid="cut-error" className="-mt-2 text-right font-label text-sm text-type-red">
+                {cutError}
+              </p>
+            )}
             <div className="ops-field">
               <dt className={FIELD_LABEL}>Window</dt>
               <dd className="font-data text-lg">
@@ -283,6 +322,28 @@ export function OrganiserConsole() {
             />
           )}
 
+          {round && can('set-time') && (
+            <MinutesAction
+              label="Set time left"
+              hint="Or end the window this many minutes from now"
+              value={setTimeMinutes}
+              onChange={setSetTimeMinutes}
+              error={setTimeCheck.ok ? null : setTimeCheck.message}
+              disabled={!!busy || !setTimeCheck.ok}
+              busy={busy === 'set-time'}
+              onRun={() => {
+                if (!setTimeCheck.ok) return
+                const minutes = setTimeCheck.minutes
+                ask({
+                  title: `Set Round ${round.number} to end ${minutes} minutes from now?`,
+                  body: 'This replaces the current deadline, so it can shorten the window as well as lengthen it. Teams see the new time straight away.',
+                  confirmLabel: 'Set time left',
+                  run: () => void run('set-time', `Round ${round.number} now ends ${minutes} minutes from now`, () => admin.setTime(round.id, minutes)),
+                })
+              }}
+            />
+          )}
+
           {round && can('start') && (
             <div className="flex flex-col gap-2 border-t border-steel pt-6">
               <p className={KIT_LABEL}>Stage Execution</p>
@@ -333,10 +394,9 @@ export function OrganiserConsole() {
                 className={`w-full ${KIT_PRIMARY}`}
                 disabled={!!busy}
                 onClick={() => {
-                  const cut = cutFor(round.number)
                   ask({
                     title: `Publish Round ${round.number}?`,
-                    body: `Results go public, the ${cut === undefined ? 'top teams' : `top ${cut}`} advance and everyone else is eliminated.`,
+                    body: `Results go public, the top ${round.cut} advance and everyone else is eliminated.`,
                     confirmLabel: `Publish Round ${round.number}`,
                     run: () => void run('publish', `Published Round ${round.number}`, () => admin.publish(round.id)),
                   })
@@ -423,7 +483,63 @@ const STATUS_STAMP: Record<RoundStatus, { text: string; ink: string }> = {
   published: { text: 'Published', ink: 'text-type-olive' },
 }
 
-/** A minutes field and its button, for Open and Extend. `primary` makes it the fire action (Open). */
+/**
+ * The cut on the order sheet, while it can still change: "Top [n] advance" with the number typed
+ * on the line, and Save. The draft starts from the saved cut, and starts again whenever the saved
+ * cut or the round changes (a poll brings in an edit made elsewhere). Save asks first (onSave).
+ */
+function CutField({
+  round,
+  disabled,
+  busy,
+  onSave,
+}: {
+  round: { id: number; number: number; status: RoundStatus; cut: number }
+  disabled: boolean
+  busy: boolean
+  onSave: (cut: number) => void
+}) {
+  const [draft, setDraft] = useState(String(round.cut))
+  useEffect(() => setDraft(String(round.cut)), [round.id, round.status, round.cut])
+  const check = checkCut(draft)
+  const unchanged = check.ok && check.cut === round.cut
+  const id = `cut-round-${round.number}`
+  return (
+    <form
+      className="flex flex-col items-end gap-1"
+      onSubmit={(e) => {
+        e.preventDefault()
+        if (check.ok && !unchanged && !disabled) onSave(check.cut)
+      }}
+    >
+      {/* Wraps on a narrow sheet, so Save never runs off the paper */}
+      <div className="flex flex-wrap items-baseline justify-end gap-2">
+        <label htmlFor={id}>Top</label>
+        <input
+          id={id}
+          inputMode="numeric"
+          aria-label={`Round ${round.number} cut`}
+          className={`${PAPER_FIELD} !w-14 text-center !text-lg font-bold`}
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          aria-invalid={!check.ok}
+          aria-describedby={check.ok ? undefined : `${id}-error`}
+        />
+        <span>advance</span>
+        <Button type="submit" variant="ghost" className={`${ROW_BUTTON} !border-type-ink !text-type-ink hover:!bg-type-ink/10`} disabled={disabled || !check.ok || unchanged}>
+          {busy ? 'Saving…' : 'Save'}
+        </Button>
+      </div>
+      {!check.ok && (
+        <p id={`${id}-error`} className="font-label text-sm text-type-red">
+          {check.message}
+        </p>
+      )}
+    </form>
+  )
+}
+
+/** A minutes field and its button, for Open, Extend and Set time left. `primary` makes it the fire action (Open). */
 function MinutesAction({
   label,
   hint,
