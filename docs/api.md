@@ -1,9 +1,10 @@
 # DEFCON Zero API Contract
 
-Status: draft v5.4. Changes in v5.4 are marked **[v5.4]**, changes in v5.3 are marked **[v5.3]**, changes in v5.2 are marked **[v5.2]**, changes in v5.1 are marked **[v5.1]**, and changes in v5 are marked **[v5]**. Older **[v4]** markers are from v4, and **[NEW]** and **[CHANGED]** markers are from v3.
+Status: draft v5.5. Changes in v5.5 are marked **[v5.5]**, changes in v5.4 are marked **[v5.4]**, changes in v5.3 are marked **[v5.3]**, changes in v5.2 are marked **[v5.2]**, changes in v5.1 are marked **[v5.1]**, and changes in v5 are marked **[v5]**. Older **[v4]** markers are from v4, and **[NEW]** and **[CHANGED]** markers are from v3.
 Owner: Sumedh (backend). Engine signatures owned by Shashwat.
 
 Changelog:
+- v5.5: Each round stores its own cut, shown as `config.cut` and as `cut` on `GET /admin/overview`'s round. `PATCH /admin/rounds/{id}` changes a round's cut until it is published, except the final round's, which is fixed at 2. `POST /admin/rounds/{id}/set-time` sets an open round to close a given number of minutes from now, so it can shorten the window as well as lengthen it. `publish` applies the round's stored cut.
 - v5.4: `POST /admin/rounds/{id}/extend` adds `minutes` to the later of `closes_at` and now, so extending a window that has already ended gives teams real time instead of leaving `closes_at` in the past.
 - v5.3: `GET /rounds/current` is public, like `GET /territories` and `GET /standings`. It never shows scores. `GET /rounds` still needs a token.
 - v5.2: `POST /admin/rounds/{id}/retry` added, to rerun a round's matches after a failed run. `start` now plays the matches in the background, and the round moves to `review` when they are stored. `GET /standings` only shows published results, and its ranking rules are written down in section 6. `GET /territories` and `GET /standings` are public. `publish` applies the cut (top 15, then 8, then 2). `PATCH /admin/teams/{id}` is real. Disqualifying a team before publish moves it to the bottom of its round, and restoring it in `review` gives back its place. `GET /admin/overview` added.
@@ -158,7 +159,8 @@ Response `200`:
     "max_modules": 3,
     "block_limit": 40,
     "rounds_per_match": 200,
-    "repetitions": 5
+    "repetitions": 5,
+    "cut": 15
   },
   "server_time": "2026-11-12T10:12:03Z"
 }
@@ -173,6 +175,7 @@ Response `200`:
   - `rounds_per_match`, `repetitions`: match settings, shown for information.
   - **[v5]** `troops`, `regions`: `theatre_of_war` only, and absent for other games. `troops` is 100 and `regions` is 5.
   - **[v5]** `endowment`, `multiplier`: `foreign_aid` only, and absent for other games. `endowment` is 10 and `multiplier` is 3.
+  - **[v5.5]** `cut`: every game. How many teams the round keeps when it is published. It starts at 15, 8 and 2 for rounds 1, 2 and 3, and organisers can change it with `PATCH /admin/rounds/{id}` until the round is published.
 - `status`: `waiting` → `open` → `running` → `review` → `published`.
 
 ### `GET /rounds`
@@ -191,9 +194,11 @@ Response `200`: a single Round object, or `404 NOT_FOUND` if no round has starte
 |---|---|---|
 | `POST /admin/rounds/{id}/open` | `waiting` | `{ "minutes": 45 }` **[v5]** |
 | `POST /admin/rounds/{id}/extend` | `open` | `{ "minutes": 10 }` |
+| `POST /admin/rounds/{id}/set-time` **[v5.5]** | `open` | `{ "minutes": 10 }` |
 | `POST /admin/rounds/{id}/start` | `open` | none |
 | `POST /admin/rounds/{id}/retry` **[v5.2]** | `running` | none |
 | `POST /admin/rounds/{id}/publish` | `review` | none |
+| `PATCH /admin/rounds/{id}` **[v5.5]** | any status except `published` | `{ "cut": 12 }` |
 
 All return the updated Round object. Invalid transitions return `409 INVALID_ROUND_TRANSITION`.
 
@@ -203,9 +208,18 @@ All return the updated Round object. Invalid transitions return `409 INVALID_ROU
 
 **[v5.2]** After `start`, the matches play in the background and the round stays `running` until every match is stored, then moves to `review` by itself. Poll `GET /rounds/current` to see it change. If the run fails, the round stays `running`, and `retry` plays the matches again from the beginning. `retry` returns `409 INVALID_ROUND_TRANSITION` if the round is not `running`, or if its matches are still being played.
 
-**[v5.2]** `publish` makes the round's results public on `GET /standings` and applies the cut in the same step. Round 1 keeps the teams ranked 1 to 15, round 2 the top 8 and round 3 the top 2. Every other `active` team becomes `eliminated`, including one that did not play the round. A `disqualified` team stays `disqualified`. After round 3 is published, its rank 1 is the winner and its rank 2 the runner-up, the only two teams still `active`.
+**[v5.5]** `set-time` sets `closes_at` to now plus `minutes` (server UTC), whatever `closes_at` was. So it can shorten the window as well as lengthen it, and after `closes_at` has passed it gives teams exactly `minutes` again. `opens_at` does not change. `minutes` must be 1 to 240, as for `open` and `extend`.
+
+**[v5.2]** `publish` makes the round's results public on `GET /standings` and applies the cut in the same step. Round 1 keeps the teams ranked 1 to 15, round 2 the top 8 and round 3 the top 2. **[v5.5]** These are the starting cuts: `publish` keeps the top `config.cut` teams, whatever the cut is when the round is published. Every other `active` team becomes `eliminated`, including one that did not play the round. A `disqualified` team stays `disqualified`. After round 3 is published, its rank 1 is the winner and its rank 2 the runner-up, the only two teams still `active`.
 
 **[v5]** `minutes` must be 1 to 240, otherwise `400 VALIDATION_ERROR`.
+
+**[v5.5]** `PATCH /admin/rounds/{id}` sets the round's cut and returns the updated Round object. Rules, all `400 VALIDATION_ERROR` unless stated:
+- `cut` must be a whole number, at least 1.
+- It must be no larger than the previous round's cut, and no smaller than the next round's cut unless that round is `published`. The message says which round to change first.
+- The final round's cut is fixed at 2, so its rank 1 is always the winner and its rank 2 the runner-up. Any `PATCH` of round 3 is refused.
+- A `published` round is refused with `409 INVALID_ROUND_TRANSITION`: its cut has already been applied.
+- `404 NOT_FOUND` if the round does not exist.
 
 **[v5]** Rounds go in order: a round can only open if every lower-numbered round is `published`, otherwise `409 INVALID_ROUND_TRANSITION`. So only one round is ever `open` or `running`.
 
@@ -372,7 +386,8 @@ Response `200`:
     "game": "prisoners_dilemma",
     "status": "review",
     "opens_at": "2026-11-12T10:00:00Z",
-    "closes_at": "2026-11-12T10:45:00Z"
+    "closes_at": "2026-11-12T10:45:00Z",
+    "cut": 15
   },
   "teams": [
     {
@@ -397,7 +412,7 @@ Response `200`:
 }
 ```
 
-- `round`: the current round, the same one as `GET /rounds/current`. Before any round has started, it is the first round, so the console works before the event. `404 NOT_FOUND` only if no rounds exist yet.
+- `round`: the current round, the same one as `GET /rounds/current`. **[v5.5]** `cut` is the round's `config.cut`, the one setting of `config` the overview carries. Before any round has started, it is the first round, so the console works before the event. `404 NOT_FOUND` only if no rounds exist yet.
 - `teams`: every team that has claimed a territory, sorted by `username`. `team_id` is always set. `nation_name` and `territory_code` are typed nullable, but are always set for a listed team.
 - `is_bot`: always `false`.
 - `submission`: the team's latest submission in `round`, whatever its status, or `null` if it has none.

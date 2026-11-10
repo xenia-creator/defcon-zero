@@ -10,7 +10,10 @@ from app.schemas.teams import TeamStatus
 
 
 class OverviewRound(BaseModel):
-    """The round the console is showing. A cut-down Round object: no config."""
+    """The round the console is showing. A cut-down Round object: no config.
+
+    cut is the one setting it does carry, as the console shows and edits it.
+    """
 
     id: int
     number: int
@@ -18,6 +21,7 @@ class OverviewRound(BaseModel):
     status: RoundStatus
     opens_at: AwareDatetime | None
     closes_at: AwareDatetime | None
+    cut: int
 
 
 class OverviewSubmission(BaseModel):

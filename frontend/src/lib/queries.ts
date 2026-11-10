@@ -168,12 +168,17 @@ export const useAdminOverview = () =>
 
 /**
  * The organiser's actions (docs/api.md sections 4 and 7). Each returns the server's answer and
- * throws an ApiError, e.g. INVALID_ROUND_TRANSITION (409) or VALIDATION_ERROR (400, minutes outside 1 to 240).
+ * throws an ApiError, e.g. INVALID_ROUND_TRANSITION (409) or VALIDATION_ERROR (400, minutes outside 1 to 240, or a cut
+ * the neighbouring rounds don't allow).
  * Call refreshAfterAdmin afterwards so every screen catches up.
  */
 export const admin = {
   open: (roundId: number, minutes: number) => request('POST', `/admin/rounds/${roundId}/open`, Round, { minutes }),
   extend: (roundId: number, minutes: number) => request('POST', `/admin/rounds/${roundId}/extend`, Round, { minutes }),
+  /** v5.5: close the window `minutes` from now, shorter or longer than it was. */
+  setTime: (roundId: number, minutes: number) => request('POST', `/admin/rounds/${roundId}/set-time`, Round, { minutes }),
+  /** v5.5: how many teams the round keeps at publish. Refused once published (409) and for the final round (400). */
+  setCut: (roundId: number, cut: number) => request('PATCH', `/admin/rounds/${roundId}`, Round, { cut }),
   start: (roundId: number) => request('POST', `/admin/rounds/${roundId}/start`, Round),
   retry: (roundId: number) => request('POST', `/admin/rounds/${roundId}/retry`, Round),
   publish: (roundId: number) => request('POST', `/admin/rounds/${roundId}/publish`, Round),

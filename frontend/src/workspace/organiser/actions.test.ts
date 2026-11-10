@@ -6,11 +6,13 @@ import {
   actionErrorMessage,
   DEFAULT_EXTEND_MINUTES,
   DEFAULT_OPEN_MINUTES,
+  DEFAULT_SET_TIME_MINUTES,
   FINAL_ROUND_NUMBER,
-  TEAMS_KEPT_BY_ROUND_NUMBER,
   allowedActions,
+  checkCut,
   checkMinutes,
-  cutFor,
+  cutErrorMessage,
+  isCutEditable,
   isTournamentComplete,
   nextRound,
 } from './actions'
@@ -23,9 +25,14 @@ describe('allowedActions follows the contract table', () => {
     expect(DEFAULT_OPEN_MINUTES).toBe(45)
   })
 
-  it('open: Extend (10 minutes by default) and Start', () => {
-    expect(allowedActions({ number: 1, status: 'open' })).toEqual([{ kind: 'extend', defaultMinutes: 10 }, { kind: 'start' }])
+  it('open: Extend and Set time left (10 minutes each by default), and Start', () => {
+    expect(allowedActions({ number: 1, status: 'open' })).toEqual([
+      { kind: 'extend', defaultMinutes: 10 },
+      { kind: 'set-time', defaultMinutes: 10 },
+      { kind: 'start' },
+    ])
     expect(DEFAULT_EXTEND_MINUTES).toBe(10)
+    expect(DEFAULT_SET_TIME_MINUTES).toBe(10)
   })
 
   it('running: Retry only', () => {
@@ -58,7 +65,7 @@ describe('allowedActions follows the contract table', () => {
   it('never offers a transition the contract does not allow', () => {
     const allowed: Record<string, string[]> = {
       waiting: ['open'],
-      open: ['extend', 'start'],
+      open: ['extend', 'set-time', 'start'],
       running: ['retry'],
       review: ['publish'],
       published: ['open-next'],
@@ -79,17 +86,41 @@ describe('allowedActions follows the contract table', () => {
   })
 })
 
-describe('the cut', () => {
-  it('keeps 15, then 8, then 2 (TEAMS_KEPT_BY_ROUND_NUMBER in backend/app/core/rounds.py)', () => {
-    expect(TEAMS_KEPT_BY_ROUND_NUMBER).toEqual({ 1: 15, 2: 8, 3: 2 })
-    expect(cutFor(1)).toBe(15)
-    expect(cutFor(2)).toBe(8)
-    expect(cutFor(3)).toBe(2)
+describe('the cut (v5.5: read from the round, edited with PATCH /admin/rounds/{id})', () => {
+  it('can be edited in every status until the round is published', () => {
+    for (const number of [1, 2]) {
+      for (const status of ROUND_STATUSES) expect(isCutEditable({ number, status })).toBe(status !== 'published')
+    }
   })
 
-  it('has no cut for a round the contract does not have', () => {
-    expect(cutFor(0)).toBeUndefined()
-    expect(cutFor(4)).toBeUndefined()
+  it('is never editable on the final round, which is fixed at 2', () => {
+    for (const status of ROUND_STATUSES) expect(isCutEditable({ number: FINAL_ROUND_NUMBER, status })).toBe(false)
+  })
+
+  it('is not editable with no round', () => {
+    expect(isCutEditable(null)).toBe(false)
+    expect(isCutEditable(undefined)).toBe(false)
+  })
+
+  it('checkCut accepts whole numbers of at least 1', () => {
+    expect(checkCut('1')).toEqual({ ok: true, cut: 1 })
+    expect(checkCut(' 12 ')).toEqual({ ok: true, cut: 12 })
+    expect(checkCut(15)).toEqual({ ok: true, cut: 15 })
+  })
+
+  it('checkCut rejects anything else, and explains why', () => {
+    for (const bad of ['0', '-1', '', ' ', 'ten', '2.5', '1e2', '+3', 0, 2.5, NaN]) expect(checkCut(bad).ok).toBe(false)
+    expect(checkCut('0')).toEqual({ ok: false, message: 'Enter a whole number of teams, at least 1.' })
+  })
+
+  it('cutErrorMessage branches on the code, never the message', () => {
+    expect(cutErrorMessage(new ApiError('INVALID_ROUND_TRANSITION', 'Round 1 is published.', 409))).toBe(
+      'This round has been published, so its cut has already been applied.',
+    )
+    const neighbour = "Round 1 keeps 15 teams, so Round 2 can keep at most 15. Raise Round 1's cut first."
+    expect(cutErrorMessage(new ApiError('VALIDATION_ERROR', neighbour, 400))).toBe(neighbour)
+    expect(cutErrorMessage(new ApiError('NOT_FOUND', 'INVALID_ROUND_TRANSITION', 404))).toBe('INVALID_ROUND_TRANSITION')
+    expect(cutErrorMessage(new TypeError('Failed to fetch'))).toBe(UNREACHABLE)
   })
 })
 
@@ -129,7 +160,7 @@ describe('actionErrorMessage branches on the code, never the message', () => {
   const transition = new ApiError('INVALID_ROUND_TRANSITION', 'Round 1 is open, not waiting.', 409)
 
   it('INVALID_ROUND_TRANSITION: the round may have changed', () => {
-    for (const kind of ['open', 'extend', 'start', 'publish', 'open-next'] as const) {
+    for (const kind of ['open', 'extend', 'set-time', 'start', 'publish', 'open-next'] as const) {
       expect(actionErrorMessage(kind, transition)).toBe("That action isn't allowed right now, the round may have changed.")
     }
   })

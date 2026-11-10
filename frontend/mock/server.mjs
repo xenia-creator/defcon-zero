@@ -1,5 +1,5 @@
 /**
- * A stand-in for the backend that follows docs/api.md v5.3 route for route, with the same
+ * A stand-in for the backend that follows docs/api.md v5.5 route for route, with the same
  * shapes, error codes and round transitions, so every screen can be built and tested
  * without the real server. It does not run bots: checks and match scores are made up
  * (deterministically). Not used at the event.
@@ -40,15 +40,15 @@ const SAMPLE_BOTS = {
   foreign_aid: ['always_send_10_return_half', 'always_send_0_return_0', 'tit_for_tat', 'random', 'adaptive_aid'],
 }
 
-/** As backend/app/core/rounds.py. */
+/** As backend/app/core/rounds.py. `cut` is each round's starting cut (v5.5): organisers can change it until publish. */
 const SHARED_LIMITS = { max_modules: 3, block_limit: 40, rounds_per_match: 200, repetitions: 5 }
 const ROUND_DEFINITIONS = [
-  { number: 1, game: 'prisoners_dilemma', config: { moves: ['C', 'D'], ...SHARED_LIMITS } },
-  { number: 2, game: 'theatre_of_war', config: { moves: [], ...SHARED_LIMITS, troops: 100, regions: 5 } },
-  { number: 3, game: 'foreign_aid', config: { moves: [], ...SHARED_LIMITS, endowment: 10, multiplier: 3 } },
+  { number: 1, game: 'prisoners_dilemma', config: { moves: ['C', 'D'], ...SHARED_LIMITS, cut: 15 } },
+  { number: 2, game: 'theatre_of_war', config: { moves: [], ...SHARED_LIMITS, troops: 100, regions: 5, cut: 8 } },
+  { number: 3, game: 'foreign_aid', config: { moves: [], ...SHARED_LIMITS, endowment: 10, multiplier: 3, cut: 2 } },
 ]
-/** How many teams each round keeps at publish: the cut. */
-const KEEP = { 1: 15, 2: 8, 3: 2 }
+/** The last round: its cut is fixed (its rank 1 wins, its rank 2 is runner-up). */
+const FINAL_ROUND_NUMBER = 3
 
 const DEFAULT_WINDOW_MINUTES = 30
 const MIN_MINUTES = 1
@@ -322,7 +322,7 @@ function startRun(round) {
 
 function publishRound(round) {
   round.status = 'published'
-  const keep = KEEP[round.number] ?? 0
+  const keep = round.config.cut
   const kept = new Set((db.results[round.id] ?? []).filter((r) => r.rank <= keep).map((r) => r.teamId))
   for (const team of claimedTeams()) if (team.status === 'active' && !kept.has(team.id)) team.status = 'eliminated'
 }
@@ -335,7 +335,7 @@ function rerankCurrent() {
 
 function roundAction(user, action, roundId, body) {
   if (user.role !== 'organiser') return error(403, 'FORBIDDEN', 'Organisers only.')
-  const needsMinutes = action === 'open' || action === 'extend'
+  const needsMinutes = action === 'open' || action === 'extend' || action === 'set-time'
   if (needsMinutes && (!isInt(body.minutes) || body.minutes < MIN_MINUTES || body.minutes > MAX_MINUTES)) {
     return error(400, 'VALIDATION_ERROR', `minutes must be a whole number from ${MIN_MINUTES} to ${MAX_MINUTES}.`)
   }
@@ -353,6 +353,11 @@ function roundAction(user, action, roundId, body) {
       // v5.4: add to the later of the deadline and now, so extending an ended window gives real time.
       round.closesAt = Math.max(round.closesAt, now()) + body.minutes * 60_000
       break
+    case 'set-time':
+      if (round.status !== 'open') return refuse(`Round ${round.number} is ${round.status}, not open.`)
+      // v5.5: now plus minutes, whatever the deadline was, so it can shorten the window too.
+      round.closesAt = now() + body.minutes * 60_000
+      break
     case 'start':
       if (round.status !== 'open') return refuse(`Round ${round.number} is ${round.status}, not open.`)
       round.status = 'running'
@@ -369,6 +374,41 @@ function roundAction(user, action, roundId, body) {
       publishRound(round)
       break
   }
+  return ok(roundOut(round))
+}
+
+/**
+ * PATCH /admin/rounds/{id} (v5.5): change a round's cut until it is published. The rules and their
+ * order follow the backend: 403, 400 (not a whole number of at least 1), 404, 409 (published),
+ * then 400 for the final round and for a cut above the previous round's or below the next one's.
+ */
+function setCut(user, roundId, body) {
+  if (user.role !== 'organiser') return error(403, 'FORBIDDEN', 'Organisers only.')
+  if (!isInt(body.cut) || body.cut < 1) return error(400, 'VALIDATION_ERROR', 'cut must be a whole number of at least 1.')
+  const round = roundById(roundId)
+  if (!round) return error(404, 'NOT_FOUND', 'This round does not exist.')
+  if (round.status === 'published') return error(409, 'INVALID_ROUND_TRANSITION', 'This round is published, so its cut has already been applied.')
+  const refuse = (why) => error(400, 'VALIDATION_ERROR', why)
+  if (round.number === FINAL_ROUND_NUMBER) return refuse(`The final round's cut is fixed at ${round.config.cut}.`)
+  const previous = db.rounds.find((r) => r.number === round.number - 1)
+  const next = db.rounds.find((r) => r.number === round.number + 1)
+  if (previous && body.cut > previous.config.cut) {
+    const limit = `so Round ${round.number} can keep at most ${previous.config.cut}`
+    return refuse(
+      previous.status === 'published'
+        ? `Round ${previous.number} kept ${previous.config.cut} teams, ${limit}.`
+        : `Round ${previous.number} keeps ${previous.config.cut} teams, ${limit}. Raise Round ${previous.number}'s cut first.`,
+    )
+  }
+  if (next && next.status !== 'published' && body.cut < next.config.cut) {
+    const limit = `so Round ${round.number} must keep at least ${next.config.cut}`
+    return refuse(
+      next.number === FINAL_ROUND_NUMBER
+        ? `The final round's cut is fixed at ${next.config.cut}, ${limit}.`
+        : `Round ${next.number} keeps ${next.config.cut} teams, ${limit}. Lower Round ${next.number}'s cut first.`,
+    )
+  }
+  round.config.cut = body.cut
   return ok(roundOut(round))
 }
 
@@ -425,7 +465,8 @@ function overview(user) {
     })
   const unclaimed = teamAccounts().filter((u) => u.team.id === null).map((u) => u.username).sort()
   const { config, server_time, ...roundFields } = roundOut(round)
-  return ok({ round: roundFields, teams, unclaimed, server_time: iso(now()) })
+  // v5.5: the overview's round carries the cut, the one setting of config it shows
+  return ok({ round: { ...roundFields, cut: config.cut }, teams, unclaimed, server_time: iso(now()) })
 }
 
 // ---------------------------------------------------------------------------
@@ -456,7 +497,8 @@ const ROUTES = [
     const visible = s && (user.role === 'organiser' || (user.team?.id !== null && s.teamId === user.team?.id))
     return visible ? ok(detail(s)) : error(404, 'NOT_FOUND', 'This submission does not exist.')
   }],
-  ['POST', /^\/admin\/rounds\/(\d+)\/(open|extend|start|retry|publish)$/, true, (user, m, body) => roundAction(user, m[2], Number(m[1]), body)],
+  ['POST', /^\/admin\/rounds\/(\d+)\/(open|extend|set-time|start|retry|publish)$/, true, (user, m, body) => roundAction(user, m[2], Number(m[1]), body)],
+  ['PATCH', /^\/admin\/rounds\/(\d+)$/, true, (user, m, body) => setCut(user, Number(m[1]), body)],
   ['PATCH', /^\/admin\/teams\/(\d+)$/, true, (user, m, body) => setTeamStatus(user, Number(m[1]), body)],
   ['GET', /^\/admin\/overview$/, true, (user) => overview(user)],
 ]
@@ -563,4 +605,4 @@ const server = createServer((req, res) => {
   })
 })
 
-server.listen(PORT, () => console.log(`Mock backend (docs/api.md v5.3) on http://localhost:${PORT}: team1, team2 or admin, password "${PASSWORD}"${DEMO ? `, demo teams on (${DEMO})` : ''}`))
+server.listen(PORT, () => console.log(`Mock backend (docs/api.md v5.5) on http://localhost:${PORT}: team1, team2 or admin, password "${PASSWORD}"${DEMO ? `, demo teams on (${DEMO})` : ''}`))

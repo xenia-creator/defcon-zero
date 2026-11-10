@@ -1,7 +1,7 @@
 """Business rule for wiping a dry run before the real event (scripts/reset_event.py).
 
 Everything the event produced goes: matches, standings, submissions and teams.
-Every round goes back to waiting. User accounts are kept by default, so teams
+Every round goes back to waiting, with its starting cut. User accounts are kept by default, so teams
 log in with the same usernames and passwords and claim a territory again. If the
 dry run used test accounts, team accounts can be deleted too, and organiser
 accounts are still kept, so the organisers can run the real event.
@@ -11,6 +11,7 @@ from dataclasses import dataclass
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.rounds import TEAMS_KEPT_BY_ROUND_NUMBER
 from app.repositories import event_reset as reset_repository
 
 
@@ -41,7 +42,8 @@ async def reset_event(db: AsyncSession, delete_team_accounts: bool = False) -> R
     submissions = await reset_repository.delete_all_submissions(db)
     await reset_repository.unlink_users_from_teams(db)
     teams = await reset_repository.delete_all_teams(db)
-    rounds = await reset_repository.reset_all_rounds(db)
+    # The cuts go back to their starting values, like everything else the event changed.
+    rounds = await reset_repository.reset_all_rounds(db, TEAMS_KEPT_BY_ROUND_NUMBER)
     team_accounts = 0
     if delete_team_accounts:
         team_accounts = await reset_repository.delete_team_accounts(db)

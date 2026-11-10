@@ -56,7 +56,7 @@ export const TOUR_STEPS: Record<TourScreen, TourStep[]> = {
   ],
   command: [
     { target: 'ops-order', text: "This round's orders: its game, window times and status, stamped as it moves along." },
-    { target: 'ops-controls', text: 'Round Control shows only the actions this round allows: open, extend, start, retry or publish.' },
+    { target: 'ops-controls', text: 'Round Control shows only the actions this round allows: open, extend or set the time left, start, retry or publish.' },
     { target: 'ops-timer', text: 'The window timer. Teams see the same countdown.' },
     { target: 'ops-roster', text: 'Every team and its latest submission. Check that most are accepted before you start the round.' },
     { target: 'ops-unclaimed', text: "Team accounts that haven't claimed a nation yet. Chase these before Round 1 opens." },

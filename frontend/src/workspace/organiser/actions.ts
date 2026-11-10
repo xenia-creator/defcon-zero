@@ -4,10 +4,13 @@
  * still has the final say and answers anything else with 409 INVALID_ROUND_TRANSITION.
  *
  *   waiting    Open (minutes)
- *   open       Extend (minutes), Start
+ *   open       Extend (minutes), Set time left (minutes), Start
  *   running    Retry
  *   review     Publish
  *   published  Open the next round, or "Tournament complete" after the last one
+ *
+ * The cut (v5.5) is edited on the order sheet rather than here: it is not a transition, and it can
+ * change in any status until the round is published, except on the final round.
  */
 import { errorMessage, hasCode } from '../../lib/api'
 import { MAX_WINDOW_MINUTES, MIN_WINDOW_MINUTES, type RoundStatus } from '../../lib/contract'
@@ -15,22 +18,16 @@ import { MAX_WINDOW_MINUTES, MIN_WINDOW_MINUTES, type RoundStatus } from '../../
 /** Minutes the inputs start at. */
 export const DEFAULT_OPEN_MINUTES = 45
 export const DEFAULT_EXTEND_MINUTES = 10
+export const DEFAULT_SET_TIME_MINUTES = 10
 
-/**
- * How many teams each round keeps at publish (docs/api.md section 4).
- * Must match TEAMS_KEPT_BY_ROUND_NUMBER in backend/app/core/rounds.py.
- */
-export const TEAMS_KEPT_BY_ROUND_NUMBER: Readonly<Record<number, number>> = { 1: 15, 2: 8, 3: 2 }
-
-/** The last round: publishing it ends the tournament. */
+/** The last round: publishing it ends the tournament, and its cut is fixed (its rank 1 wins, its rank 2 is runner-up). */
 export const FINAL_ROUND_NUMBER = 3
-
-/** The top N kept when this round is published, or undefined for a round number the contract doesn't have. */
-export const cutFor = (roundNumber: number): number | undefined => TEAMS_KEPT_BY_ROUND_NUMBER[roundNumber]
 
 export type RoundAction =
   | { kind: 'open'; defaultMinutes: number }
   | { kind: 'extend'; defaultMinutes: number }
+  /** v5.5: the window ends `minutes` from now, shorter or longer than it was. */
+  | { kind: 'set-time'; defaultMinutes: number }
   | { kind: 'start' }
   | { kind: 'retry' }
   | { kind: 'publish' }
@@ -49,7 +46,7 @@ export function allowedActions(round: RoundState | null | undefined): RoundActio
     case 'waiting':
       return [{ kind: 'open', defaultMinutes: DEFAULT_OPEN_MINUTES }]
     case 'open':
-      return [{ kind: 'extend', defaultMinutes: DEFAULT_EXTEND_MINUTES }, { kind: 'start' }]
+      return [{ kind: 'extend', defaultMinutes: DEFAULT_EXTEND_MINUTES }, { kind: 'set-time', defaultMinutes: DEFAULT_SET_TIME_MINUTES }, { kind: 'start' }]
     case 'running':
       return [{ kind: 'retry' }]
     case 'review':
@@ -91,7 +88,7 @@ export function actionErrorMessage(kind: RoundActionKind, err: unknown): string 
 export type MinutesCheck = { ok: true; minutes: number } | { ok: false; message: string }
 
 /**
- * Checks a minutes field before Open or Extend is sent: a whole number from 1 to 240.
+ * Checks a minutes field before Open, Extend or Set time left is sent: a whole number from 1 to 240.
  * The server checks it too (400 VALIDATION_ERROR); this only saves a round trip.
  */
 export function checkMinutes(input: string | number): MinutesCheck {
@@ -101,4 +98,35 @@ export function checkMinutes(input: string | number): MinutesCheck {
   const minutes = Number(text)
   if (minutes < MIN_WINDOW_MINUTES || minutes > MAX_WINDOW_MINUTES) return { ok: false, message }
   return { ok: true, minutes }
+}
+
+/**
+ * The cut can be changed until the round is published (409 after), and never on the final round,
+ * which is fixed at 2 (docs/api.md section 4, v5.5).
+ */
+export const isCutEditable = (round: RoundState | null | undefined): boolean =>
+  !!round && round.status !== 'published' && round.number < FINAL_ROUND_NUMBER
+
+export type CutCheck = { ok: true; cut: number } | { ok: false; message: string }
+
+/**
+ * Checks the cut field before it is saved: a whole number, at least 1. The limits set by the
+ * neighbouring rounds' cuts are the server's to check (400 VALIDATION_ERROR, naming the round to
+ * change first), as the console only knows the current round.
+ */
+export function checkCut(input: string | number): CutCheck {
+  const text = String(input).trim()
+  if (!/^\d+$/.test(text) || Number(text) < 1) return { ok: false, message: 'Enter a whole number of teams, at least 1.' }
+  return { ok: true, cut: Number(text) }
+}
+
+/**
+ * What to tell the organiser when saving the cut fails. Branches on the error code, never the message.
+ *   INVALID_ROUND_TRANSITION  the round was published meanwhile, so its cut is already applied
+ *   VALIDATION_ERROR          the server's message, which says which round to change first
+ *   anything else             the server's own message, or could not reach the server
+ */
+export function cutErrorMessage(err: unknown): string {
+  if (hasCode(err, 'INVALID_ROUND_TRANSITION')) return 'This round has been published, so its cut has already been applied.'
+  return errorMessage(err, UNREACHABLE)
 }
