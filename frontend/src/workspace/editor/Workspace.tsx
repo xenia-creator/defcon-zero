@@ -22,6 +22,7 @@ import { countBlocks, isStrategyFor, moduleName, newModule, newStrategy, type La
 import { History, LatestResult, agentFromDetail, submissionOf, toSubmission } from './SidePanels'
 import { MAX_BLOCKS_BYTES, MAX_CODE_LENGTH, blocksBytes, loadDraft, saveDraft, utf8Bytes, type Agent } from './drafts'
 import { DEFAULT_GAME, TOTAL_ROUNDS, UNTIL_ROUND_ARRIVES, gameInfo } from './games'
+import { splitHelpers } from './helperFold'
 import { TroopPlacement } from './TroopPlacement'
 import { allocationCode, allocationProblems, parseAllocation, regionNames } from './troops'
 import { moveOption } from '../../lib/rounds'
@@ -296,6 +297,7 @@ function RoundWorkspace({ team, gameKey }: { team: ClaimedTeam; gameKey: string 
     () => (blocksGame && agent?.strategy_blocks ? generateStrategy(agent.strategy_blocks, gameKey, strategyConfig) : null),
     [blocksGame, agent, gameKey, strategyConfig],
   )
+  const helperFold = useMemo(() => splitHelpers(strategy?.code ?? ''), [strategy])
 
   const generated = useMemo(() => generateModules(agent?.modules ?? [], moves), [agent, moves])
   // Exactly what Submit sends, for the size limits and the example check
@@ -808,9 +810,23 @@ function RoundWorkspace({ team, gameKey }: { team: ClaimedTeam; gameKey: string 
                           {problem}
                         </p>
                       ))}
-                      <pre data-testid="strategy-python" data-tour="python" className="mt-1 text-xs whitespace-pre-wrap text-coop/90">
-                        {strategy?.code ?? ''}
-                      </pre>
+                      {helperFold ? (
+                        // Display only: the helpers fold away so strategy() comes first. Submit sends the generated code, not this
+                        <div data-testid="strategy-python" data-tour="python" className="mt-1 text-xs text-coop/90">
+                          <details data-testid="helper-fold" className="group">
+                            <summary className="label !text-[10px] cursor-pointer list-none text-muted hover:text-paper focus-visible:text-paper">
+                              <span aria-hidden="true" className="mr-1.5 inline-block text-amber group-open:rotate-90">▸</span>
+                              Helper functions and settings
+                            </summary>
+                            <pre className="mt-1 whitespace-pre-wrap">{helperFold.helpers}</pre>
+                          </details>
+                          <pre className="mt-1 whitespace-pre-wrap">{helperFold.strategy}</pre>
+                        </div>
+                      ) : (
+                        <pre data-testid="strategy-python" data-tour="python" className="mt-1 text-xs whitespace-pre-wrap text-coop/90">
+                          {strategy?.code ?? ''}
+                        </pre>
+                      )}
                     </div>
                     <div className="relative flex flex-col items-end gap-2">
                       <span className="text-xs text-muted tabular-nums">
