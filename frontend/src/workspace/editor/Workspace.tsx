@@ -10,11 +10,11 @@ import { SubmissionDetail, Submitted, isChecked, type ClaimedTeam, type Round } 
 import { useLive } from '../../lib/live'
 import { keys, useCurrentRound, useStandings, useSubmission, useSubmissions } from '../../lib/queries'
 import { BlockEditor } from '../blocks/BlockEditor'
-import { MODULE_ARGS, TOOLBOX, moveLabel } from '../blocks/categories'
-import { exampleLayout, examplesFor } from '../blocks/examples'
-import { assemble, generateModules } from '../blocks/generate'
-import { countBlocks, moduleName, newModule, type Layout } from '../blocks/layout'
-import { History, LatestResult, agentFromDetail, toSubmission } from './SidePanels'
+import { MODULE_ARGS, moveLabel, toolboxFor } from '../blocks/categories'
+import { EXAMPLES_NOTE, exampleBlocks, exampleLayout, examplesFor, matchingExample, strategyLayout, type Example } from '../blocks/examples'
+import { generateModules, generateStrategy, type StrategyConfig } from '../blocks/generate'
+import { countBlocks, isStrategyFor, moduleName, newModule, newStrategy, type Layout } from '../blocks/layout'
+import { History, LatestResult, agentFromDetail, submissionOf, toSubmission } from './SidePanels'
 import { MAX_BLOCKS_BYTES, MAX_CODE_LENGTH, blocksBytes, loadDraft, saveDraft, utf8Bytes, type Agent } from './drafts'
 import { DEFAULT_GAME, TOTAL_ROUNDS, UNTIL_ROUND_ARRIVES, gameInfo } from './games'
 import { TroopPlacement } from './TroopPlacement'
@@ -63,11 +63,11 @@ function lastGame() {
 type Editor = Parameters<OnMount>[0]
 
 /** Retries network and gateway failures with the same key, so a blip at the deadline doesn't lose a submission or store it twice. */
-async function submitAgent(agent: Agent, moves: string[], roundId: number) {
+async function submitAgent(agent: Agent, game: string, config: StrategyConfig, roundId: number) {
   const key = newId()
   for (let attempt = 0; ; attempt++) {
     try {
-      return await request('POST', '/submissions', Submitted, toSubmission(agent, moves, roundId), { 'Idempotency-Key': key })
+      return await request('POST', '/submissions', Submitted, toSubmission(agent, game, config, roundId), { 'Idempotency-Key': key })
     } catch (err) {
       if ((err instanceof ApiError && err.status < 500) || attempt >= 2) throw err
       await new Promise((r) => setTimeout(r, 500 * (attempt + 1)))
@@ -263,6 +263,9 @@ function RoundWorkspace({ team, gameKey }: { team: ClaimedTeam; gameKey: string 
   const placementProblems = useMemo(() => allocationProblems(placement, troops, regions), [placement, troops, regions])
   const mapAgent = useMemo<Agent>(() => ({ hand_code: allocationCode(placement, regionNames(regions)), modules: [] }), [placement, regions])
   const [moduleKeys, setModuleKeys] = useState<string[]>([])
+  // Remounts the blocks canvas when a new layout is loaded into it
+  const [strategyKey, setStrategyKey] = useState(newId)
+  const [showExamples, setShowExamples] = useState(false)
   const [loadCount, setLoadCount] = useState(0)
   const [editor, setEditor] = useState<Editor | null>(null)
   const [busy, setBusy] = useState(false)
@@ -274,20 +277,35 @@ function RoundWorkspace({ team, gameKey }: { team: ClaimedTeam; gameKey: string 
   latest.current = agent
   const { dialog, ask } = useConfirm()
 
-  const generated = useMemo(() => generateModules(agent?.modules ?? [], moves), [agent, moves])
-  const assembledBytes = useMemo(
-    () => (agent ? utf8Bytes(assemble(agent.hand_code, generated)) : 0),
-    [agent, generated],
+  // Rounds 1 and 3 can be built with blocks: one strategy block, from which the whole strategy.py is generated.
+  // Write code keeps the editor, with block modules in Round 1 only (the round with named moves).
+  const blocksGame = game.blocks
+  const modulesAllowed = game.blocks && moves.length > 0
+  const blocksMode = blocksGame && agent?.mode === 'blocks'
+  const endowment = round?.config.endowment ?? UNTIL_ROUND_ARRIVES.endowment
+  const multiplier = round?.config.multiplier
+  const strategyConfig = useMemo<StrategyConfig>(() => ({ moves, endowment, multiplier }), [moves, endowment, multiplier])
+  const strategy = useMemo(
+    () => (blocksGame && agent?.strategy_blocks ? generateStrategy(agent.strategy_blocks, gameKey, strategyConfig) : null),
+    [blocksGame, agent, gameKey, strategyConfig],
   )
-  const modulesBytes = useMemo(() => (agent ? blocksBytes(agent.modules) : 0), [agent])
+
+  const generated = useMemo(() => generateModules(agent?.modules ?? [], moves), [agent, moves])
+  // Exactly what Submit sends, for the size limits and the example check
+  const outgoingSubmission = useMemo(() => (agent ? submissionOf(agent, gameKey, strategyConfig) : null), [agent, gameKey, strategyConfig])
+  const assembledBytes = outgoingSubmission ? utf8Bytes(outgoingSubmission.code) : 0
+  const modulesBytes = outgoingSubmission ? blocksBytes(outgoingSubmission.blocks.modules) : 0
   const tooLong = assembledBytes > MAX_CODE_LENGTH || modulesBytes > MAX_BLOCKS_BYTES
 
-  const maxModules = game.blocks ? (round?.config.max_modules ?? 3) : 0
+  const maxModules = modulesAllowed ? (round?.config.max_modules ?? 3) : 0
   const blockLimit = round?.config.block_limit ?? 40
-  const totalBlocks = (agent?.modules ?? []).reduce((n, layout) => n + countBlocks(layout), 0)
+  const strategyBlocks = agent?.strategy_blocks ? countBlocks(agent.strategy_blocks) : 0
+  const totalBlocks = blocksMode ? strategyBlocks : (agent?.modules ?? []).reduce((n, layout) => n + countBlocks(layout), 0)
   const overLimit = totalBlocks > blockLimit
-  const blockProblems = generated.reduce((n, m) => n + m.problems.length, 0) + (overLimit ? 1 : 0)
-  const noStrategy = agent !== null && !/^\s*def\s+strategy\s*\(/m.test(agent.hand_code)
+  const blockProblems = blocksMode
+    ? (strategy?.problems.length ?? 0) + (overLimit ? 1 : 0)
+    : generated.reduce((n, m) => n + m.problems.length, 0) + (overLimit ? 1 : 0)
+  const noStrategy = agent !== null && !blocksMode && !/^\s*def\s+strategy\s*\(/m.test(agent.hand_code)
   useErrorMarker(editor, latestDetail?.status === 'rejected' ? latestDetail.error : null)
 
   // The server's result arrives by polling, so say when it does
@@ -302,18 +320,30 @@ function RoundWorkspace({ team, gameKey }: { team: ClaimedTeam; gameKey: string 
   const names = useMemo(() => agent?.modules.map(moduleName) ?? [], [agent])
   useEffect(() => setModuleNames(names), [names])
 
-  const hasBlocks = game.blocks
-  const load = useCallback((loaded: Agent) => {
-    const next = hasBlocks ? loaded : { ...loaded, modules: [] } // another game's modules can't play here
-    const placed = placesTroops ? parseAllocation(next.hand_code, regions) : null
-    if (placed) setAllocation(placed)
-    saved.current = next // no need to save what just came from storage or the server
-    setAgent(next)
-    setLoadCount((n) => n + 1) // a fresh editor shows what was loaded
-    setModuleKeys(next.modules.map(() => newId()))
-    setTab('code')
-    return next
-  }, [hasBlocks, placesTroops, regions, setAllocation])
+  const load = useCallback(
+    (loaded: Agent) => {
+      // Another game's modules or strategy block can't play here. A draft from before blocks mode opens in Write code
+      const next: Agent = blocksGame
+        ? {
+            ...loaded,
+            modules: modulesAllowed ? loaded.modules : [],
+            strategy_blocks: isStrategyFor(loaded.strategy_blocks, gameKey) ? loaded.strategy_blocks : newStrategy(gameKey, moves),
+            mode: loaded.mode ?? 'code',
+          }
+        : { hand_code: loaded.hand_code, modules: [] }
+      const placed = placesTroops ? parseAllocation(next.hand_code, regions) : null
+      if (placed) setAllocation(placed)
+      saved.current = next // no need to save what just came from storage or the server
+      setAgent(next)
+      setLoadCount((n) => n + 1) // a fresh editor shows what was loaded
+      setModuleKeys(next.modules.map(() => newId()))
+      setStrategyKey(newId())
+      setShowExamples(false)
+      setTab('code')
+      return next
+    },
+    [blocksGame, modulesAllowed, gameKey, moves, placesTroops, regions, setAllocation],
+  )
 
   // Restore: the autosaved draft, else the latest version on the server, else the template.
   // If the server can't be reached the team still gets an editor and can load a version later.
@@ -345,7 +375,8 @@ function RoundWorkspace({ team, gameKey }: { team: ClaimedTeam; gameKey: string 
           toast('bad', `Could not fetch version ${newest.version}. Use Load in the version history to try again.`)
         }
       }
-      load({ hand_code: game.template, modules: [] })
+      // Nothing saved and nothing submitted: Build with blocks opens first where the round has blocks
+      load({ hand_code: game.template, modules: [], mode: 'blocks' })
     })()
   }, [stored, serverAnswered, newest, game.template, load, markSent, toast])
 
@@ -380,6 +411,28 @@ function RoundWorkspace({ team, gameKey }: { team: ClaimedTeam; gameKey: string 
   }, [flush, toast])
 
   const setCode = useCallback((code: string) => setAgent((a) => a && { ...a, hand_code: code }), [])
+  const setStrategy = useCallback((layout: Layout) => setAgent((a) => a && { ...a, strategy_blocks: layout }), [])
+  const setMode = (mode: 'blocks' | 'code') => {
+    setShowExamples(false)
+    setAgent((a) => a && { ...a, mode })
+  }
+
+  /** A strategy layout that won't open starts again, with a fresh Blockly. */
+  function resetStrategy() {
+    setStrategy(newStrategy(gameKey, moves))
+    setStrategyKey(newId())
+  }
+
+  /** "Start from this": loads an example onto the canvas for the team to change. Nothing is submitted. */
+  function pickStrategyExample(example: Example) {
+    setShowExamples(false)
+    const apply = () => {
+      setStrategy(strategyLayout(example))
+      setStrategyKey(newId())
+    }
+    if (strategyBlocks <= 1) return apply()
+    ask({ title: `Use ${example.name}`, body: 'This replaces the blocks on your canvas.', confirmLabel: 'Use example', run: apply })
+  }
   const setModule = (index: number, layout: Layout) =>
     setAgent((a) => a && { ...a, modules: a.modules.map((m, i) => (i === index ? layout : m)) })
 
@@ -454,6 +507,7 @@ function RoundWorkspace({ team, gameKey }: { team: ClaimedTeam; gameKey: string 
 
   const activeBlocks = typeof tab === 'number' && agent?.modules[tab] ? countBlocks(agent.modules[tab]) : 0
   const examples = examplesFor(gameKey, blockLimit - totalBlocks + activeBlocks)
+  const strategyExamples = examplesFor(gameKey, blockLimit)
   const unused = (i: number) => !agent?.hand_code.includes(`${names[i]}(`)
   const fallen = team.status !== 'active'
   const windowOpen = round?.status === 'open'
@@ -464,7 +518,19 @@ function RoundWorkspace({ team, gameKey }: { team: ClaimedTeam; gameKey: string 
     ? windowOpen && !fallen && !busy && placementProblems.length === 0
     : windowOpen && !fallen && !busy && agent !== null && problems === 0 && !tooLong
 
-  async function submit() {
+  /** Asks first when what would be sent is exactly an example: identical bots tie. It never stops the submit. */
+  function submit() {
+    const match = !mapMode && outgoingSubmission ? matchingExample(outgoingSubmission.code, gameKey, strategyConfig) : undefined
+    if (!match) return void send()
+    ask({
+      title: 'Submit an example unchanged?',
+      body: `This is exactly the ${match.name} example. Other teams may submit it too, and identical bots tie, broken by a coin toss. Change something to stand out?`,
+      confirmLabel: 'Submit anyway',
+      run: () => void send(),
+    })
+  }
+
+  async function send() {
     const sent = outgoing
     if (sent === null || !round || sending.current) return
     if (mapMode && placementProblems.length > 0) return
@@ -472,7 +538,7 @@ function RoundWorkspace({ team, gameKey }: { team: ClaimedTeam; gameKey: string 
     setBusy(true)
     flush()
     try {
-      const s = await submitAgent(sent, moves, round.id)
+      const s = await submitAgent(sent, gameKey, strategyConfig, round.id)
       markSent(sent)
       toast('info', `Version ${s.version} received. Testing against the bots…`)
       void queries.invalidateQueries({ queryKey: keys.submissions(round.id) })
@@ -498,10 +564,8 @@ function RoundWorkspace({ team, gameKey }: { team: ClaimedTeam; gameKey: string 
     <span className="text-alert">
       {problems} problem{problems > 1 ? 's' : ''}
     </span>
-  ) : agent?.modules.some((_, i) => unused(i)) ? (
+  ) : !blocksMode && agent?.modules.some((_, i) => unused(i)) ? (
     <span className="text-amber">No errors, but a module isn't used yet</span>
-  ) : generated.some((m) => m.warnings.length > 0) ? (
-    <span className="text-amber">No errors, but a module has gaps</span>
   ) : (
     <span className="text-coop" title="The server checks your code fully when you submit">
       Ready to submit
@@ -578,16 +642,48 @@ function RoundWorkspace({ team, gameKey }: { team: ClaimedTeam; gameKey: string 
             <span className="ml-auto flex items-center px-4 text-[11px] text-muted">Whichever is open is what you submit</span>
           </div>
         )}
+        {blocksGame && (
+          <div data-tour="play-mode" className="flex flex-wrap items-stretch gap-px border-b border-steel bg-steel/40" role="tablist" aria-label="How to build your strategy">
+            {(
+              [
+                ['blocks', '▦ Build with blocks'],
+                ['code', '</> Write code'],
+              ] as const
+            ).map(([mode, label]) => (
+              <button
+                key={mode}
+                role="tab"
+                aria-selected={(agent?.mode ?? 'code') === mode}
+                disabled={agent === null}
+                onClick={() => setMode(mode)}
+                className={`cursor-pointer px-4 py-2.5 text-xs font-bold tracking-widest uppercase transition-colors ${(agent?.mode ?? 'code') === mode ? 'bg-panel text-amber shadow-[inset_0_2px_0_var(--color-amber)]' : 'text-muted hover:text-paper'}`}
+              >
+                {label}
+              </button>
+            ))}
+            <span className="ml-auto flex items-center px-4 text-[11px] text-muted">Whichever is open is what you submit</span>
+          </div>
+        )}
         {mapMode ? (
           <TroopPlacement troops={troops} regions={regions} allocation={placement} onChange={setAllocation} problems={placementProblems} disabled={fallen} />
         ) : (
         <>
-        {tabs}
+        {blocksMode ? (
+          <div className="flex items-center gap-3 border-b border-steel bg-steel/40 px-4 py-2 text-xs">
+            <span className="font-bold tracking-widest text-paper uppercase">strategy.py</span>
+            <span className="text-muted">made from your blocks</span>
+            <span data-testid="check" className="ml-auto text-[11px] whitespace-nowrap text-muted">
+              {status}
+            </span>
+          </div>
+        ) : (
+          tabs
+        )}
         {noStrategy && <p className="border-b border-alert-dim bg-alert/10 px-4 py-1.5 text-xs text-alert">strategy.py must define a strategy function.</p>}
         {tooLong && (
           <p className="border-b border-alert-dim bg-alert/10 px-4 py-1.5 text-xs text-alert">
             {modulesBytes > MAX_BLOCKS_BYTES
-              ? `Your block modules use ${modulesBytes.toLocaleString()} bytes and the limit is ${MAX_BLOCKS_BYTES.toLocaleString()} bytes. Remove some blocks to submit.`
+              ? `Your blocks use ${modulesBytes.toLocaleString()} bytes and the limit is ${MAX_BLOCKS_BYTES.toLocaleString()} bytes. Remove some blocks to submit.`
               : `Your code uses ${assembledBytes.toLocaleString()} bytes and the limit is ${MAX_CODE_LENGTH.toLocaleString()} bytes. Shorten it to submit.`}
           </p>
         )}
@@ -596,11 +692,82 @@ function RoundWorkspace({ team, gameKey }: { team: ClaimedTeam; gameKey: string 
             <Empty>Loading your workspace…</Empty>
           ) : (
             <>
-              {/* The code editor stays mounted so its undo history survives tab switches */}
-              <div className={`absolute inset-0 ${activeModule === null ? '' : 'invisible'}`}>
+              {/* The code editor stays mounted so its undo history survives tab and mode switches */}
+              <div className={`absolute inset-0 ${activeModule === null && !blocksMode ? '' : 'invisible'}`}>
                 <CodeEditor key={loadCount} value={agent.hand_code} onChange={setCode} onMount={setEditor} />
               </div>
-              {activeModule !== null && (
+              {blocksMode && agent.strategy_blocks && (
+                <div className="absolute inset-0 flex flex-col">
+                  <div className="min-h-0 flex-1">
+                    <ErrorBoundary
+                      resetKey={strategyKey}
+                      fallback={() => (
+                        <div className="flex h-full flex-col items-center justify-center gap-4 p-6 text-center" role="alert">
+                          <p className="text-sm text-alert">Your saved blocks can't be opened.</p>
+                          <p className="text-xs text-muted">Your code in Write code is not affected.</p>
+                          <Button onClick={resetStrategy}>Start with an empty strategy</Button>
+                        </div>
+                      )}
+                    >
+                      <BlockEditor key={strategyKey} layout={agent.strategy_blocks} onChange={setStrategy} maxBlocks={blockLimit} moves={moves} game={gameKey} endowment={endowment} />
+                    </ErrorBoundary>
+                  </div>
+                  <div className="grid max-h-72 shrink-0 grid-cols-[1fr_minmax(0,16rem)] gap-4 overflow-y-auto border-t border-steel bg-ink/80 p-3">
+                    <div className="min-w-0">
+                      <span className="label !text-[10px]">Generated Python · read only · this is what the server runs</span>
+                      {overLimit && (
+                        <p className="mt-1 text-xs text-alert">
+                          This round allows {blockLimit} blocks, and you have {totalBlocks}. Remove some to submit.
+                        </p>
+                      )}
+                      {strategy?.problems.map((problem) => (
+                        <p key={problem} className="mt-1 text-xs text-alert">
+                          {problem}
+                        </p>
+                      ))}
+                      <pre data-testid="strategy-python" data-tour="python" className="mt-1 text-xs whitespace-pre-wrap text-coop/90">
+                        {strategy?.code ?? ''}
+                      </pre>
+                    </div>
+                    <div className="relative flex flex-col items-end gap-2">
+                      <span className="text-xs text-muted tabular-nums">
+                        {totalBlocks} of {blockLimit} blocks
+                      </span>
+                      {strategyExamples.length > 0 && (
+                        <Button data-tour="examples" className="!px-2 !py-1" aria-expanded={showExamples} onClick={() => setShowExamples((open) => !open)}>
+                          Start from this
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+                  {showExamples && (
+                    <div role="region" aria-label="Start from this" className="absolute right-3 bottom-3 z-20 flex max-h-[70%] w-[min(30rem,calc(100%-1.5rem))] flex-col field-kit !bg-panel shadow-[0_8px_24px_rgb(0_0_0/0.6)]">
+                      <div className="flex items-center justify-between border-b border-steel bg-steel/40 px-3 py-2">
+                        <span className="label !text-paper">Start from this</span>
+                        <button className="cursor-pointer text-xs text-muted hover:text-paper" onClick={() => setShowExamples(false)}>
+                          Close
+                        </button>
+                      </div>
+                      <p className="border-b border-steel px-3 py-2 text-xs text-amber">{EXAMPLES_NOTE}</p>
+                      <ul className="min-h-0 overflow-y-auto">
+                        {strategyExamples.map((example) => (
+                          <li key={example.name} className="border-b border-steel/60 last:border-b-0">
+                            <button className="flex w-full cursor-pointer flex-col gap-0.5 px-3 py-2 text-left hover:bg-steel/40" onClick={() => pickStrategyExample(example)}>
+                              <span className="flex items-baseline justify-between gap-2">
+                                <span className="text-sm font-bold text-paper">{example.name}</span>
+                                <span className="text-[11px] text-muted tabular-nums">{exampleBlocks(example)} blocks</span>
+                              </span>
+                              <span className="text-xs text-paper/90">{example.about}</span>
+                              <span className="text-xs text-muted">{example.weakness}</span>
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                </div>
+              )}
+              {!blocksMode && activeModule !== null && (
                 <div className="absolute inset-0 flex flex-col">
                   <div className="min-h-0 flex-1">
                     <ErrorBoundary
@@ -635,11 +802,6 @@ function RoundWorkspace({ team, gameKey }: { team: ClaimedTeam; gameKey: string 
                           {problem}
                         </p>
                       ))}
-                      {generated[activeModule]?.warnings.map((warning) => (
-                        <p key={warning} className="mt-1 text-xs text-amber">
-                          {warning}
-                        </p>
-                      ))}
                       {unused(activeModule) && <p className="mt-1 text-xs text-amber">This module won't play yet: strategy.py doesn't call it. Use the button here, or call {names[activeModule]}({MODULE_ARGS}) in your code.</p>}
                       <pre data-testid="generated" className="mt-1 text-xs whitespace-pre-wrap text-coop/90">
                         {generated[activeModule]?.code ?? ''}
@@ -654,7 +816,7 @@ function RoundWorkspace({ team, gameKey }: { team: ClaimedTeam; gameKey: string 
                           <option value="">Start from an example…</option>
                           {examples.map((e) => (
                             <option key={e.name} value={e.name}>
-                              {e.name}: {e.about}
+                              {e.name}: {e.about} {e.weakness}
                             </option>
                           ))}
                         </select>
@@ -703,12 +865,12 @@ function RoundWorkspace({ team, gameKey }: { team: ClaimedTeam; gameKey: string 
               ) : (
                 <>
                   <WindowTimer round={round} />
-                  <Button variant="primary" onClick={submit} disabled={!canSubmit}>
+                  <Button data-tour="submit" variant="primary" onClick={submit} disabled={!canSubmit}>
                     {submitLabel}
                   </Button>
-                  {placesTroops && (
+                  {(placesTroops || blocksGame) && (
                     <p data-testid="submitting" className="text-xs text-muted">
-                      Submitting: <span className="text-paper">{mapMode ? 'your troop placement on the map' : 'your code'}</span>
+                      Submitting: <span className="text-paper">{mapMode ? 'your troop placement on the map' : blocksMode ? 'your blocks' : 'your code'}</span>
                     </p>
                   )}
                   {!round ? (
@@ -778,7 +940,12 @@ function RoundWorkspace({ team, gameKey }: { team: ClaimedTeam; gameKey: string 
                     </p>
                   )}
                   <p className="text-muted">
-                    Blocks: {maxModules ? `up to ${maxModules} module${maxModules > 1 ? 's' : ''}, ${blockLimit} blocks in total · ${TOOLBOX.map((group) => group.label).join(', ')}` : 'not used this round, write code'}
+                    Blocks:{' '}
+                    {blocksGame
+                      ? `${blockLimit} blocks · ${toolboxFor(gameKey)
+                          .map((group) => group.label)
+                          .join(', ')}${maxModules ? ` · in Write code, up to ${maxModules} module${maxModules > 1 ? 's' : ''}` : ''}`
+                      : 'not used this round, write code'}
                   </p>
                 </div>
               </details>

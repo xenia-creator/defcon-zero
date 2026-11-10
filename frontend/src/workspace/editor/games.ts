@@ -100,7 +100,7 @@ function foreignAid(config?: RoundConfig): GameInfo {
     brief: `Nations take turns as sender and receiver. The sender sends 0 to ${endowment} points, which arrive multiplied by ${multiplier}. The receiver then decides how much of that to send back. Trust pays off for both, and is easy to exploit.`,
     question: 'How much do you trust, and how much do you repay?',
     moves: [],
-    blocks: false,
+    blocks: true,
     limits: `Sending: a whole number from 0 to ${endowment}. Receiving: a whole number from 0 up to ${multiplier} × what was sent.`,
     template: `import random
 
