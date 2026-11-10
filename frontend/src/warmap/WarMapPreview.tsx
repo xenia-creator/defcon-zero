@@ -7,6 +7,8 @@ import { boardState, connection, liveNotice } from './liveState'
 import type { MapRound, MapTerritory, StandingsNation } from './types'
 import { useMockFeed } from './useMockFeed'
 import { WarMap, WarMapFault } from './WarMap'
+import { finalResult } from './winner'
+import { WinnerReveal } from './WinnerReveal'
 
 const NO_TERRITORIES: MapTerritory[] = []
 const NO_NATIONS: StandingsNation[] = []
@@ -70,11 +72,14 @@ function LiveWarMap({ showStandings }: { showStandings: boolean }) {
 
   const [retrying, setRetrying] = useState(false)
 
+  // The winner reveal owns the screen while it shows; the tour waits until it has been clicked away
+  const [revealShowing, setRevealShowing] = useState(false)
+
   const reads = [roundQ, standingsQ, territoriesQ]
   const conn = connection(reads)
   // The tour is for organisers only (never the projector), once the map has its territories
   const role = useAuth((st) => st.session?.role ?? null)
-  useTour('warmap', conn !== 'fault' && territoriesQ.data !== undefined, { role })
+  useTour('warmap', conn !== 'fault' && territoriesQ.data !== undefined && !revealShowing, { role })
   // The polls keep retrying on their own; this is the impatient human's button. "Retrying…" tracks
   // only this press (background polling keeps isFetching true almost constantly).
   const retry = async () => {
@@ -88,18 +93,26 @@ function LiveWarMap({ showStandings }: { showStandings: boolean }) {
   const round = roundQ.data
   const nations = standingsQ.data?.nations ?? NO_NATIONS
   const mapRound: MapRound | null = round ? { number: round.number, game: round.game, status: round.status } : null
+  const territories = territoriesQ.data?.territories ?? NO_TERRITORIES
+  // The winner and runner-up once the final round is published (winner.ts); null otherwise
+  const final = finalResult(round, standingsQ.data)
 
   return (
-    <WarMap
-      round={mapRound}
-      territories={territoriesQ.data?.territories ?? NO_TERRITORIES}
-      nations={nations}
-      serverTime={now}
-      showStandings={showStandings}
-      notice={liveNotice({ conn, round, ranked: nations.length })}
-      signalLost={conn === 'degraded'}
-      board={boardState(round, nations.length)}
-    />
+    <>
+      <WarMap
+        round={mapRound}
+        territories={territories}
+        nations={nations}
+        serverTime={now}
+        showStandings={showStandings}
+        notice={liveNotice({ conn, round, ranked: nations.length })}
+        signalLost={conn === 'degraded'}
+        board={boardState(round, nations.length)}
+        final={final}
+      />
+      {/* The full-screen moment, once per browser; the board's banner stays every visit */}
+      <WinnerReveal result={final} territories={territories} onShowingChange={setRevealShowing} />
+    </>
   )
 }
 

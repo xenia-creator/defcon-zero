@@ -5,7 +5,10 @@ import { defconLevel, gameName, roundByGame } from '../lib/rounds'
 import { TroopLayer } from './TroopLayer'
 import { boardHeading, type BoardState } from './liveState'
 import { nationColour } from './palette'
+import { territoryCrop, territoryName } from './territoryCrop'
 import type { MapNotice, MapRound, MapTerritory, StandingsNation, TeamStatus, TroopMovement } from './types'
+import type { FinalResult } from './winner'
+import { TerritoryPlate } from './WinnerReveal'
 import './WarMap.css'
 
 const STATUS_LABELS: Record<TeamStatus, string> = {
@@ -88,6 +91,8 @@ interface WarMapProps {
   signalLost?: boolean
   /** The public leaderboard: the latest published standings, or why there are none (liveState boardState). */
   board: BoardState
+  /** The tournament's winner and runner-up (winner.ts finalResult), or null. Shown on the board every visit. */
+  final?: FinalResult | null
 }
 
 export function WarMap({
@@ -101,6 +106,7 @@ export function WarMap({
   notice = null,
   signalLost = false,
   board,
+  final = null,
 }: WarMapProps) {
   // Claimed territories with their nation name, from /territories; ranked nations fill any gap.
   const claimedByCode = useMemo(() => {
@@ -342,6 +348,8 @@ export function WarMap({
                 </>
               )}
             </header>
+            {/* The final result, above the final standings: every visit, never gated like the reveal */}
+            {final && <WinnerBanner final={final} territories={territories} />}
             {board.kind === 'awaiting' || rows.length === 0 ? (
               // Nothing published yet: a dossier with its standings censored, so the empty board reads as intentional
               <div className="warmap__await" role="status">
@@ -406,6 +414,51 @@ export function WarMapFault({ onRetry, retrying }: { onRetry: () => void; retryi
         </button>
       </div>
     </div>
+  )
+}
+
+/**
+ * The winner, typed onto the board above the final standings with a victor's stamp, and the
+ * runner-up beneath it, smaller. The once-only full-screen moment is WinnerReveal.
+ */
+function WinnerBanner({ final, territories }: { final: FinalResult; territories: MapTerritory[] }) {
+  const { winner, runnerUp } = final
+  const crop = territoryCrop(winner.territory_code)
+  return (
+    <section
+      data-testid="winner-banner"
+      className="warmap__winner"
+      aria-label="Tournament result"
+      style={{ ['--nation' as string]: nationColour(winner.territory_code) }}
+    >
+      <div data-testid="winner-banner-winner" className="warmap__winner-main">
+        {crop ? (
+          <TerritoryPlate code={winner.territory_code} viewBox={crop.viewBox} className="warmap__winner-map" />
+        ) : (
+          <span className="warmap__winner-map is-blank font-data" aria-hidden="true">{winner.territory_code}</span>
+        )}
+        <span className="warmap__winner-text">
+          <span className="warmap__winner-label font-label">Winner</span>
+          <span className="warmap__winner-name font-title">{winner.nation_name}</span>
+          <span className="warmap__winner-where font-label">
+            {territoryName(winner.territory_code, territories)} <span className="font-data">· {winner.territory_code}</span>
+          </span>
+        </span>
+        <Stamp tilt={-10} className="warmap__winner-stamp text-type-red">Victor</Stamp>
+      </div>
+      {runnerUp && (
+        <p
+          data-testid="winner-banner-runner-up"
+          className="warmap__winner-runner font-label"
+          style={{ ['--nation' as string]: nationColour(runnerUp.territory_code) }}
+        >
+          <span className="warmap__winner-runner-label">Runner-up</span>
+          <span className="warmap__swatch" aria-hidden="true" />
+          <span className="warmap__winner-runner-name">{runnerUp.nation_name}</span>
+          <span className="warmap__code font-data">{runnerUp.territory_code}</span>
+        </p>
+      )}
+    </section>
   )
 }
 
