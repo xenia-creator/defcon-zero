@@ -25,6 +25,9 @@ services:
       dockerfile: infra/backend.Dockerfile
     image: defcon-backend:dev
     restart: unless-stopped
+    cpus: ${BACKEND_CPUS:-4.0}
+    mem_limit: ${BACKEND_MEMORY:-4g}
+    pids_limit: ${BACKEND_PIDS_LIMIT:-128}
     init: true
     environment:
       DATABASE_URL: ${DATABASE_URL}
