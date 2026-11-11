@@ -232,29 +232,29 @@ define(
 )
 
 define('fa_opp_sent_last', () => ({
-  message0: 'what the opponent sent last',
+  message0: 'what the opponent gave me last',
   output: 'Number',
   style: style('opponent'),
-  tooltip: "When receiving, what they just sent you. When sending, what they sent on their last turn as sender. 0 if they haven't sent yet.",
+  tooltip: "When receiving, what they just gave you. When sending, what they gave on their last turn as sender. 0 if they haven't given yet.",
 }))
 
 define('fa_opp_returned_last', () => ({
-  message0: 'what the opponent sent back last',
+  message0: 'what the opponent returned last',
   output: 'Number',
   style: style('opponent'),
-  tooltip: "What they sent back the last time you sent to them. 0 if they haven't had the chance.",
+  tooltip: "What they returned the last time you sent to them. 0 if they haven't had the chance.",
 }))
 
 define('fa_opp_avg', () => ({
-  message0: "opponent's average %1",
-  args0: [{ type: 'field_dropdown', name: 'WHAT', options: [['send', 'SEND'], ['send-back %', 'RETURN_PCT']] }],
+  message0: 'on average, what the opponent %1',
+  args0: [{ type: 'field_dropdown', name: 'WHAT', options: [['gave me', 'SEND'], ['returned (%)', 'RETURN_PCT']] }],
   output: 'Number',
   style: style('opponent'),
-  tooltip: '"send": the average they send. "send-back %": on average, what % of what they received they sent back. 0 before they\'ve done it.',
+  tooltip: '"gave me": the average they give you. "returned (%)": on average, what % of what they received they returned. 0 before they\'ve done it.',
 }))
 
 define('fa_opp_ever_short', () => ({
-  message0: 'the opponent has ever sent back less than I sent',
+  message0: 'the opponent has ever returned less than I sent',
   output: 'Boolean',
   style: style('opponent'),
   tooltip: 'True once they have ever left you worse off for trusting them.',

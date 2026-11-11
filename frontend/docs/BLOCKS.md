@@ -282,9 +282,9 @@ The user brief asked for role blocks ("if I'm sending" / "if I'm receiving"). Th
 
 | On screen | ID | Category | Tooltip | Generated Python |
 |---|---|---|---|---|
-| **what the opponent sent last** | `fa_opp_sent_last` | Opponent | When receiving, what they just sent you. When sending, what they sent on their last turn as sender. 0 if they haven't sent yet. | `(opp_sent[-1] if opp_sent else 0)` |
-| **what the opponent sent back last** | `fa_opp_returned_last` | Opponent | What they sent back the last time you sent to them. 0 if they haven't had the chance. | `(opp_returned[-1] if opp_returned else 0)` |
-| **opponent's average** `[send ▼ / send-back %]` | `fa_opp_avg` | Opponent | "send": the average they send. "send-back %": on average, what % of what they received they sent back. 0 before they've done it. | `average(opp_sent)` / `return_rate(opp_returned, my_sent)` |
+| **what the opponent gave me last** | `fa_opp_sent_last` | Opponent | When receiving, what they just gave you. When sending, what they gave on their last turn as sender. 0 if they haven't given yet. | `(opp_sent[-1] if opp_sent else 0)` |
+| **what the opponent returned last** | `fa_opp_returned_last` | Opponent | What they returned the last time you sent to them. 0 if they haven't had the chance. | `(opp_returned[-1] if opp_returned else 0)` |
+| **on average, what the opponent** `[gave me ▼ / returned (%)]` | `fa_opp_avg` | Opponent | "gave me": the average they give you. "returned (%)": on average, what % of what they received they returned. 0 before they've done it. | `average(opp_sent)` / `return_rate(opp_returned, my_sent)` |
 | **what I received this turn** | `fa_received` | Me & match | What arrived this turn: the amount sent, times 3. **Only under "when I'm receiving".** | `received` |
 | **my last** `[send ▼ / send-back]` | `fa_my_last` | Me & match | The amount you sent, or sent back, last time. 0 if you haven't yet. | `(my_sent[-1] if my_sent else 0)` / `(my_returned[-1] if my_returned else 0)` |
 | **turn number** | `fa_turn` | Me & match | Counts every turn in the match, sending and receiving, starting at 1. | `(len(my_history) + 1)` |
@@ -296,7 +296,7 @@ The user brief asked for role blocks ("if I'm sending" / "if I'm receiving"). Th
 | On screen | ID | Category | Tooltip | Generated Python |
 |---|---|---|---|---|
 | ⬭ `[is more than ▼ / is less than / is at least / is at most / equals]` ⬭ | `fa_compare` | Logic | Compares two numbers. | `(A > B)`, `(A < B)`, `(A >= B)`, `(A <= B)`, `(A == B)` |
-| **the opponent has ever sent back less than I sent** | `fa_opp_ever_short` | Opponent | True once they have ever left you worse off for trusting them. | `ever_short_changed(my_sent, opp_returned)` |
+| **the opponent has ever returned less than I sent** | `fa_opp_ever_short` | Opponent | True once they have ever left you worse off for trusting them. | `ever_short_changed(my_sent, opp_returned)` |
 | **this is my first time** `[sending]` / `[receiving]` | `fa_first_time` | Me & match | True the first time you have this role in a match. The word follows the section the block is in. | `len(my_sent) == 0` under sending, `len(my_returned) == 0` under receiving |
 | `ic_if`, `controls_ifelse`, `logic_operation`, `logic_negate`, `ic_chance` | (as Round 1) | | | (as Round 1) |
 
@@ -337,21 +337,21 @@ The toolbox has 20 blocks. Actions and value blocks come **pre-filled** (for exa
 | Name | Description | Blocks |
 |---|---|---|
 | **Break Even** | Sends 5. When receiving, sends back exactly what was sent, so the sender never loses and you keep the bonus. | 3 |
-| **Mirror** | Sends 10 while the opponent pays back at least what you sent last time, otherwise only 2. Sends back half. | 7 |
-| **Grudger** | Sends 10 until the opponent ever sends back less than you sent, then sends nothing. Sends back half. | 5 |
-| **Matcher** | Sends 10 the first time, then the opponent's average send. Sends back half. | 7 |
+| **Mirror** | Sends 10 while the opponent returns at least what you sent last time, otherwise only 2. Sends back half. | 7 |
+| **Grudger** | Sends 10 until the opponent ever returns less than you sent, then sends nothing. Sends back half. | 5 |
+| **Matcher** | Sends 10 the first time, then what the opponent gave on average. Sends back half. | 7 |
 
 ```text
 Break Even:  sending   { }                                                         otherwise send 5
-             receiving { send back (what the opponent sent last) }                 otherwise send back 50 %
-Mirror:      sending   { if (what the opponent sent back last) is at least (my last send) then { send (10) } }
+             receiving { send back (what the opponent gave me last) }              otherwise send back 50 %
+Mirror:      sending   { if (what the opponent returned last) is at least (my last send) then { send (10) } }
                                                                                    otherwise send 2
              receiving { }                                                         otherwise send back 50 %
-Grudger:     sending   { if the opponent has ever sent back less than I sent then { send (0) } }
+Grudger:     sending   { if the opponent has ever returned less than I sent then { send (0) } }
                                                                                    otherwise send 10
              receiving { }                                                         otherwise send back 50 %
 Matcher:     sending   { if this is my first time sending then { send (10) }
-                         send (opponent's average send) }                          otherwise send 5
+                         send (on average, what the opponent gave me) }            otherwise send 5
              receiving { }                                                         otherwise send back 50 %
 ```
 
@@ -594,12 +594,12 @@ The finished layout has 7 blocks: strategy, two ifs, opponent betrayed, 10 % cha
   - Dropped in `RECEIVE`: "That's the receiving section. Drag it up into **when I'm sending**."
 
 **Step 4: Remember who cheated you**
-- **Says:** "Open **Opponent** and drag **the opponent has ever sent back less than I sent** into the gap after **if**."
+- **Says:** "Open **Opponent** and drag **the opponent has ever returned less than I sent** into the gap after **if**."
 - **Highlight:** the Opponent category, then the `if` block.
 - **User does:** puts `fa_opp_ever_short` in `IF0`.
 - **Check:** that `if`'s `IF0` is `fa_opp_ever_short`.
 - **Hints:**
-  - Another Opponent block is in the slot: "Close, but this step needs **has ever sent back less than I sent**."
+  - Another Opponent block is in the slot: "Close, but this step needs **has ever returned less than I sent**."
 
 **Step 5: Stop trusting them**
 - **Says:** "Open **Actions** and drag **send** into the **then** gap. Change its number to **0**. That's Grudger: trust fully until you're cheated once."
@@ -611,18 +611,19 @@ The finished layout has 7 blocks: strategy, two ifs, opponent betrayed, 10 % cha
   - `NUM` ≠ 0: "Set the number to 0, so a cheater gets nothing."
 
 **Step 6: Be fair when receiving**
-- **Says:** "Now **when I'm receiving**. From **Actions**, drag **send back** into it. Then, from **Opponent**, drop **what the opponent sent last** over its number. Sending back what they sent means they never lose by trusting you, and you keep the rest."
+- **Says:** "Now **when I'm receiving**. From **Actions**, drag **send back** into it. Then, from **Opponent**, drop **what the opponent gave me last** over its number. Sending back what they gave means they never lose by trusting you, and you keep the rest."
 - **Highlight:** the `RECEIVE` slot, then the Actions and Opponent categories.
-- **User does:** builds `send back (what the opponent sent last)` in `RECEIVE`.
+- **User does:** builds `send back (what the opponent gave me last)` in `RECEIVE`.
 - **Check:** the `RECEIVE` chain contains `fa_return` whose `AMOUNT` is `fa_opp_sent_last`, or `fa_return_pct` with `PERCENT` ≥ 34 (the "they don't lose" level, which is also accepted).
 - **Hints:**
   - `fa_send` in `RECEIVE`: the generator's own problem text, "Use 'send back' under 'when I'm receiving'."
-  - The number is still there: "Drop **what the opponent sent last** right on top of the number to swap it in."
+  - The look-alike block is in the slot: "That's **returned last**. This step needs **gave me last**." The two read alike, so the hint names both. A step that needed **returned last** would get the reverse.
+  - The number is still there: "Drop **what the opponent gave me last** right on top of the number to swap it in."
 
 **Step 7: Send it**
 - Same as Round 1 step 7. The Python panel is highlighted briefly first, with: "Every amount goes through `legal_send` or `legal_return`, so your bot can never break the rules."
 
-The finished layout has 7 blocks: strategy, if, has ever short-changed, send, 0, send back, opponent sent last. That is within 40.
+The finished layout has 7 blocks: strategy, if, has ever short-changed, send, 0, send back, opponent gave me last. That is within 40.
 
 ---
 

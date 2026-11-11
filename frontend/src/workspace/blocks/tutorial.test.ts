@@ -10,6 +10,7 @@ import type { BlockState, Layout } from './layout'
 import {
   TUTORIALS,
   canvasEmpty,
+  lookAlikeHint,
   readSession,
   readTutorialState,
   sessionKey,
@@ -170,7 +171,7 @@ describe('the Round 3 tutorial: Grudger with a fair send-back', () => {
   it('step 4: has-ever-short-changed passes; another opponent block gets a hint', () => {
     expect(at('foreign_aid', fa({ sendDefault: 10, send: ifThen(short) }), FA_READ).step.id).toBe('fa-stop')
     const wrong = fa({ sendDefault: 10, send: ifThen({ type: 'fa_compare', inputs: { A: sentLast, B: shadowNum(5) } }) })
-    expect(at('foreign_aid', wrong, FA_READ).hint).toBe('Close, but this step needs "has ever sent back less than I sent".')
+    expect(at('foreign_aid', wrong, FA_READ).hint).toBe('Close, but this step needs "has ever returned less than I sent".')
   })
 
   it('step 5: send 0 inside then passes, as a shadow or a real number; send back, or another number, gets a hint', () => {
@@ -180,7 +181,7 @@ describe('the Round 3 tutorial: Grudger with a fair send-back', () => {
     expect(at('foreign_aid', fa({ sendDefault: 10, send: ifThen(short, send(shadowNum(5))) }), FA_READ).hint).toBe('Set the number to 0, so a cheater gets nothing.')
   })
 
-  it('step 6: send back what the opponent sent last passes, or send back 34 % or more', () => {
+  it('step 6: send back what the opponent gave me last passes, or send back 34 % or more', () => {
     expect(at('foreign_aid', faFinished(), FA_READ).step.id).toBe('fa-send')
     const pct = (PERCENT: number) => fa({ sendDefault: 10, send: ifThen(short, send(shadowNum(0))), receive: { type: 'fa_return_pct', fields: { PERCENT } } })
     expect(at('foreign_aid', pct(34), FA_READ).step.id).toBe('fa-send')
@@ -190,10 +191,28 @@ describe('the Round 3 tutorial: Grudger with a fair send-back', () => {
   it('step 6 hints: send in the receiving section, the number not yet swapped, a loose block', () => {
     const base = { sendDefault: 10, send: ifThen(short, send(shadowNum(0))) }
     expect(at('foreign_aid', fa({ ...base, receive: send() }), FA_READ).hint).toBe("Use 'send back' under 'when I'm receiving'.")
-    expect(at('foreign_aid', fa({ ...base, receive: sendBack() }), FA_READ).hint).toBe('Drop "what the opponent sent last" right on top of the number to swap it in.')
+    expect(at('foreign_aid', fa({ ...base, receive: sendBack() }), FA_READ).hint).toBe('Drop "what the opponent gave me last" right on top of the number to swap it in.')
     // A real number block pushed out by the drop (the old, non-shadow case) holds the step until it is gone
     const loose = fa({ ...base, receive: sendBack(sentLast) }, { type: 'fa_number', fields: { NUM: 5 } })
     expect(at('foreign_aid', loose, FA_READ)).toMatchObject({ index: 5, hint: 'A block is outside your strategy. Delete it (drag it to the bin) or put it inside.' })
+  })
+
+  it('step 6 names the look-alike block: "returned last" in the slot is not "gave me last"', () => {
+    const base = { sendDefault: 10, send: ifThen(short, send(shadowNum(0))) }
+    const returned = fa({ ...base, receive: sendBack({ block: { type: 'fa_opp_returned_last' }, ...shadowNum(5) }) })
+    expect(at('foreign_aid', returned, FA_READ)).toMatchObject({ index: 5, hint: 'That\'s "returned last". This step needs "gave me last".' })
+    // Another Opponent value still gets the swap hint
+    const average = fa({ ...base, receive: sendBack({ block: { type: 'fa_opp_avg', fields: { WHAT: 'SEND' } }, ...shadowNum(5) }) })
+    expect(at('foreign_aid', average, FA_READ).hint).toBe('Drop "what the opponent gave me last" right on top of the number to swap it in.')
+  })
+
+  it('the look-alike hint works both ways, and only for the two look-alike blocks', () => {
+    expect(lookAlikeHint('fa_opp_returned_last', 'fa_opp_sent_last')).toBe('That\'s "returned last". This step needs "gave me last".')
+    expect(lookAlikeHint('fa_opp_sent_last', 'fa_opp_returned_last')).toBe('That\'s "gave me last". This step needs "returned last".')
+    expect(lookAlikeHint('fa_opp_sent_last', 'fa_opp_sent_last')).toBeNull()
+    expect(lookAlikeHint('fa_opp_avg', 'fa_opp_sent_last')).toBeNull()
+    expect(lookAlikeHint('fa_number', 'fa_opp_returned_last')).toBeNull()
+    expect(lookAlikeHint(undefined, 'fa_opp_sent_last')).toBeNull()
   })
 
   it('step 7 passes on a new version, or when the window is closed', () => {

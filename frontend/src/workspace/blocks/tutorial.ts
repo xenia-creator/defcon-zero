@@ -202,6 +202,16 @@ const faIf = (layout: Layout) => firstIf(faSend(layout))
 const faThen = (layout: Layout) => statements(faIf(layout), 'DO0')
 const OPPONENT_VALUES = new Set(['fa_opp_sent_last', 'fa_opp_returned_last', 'fa_opp_avg'])
 
+/** The two Opponent blocks that read alike, by the words that tell them apart. */
+const LOOK_ALIKE: Record<string, string> = { fa_opp_sent_last: 'gave me last', fa_opp_returned_last: 'returned last' }
+
+/** When a slot holds the other one of the two look-alike blocks, says which one it is and which one the step needs. */
+export function lookAlikeHint(found: unknown, needed: string): string | null {
+  return typeof found === 'string' && found !== needed && LOOK_ALIKE[found] && LOOK_ALIKE[needed]
+    ? `That's "${LOOK_ALIKE[found]}". This step needs "${LOOK_ALIKE[needed]}".`
+    : null
+}
+
 const ROUND_3: TutorialStep[] = [
   {
     id: 'fa-roles',
@@ -241,13 +251,13 @@ const ROUND_3: TutorialStep[] = [
   {
     id: 'fa-cheated',
     title: 'Remember who cheated you',
-    text: 'Open Opponent and drag "the opponent has ever sent back less than I sent" into the gap after "if".',
+    text: 'Open Opponent and drag "the opponent has ever returned less than I sent" into the gap after "if".',
     highlight: [{ kind: 'category', id: CATEGORY.opponent.id }, { kind: 'block', type: 'ic_if' }],
-    general: 'Find "the opponent has ever sent back less than I sent" in Opponent and drop it after "if".',
+    general: 'Find "the opponent has ever returned less than I sent" in Opponent and drop it after "if".',
     check: (layout) => faIf(layout)?.inputs?.IF0?.block?.type === 'fa_opp_ever_short',
     hint: (layout) => {
       const condition = faIf(layout)?.inputs?.IF0?.block
-      return condition && condition.type !== 'fa_opp_ever_short' ? 'Close, but this step needs "has ever sent back less than I sent".' : null
+      return condition && condition.type !== 'fa_opp_ever_short' ? 'Close, but this step needs "has ever returned less than I sent".' : null
     },
   },
   {
@@ -271,13 +281,13 @@ const ROUND_3: TutorialStep[] = [
   {
     id: 'fa-fair',
     title: 'Be fair when receiving',
-    text: 'Now "when I\'m receiving". From Actions, drag "send back" into it. Then, from Opponent, drop "what the opponent sent last" over its number. Sending back what they sent means they never lose by trusting you, and you keep the rest.',
+    text: 'Now "when I\'m receiving". From Actions, drag "send back" into it. Then, from Opponent, drop "what the opponent gave me last" over its number. Sending back what they gave means they never lose by trusting you, and you keep the rest.',
     highlight: [
       { kind: 'input', type: 'fa_strategy', input: 'RECEIVE' },
       { kind: 'category', id: CATEGORY.actions.id },
       { kind: 'category', id: CATEGORY.opponent.id },
     ],
-    general: 'Build "send back (what the opponent sent last)" under "when I\'m receiving".',
+    general: 'Build "send back (what the opponent gave me last)" under "when I\'m receiving".',
     check: (layout) =>
       looseTop(layout, 'fa_strategy').length === 0 &&
       faReceive(layout).some(
@@ -288,8 +298,10 @@ const ROUND_3: TutorialStep[] = [
       if (receive.some((b) => b.type === 'fa_send')) return FA_MISPLACED.sendInReceive
       const back = receive.find((b) => b.type === 'fa_return')
       const amount = slotValue(back?.inputs?.AMOUNT)
+      const lookAlike = lookAlikeHint(amount?.type, 'fa_opp_sent_last')
+      if (back && lookAlike) return lookAlike
       if (back && amount && amount.type !== 'fa_opp_sent_last' && (amount.type === 'fa_number' || OPPONENT_VALUES.has(String(amount.type))))
-        return 'Drop "what the opponent sent last" right on top of the number to swap it in.'
+        return 'Drop "what the opponent gave me last" right on top of the number to swap it in.'
       if (looseTop(layout, 'fa_strategy').length > 0) return 'A block is outside your strategy. Delete it (drag it to the bin) or put it inside.'
       return null
     },
