@@ -385,7 +385,17 @@ def _run_in_pool(matches, sources, game, turns, noise, seed, record=False):
         for i in todo:
             started[i] = 0.0
         stuck = []
-        workers = min(len(todo), os.cpu_count() or 1)
+        configured_workers = os.environ.get("ENGINE_MAX_WORKERS")
+        if configured_workers is None:
+            worker_limit = os.cpu_count() or 1
+        else:
+            try:
+                worker_limit = int(configured_workers)
+            except ValueError as e:
+                raise ValueError("ENGINE_MAX_WORKERS must be a positive integer") from e
+            if worker_limit < 1:
+                raise ValueError("ENGINE_MAX_WORKERS must be a positive integer")
+        workers = min(len(todo), worker_limit)
         with multiprocessing.Pool(workers, initializer=_init_worker, initargs=(started, running, memory_limit_failed)) as pool:
             pending = {}
             for i in todo:
