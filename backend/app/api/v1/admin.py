@@ -15,7 +15,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.dependencies import CurrentOrganiser, PathId
 from app.core.database import get_db
 from app.schemas.admin import AdminOverview
-from app.schemas.rounds import ExtendRoundRequest, OpenRoundRequest, Round
+from app.schemas.rounds import (
+    ExtendRoundRequest,
+    OpenRoundRequest,
+    Round,
+    SetTimeRequest,
+    UpdateRoundRequest,
+)
 from app.schemas.teams import TeamProfile, TeamStatusUpdate
 from app.services import admin as admin_service
 from app.services import round_runs
@@ -23,6 +29,16 @@ from app.services import rounds as rounds_service
 from app.services import teams as teams_service
 
 router = APIRouter(prefix="/admin", tags=["admin"])
+
+
+@router.patch("/rounds/{round_id}")
+async def update_round(
+    round_id: PathId,
+    body: UpdateRoundRequest,
+    organiser: CurrentOrganiser,
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> Round:
+    return await rounds_service.update_round_cut(db, round_id, body.cut)
 
 
 @router.post("/rounds/{round_id}/open")
@@ -43,6 +59,16 @@ async def extend_round(
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> Round:
     return await rounds_service.extend_round(db, round_id, body.minutes)
+
+
+@router.post("/rounds/{round_id}/set-time")
+async def set_round_time(
+    round_id: PathId,
+    body: SetTimeRequest,
+    organiser: CurrentOrganiser,
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> Round:
+    return await rounds_service.set_round_time(db, round_id, body.minutes)
 
 
 @router.post("/rounds/{round_id}/start")

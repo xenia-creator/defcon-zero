@@ -1,6 +1,7 @@
 import { useQueryClient } from '@tanstack/react-query'
 import { Suspense, lazy, useEffect, useState } from 'react'
 import { ErrorBoundary } from '../components/ErrorBoundary'
+import { RoundIntro } from '../components/RoundIntro'
 import { Button, ConnectionStatus, Countdown, Defcon, Empty, Toasts } from '../components/ui'
 import { useAuth, type Session } from '../lib/auth'
 import { isClaimed } from '../lib/contract'
@@ -11,6 +12,7 @@ import { WarMapPreview } from '../warmap/WarMapPreview'
 import { ClaimCountry } from '../workspace/auth/ClaimCountry'
 import { Login } from '../workspace/auth/Login'
 import { OrganiserConsole } from '../workspace/organiser/OrganiserConsole'
+import { replayTour, useTourStatus } from '../tour/useTour'
 import { VIEW_LABELS, seesStandings, viewsFor, type View } from './views'
 
 // Monaco and Blockly are large, so the workspace loads only once a team has its nation
@@ -53,6 +55,7 @@ function Shell({ session }: { session: Session }) {
   const team = session.team
   useTeamSync(!!team)
   const { data: round } = useCurrentRound()
+  const tour = useTourStatus()
 
   const views = viewsFor(session)
   const [chosen, setChosen] = useState<View | undefined>(views[0])
@@ -95,7 +98,7 @@ function Shell({ session }: { session: Session }) {
         </div>
 
         <div className="flex min-w-0 max-w-full flex-wrap items-center gap-x-4 gap-y-1">
-          <div className="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-1 border border-steel bg-panel/60 px-3 py-1">
+          <div data-tour="topbar-clock" className="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-1 border border-steel bg-panel/60 px-3 py-1">
             {/* The war map shows DEFCON and the game in its own header, so the bar doesn't repeat them there */}
             {view !== 'warmap' && (
               <>
@@ -114,6 +117,12 @@ function Shell({ session }: { session: Session }) {
             <span className="max-w-40 truncate text-muted" title={team?.nation_name ?? session.username}>
               {team?.nation_name ?? session.username}
             </span>
+            {/* Replays the tour for the screen shown now (frontend/docs/BLOCKS.md part 3) */}
+            {tour.canReplay && (
+              <button onClick={replayTour} className="label cursor-pointer !text-[10px] transition-colors hover:!text-fire">
+                Tour
+              </button>
+            )}
             <button onClick={() => logout()} className="label cursor-pointer !text-[10px] transition-colors hover:!text-fire">
               Log out
             </button>
@@ -121,7 +130,12 @@ function Shell({ session }: { session: Session }) {
         </div>
       </header>
 
-      <main className={`flex min-h-0 flex-1 flex-col ${view === 'warmap' ? 'h-full overflow-hidden max-[900px]:overflow-y-auto' : 'overflow-y-auto'}`}>
+      {/* The analyst's desk behind the team workspace (not the claim screen, which has its own image) */}
+      <main
+        className={`flex min-h-0 flex-1 flex-col ${view === 'warmap' ? 'h-full overflow-hidden max-[900px]:overflow-y-auto' : 'overflow-y-auto'} ${
+          view === 'workspace' && team && !needsCountry ? 'workspace-backdrop' : ''
+        }`}
+      >
         {view === 'command' ? (
           <OrganiserConsole />
         ) : view === 'warmap' ? (
@@ -152,6 +166,8 @@ function Shell({ session }: { session: Session }) {
       <Toasts />
       <div className="film-grain" aria-hidden />
       <ZoneOverlay round={round} />
+      {/* Not over the Command Console: it would cover the controls the organiser just used */}
+      <RoundIntro round={round} enabled={view !== 'command'} />
     </div>
   )
 }

@@ -1,10 +1,13 @@
 import { useQueryClient } from '@tanstack/react-query'
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Badge, Button, Empty, LoadFailed, Panel, inputClass, paperPrimaryClass, useConfirm } from '../../components/ui'
+import { FileNumber, RedactionBar, Stamp } from '../../components/period'
+import { Button, Empty, LoadFailed, Panel, inputClass, paperPrimaryClass, useConfirm } from '../../components/ui'
 import { ApiError, errorMessage, hasCode, request } from '../../lib/api'
 import { useAuth } from '../../lib/auth'
 import { Team, isClaimed } from '../../lib/contract'
 import { keys, useTerritories } from '../../lib/queries'
+import { useTour } from '../../tour/useTour'
+import './ClaimCountry.css'
 
 const NAME_RULE = /^[A-Za-z0-9 ]{3,24}$/
 const HAS_LETTER = /[A-Za-z]/
@@ -70,16 +73,88 @@ function NationEmblem({ name, size = 48 }: { name: string; size?: number }) {
   )
 }
 
+// A ruled line on the sheet, as on the login form: mono for what is typed, the placeholder in
+// typewriter (muted ink, still AA), an ink underline that thickens on focus. Important, because
+// .paper-input is unlayered CSS.
+const paperInputClass =
+  'paper-input !bg-transparent !px-0 !font-data placeholder:font-label focus:!border-type-ink focus:!shadow-[0_2px_0_0_var(--color-type-ink)]'
+
+// The login sheet's lift off the background
+const sheetShadow =
+  '!shadow-[inset_0_1px_0_rgb(255_255_255/0.15),inset_0_0_0_1px_rgb(35_31_26/0.18),0_32px_64px_-16px_rgb(0_0_0/0.8),0_12px_32px_-8px_rgb(0_0_0/0.55)]'
+
+// A small tag pinned flat to the paper casts a short shadow (the sheet's long one would darken Lock in below it on a phone)
+const tagShadow =
+  '!shadow-[inset_0_1px_0_rgb(255_255_255/0.15),inset_0_0_0_1px_rgb(35_31_26/0.18),0_8px_14px_-6px_rgb(0_0_0/0.55),0_2px_4px_rgb(0_0_0/0.3)]'
+
+// A field label on the sheet: its number in mono, the words typed
+const fieldLabelClass = 'flex items-baseline gap-2 font-label text-xs tracking-[0.2em] text-type-muted uppercase'
+
+/** A khaki pencil tick in the field index margin. */
+function PencilTick() {
+  return (
+    <svg aria-hidden width="20" height="16" viewBox="0 0 20 16" className="text-khaki">
+      <path d="M2 9.5 C4 10.5 5.5 12 7 14.5 C10 8.5 13.5 4.5 18.5 1.5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+    </svg>
+  )
+}
+
+/**
+ * The issued credential: a manila tag pinned to the sheet's corner, filled in as the form is.
+ * Decorative (the form already says all of it), so screen readers skip it.
+ */
+function IdTag({ nation, code, rejected, issued }: { nation: string | null; code: string | null; rejected: boolean; issued: boolean }) {
+  const manila = 'color-mix(in oklab, var(--color-khaki) 45%, transparent)'
+  return (
+    <div
+      aria-hidden
+      className={`paper-sheet relative flex w-full shrink-0 items-center gap-4 px-4 py-2 sm:w-40 sm:flex-col sm:gap-2 sm:py-4 ${tagShadow} ${issued ? 'claim-tag--swing' : ''}`}
+      style={{ backgroundImage: `linear-gradient(${manila}, ${manila}), url('/paper.jpg')` }}
+    >
+      {/* Brass eyelet, with the pin that holds the tag to the sheet pushed through it */}
+      <span className="relative grid size-5 shrink-0 place-items-center rounded-full border-[3px] border-type-brass bg-ink/85 shadow-[inset_0_1px_0_rgb(255_255_255/0.25),0_1px_0_rgb(255_255_255/0.3)]">
+        <span className="size-3 rounded-full bg-[radial-gradient(circle_at_35%_30%,var(--color-paper),var(--color-khaki)_45%,var(--color-type-brass))] shadow-[1px_2px_2px_rgb(0_0_0/0.5)]" />
+      </span>
+      <span className="flex min-w-0 flex-1 flex-col gap-1 sm:w-full sm:items-center sm:gap-2">
+        <span className="font-label text-xs tracking-[0.2em] text-type-muted uppercase">Identity tag</span>
+        <span className="flex min-h-10 w-full items-center border-type-muted/60 font-label text-sm leading-tight tracking-[0.08em] break-words uppercase sm:justify-center sm:border-y sm:py-1 sm:text-center">
+          {nation ? (
+            <span className={rejected ? 'line-through decoration-type-red decoration-2' : ''}>{nation}</span>
+          ) : (
+            <RedactionBar width={10} />
+          )}
+        </span>
+      </span>
+      <span className="flex shrink-0 items-center gap-2">
+        <NationEmblem name={nation ?? ''} size={32} />
+        <span className="font-data text-3xl font-bold tracking-[0.12em]">{code ?? '––'}</span>
+      </span>
+      {/* Issued: a round seal pressed over the tag's corner on lock-in */}
+      {issued && (
+        <span className="claim-seal absolute right-24 -bottom-12 grid sm:-right-6 size-16 place-items-center rounded-full border-[3px] border-double border-type-ink bg-[var(--paper-base)]/60 font-label text-[11px] leading-tight tracking-[0.16em] text-type-ink uppercase [mask-image:repeating-linear-gradient(115deg,#000_0_6px,rgb(0_0_0/0.75)_6px_8px)]">
+          <span className="text-center">
+            Issued
+            <span className="block font-data text-xs tracking-[0.08em]">{code}</span>
+          </span>
+        </span>
+      )}
+    </div>
+  )
+}
+
 export function ClaimCountry({ username }: { username: string }) {
   const setTeam = useAuth((s) => s.setTeam)
   const queries = useQueryClient()
   const { data: territories = [], isPending, isError, refetch } = useTerritories()
+  // The tour waits until the list has loaded (or failed and can be retried)
+  useTour('claim', !isPending, { role: 'team' })
   const [selected, setSelected] = useState<string | null>(null)
   const [nationName, setNationName] = useState('')
   const [filter, setFilter] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [justClaimed, setJustClaimed] = useState(false)
+  const [nameTaken, setNameTaken] = useState(false) // styling only: marks the name line after NAME_TAKEN
   const sending = useRef(false)
   const nameInputRef = useRef<HTMLInputElement>(null)
   const { dialog, ask } = useConfirm()
@@ -111,7 +186,9 @@ export function ClaimCountry({ username }: { username: string }) {
       const team = await request('POST', '/teams/claim', Team, { territory_code: code, nation_name: name })
       setJustClaimed(true)
       void queries.invalidateQueries({ queryKey: keys.territories })
-      setTimeout(() => setTeam(team), 400) // let the stamp animation land, then enter workspace
+      // Let the stamp land on the sheet, then enter the workspace (no motion: just a beat to read it)
+      const reduced = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
+      setTimeout(() => setTeam(team), reduced ? 400 : 1100)
     } catch (err) {
       if (hasCode(err, 'ALREADY_CLAIMED')) {
         try {
@@ -129,6 +206,7 @@ export function ClaimCountry({ username }: { username: string }) {
         if (hasCode(err, 'TERRITORY_TAKEN')) {
           setSelected(null)
         } else if (hasCode(err, 'NAME_TAKEN')) {
+          setNameTaken(true)
           nameInputRef.current?.focus()
         }
         void queries.invalidateQueries({ queryKey: keys.territories })
@@ -139,9 +217,17 @@ export function ClaimCountry({ username }: { username: string }) {
     }
   }
 
+  const docket = `DZ-${(nameHash(username) % 9000) + 1000}`
+  const validName = name && !nameProblem ? name : null
+  const errorNote = error && (
+    <p role="alert" className="border-l-2 border-type-red pl-4 font-label text-sm text-type-red">
+      {error}
+    </p>
+  )
+
   return (
-    <div className="relative isolate flex min-h-full flex-col gap-4 p-3 sm:p-5 lg:h-full lg:flex-row lg:items-stretch">
-      {/* claim.jpg behind everything, darkened on the left where the list sits; the column on the right stays open */}
+    <div className="relative isolate flex min-h-full flex-col gap-6 p-4 sm:p-6 lg:h-full lg:flex-row lg:items-start lg:gap-8 lg:p-8">
+      {/* claim.jpg behind everything, darkened on the left where the index and sheet sit; the soldier on the right stays open */}
       <div
         className="absolute inset-0 -z-20 bg-cover bg-[position:right_center]"
         style={{ backgroundImage: "url('/claim.jpg')" }}
@@ -152,25 +238,16 @@ export function ClaimCountry({ username }: { username: string }) {
         aria-hidden
       />
 
-      {/* Nation established stamp — full-screen reveal on lock-in */}
-      {justClaimed && (
-        <div role="status" aria-live="polite" className="fixed inset-0 z-50 flex items-center justify-center bg-ink/85">
-          <div className="paper px-10 py-8">
-            <div className="stamp stamp-land rotate-[-6deg] text-4xl text-type-olive">Nation Established</div>
-          </div>
-        </div>
-      )}
-
-      {/* Territory list: a dark field-kit panel the image shows faintly through */}
+      {/* Field index: a dark field-kit ledger of regions, one rule per row, codes in mono */}
       <Panel
         title="Available territories"
         right={<span className="label !text-khaki tracking-widest">{territories.length ? `${freeCount} of ${territories.length} free` : `${freeCount} free`}</span>}
-        className="min-h-0 min-w-0 flex-1 !bg-ink/75 max-lg:min-h-[60vh] lg:max-w-4xl"
+        className="min-h-0 min-w-0 shrink-0 max-lg:h-[36vh] lg:h-full lg:w-[25rem]"
         bodyClass="flex min-h-0 flex-col"
       >
-        <div className="relative border-b border-steel p-3">
+        <div className="relative border-b border-steel p-4">
           <input
-            className={inputClass}
+            className={`${inputClass} placeholder:text-muted focus:!border-khaki focus:!shadow-[inset_0_0_0_1px_var(--color-khaki)]`}
             aria-label="Search countries"
             placeholder="Search countries…"
             maxLength={60}
@@ -181,13 +258,14 @@ export function ClaimCountry({ username }: { username: string }) {
             <button
               type="button"
               onClick={() => setFilter('')}
-              className="label absolute top-1/2 right-6 -translate-y-1/2 cursor-pointer !text-[10px] hover:!text-paper"
+              className="label absolute top-1/2 right-8 -translate-y-1/2 cursor-pointer !text-xs hover:!text-paper"
             >
               Clear
             </button>
           )}
         </div>
-        <div className="min-h-0 flex-1 overflow-y-auto p-3">
+        <div data-tour="claim-list" className="relative flex min-h-0 flex-1 flex-col">
+        <div className="min-h-0 flex-1 overflow-y-auto">
           {isPending ? (
             <Empty>Loading territories…</Empty>
           ) : isError ? (
@@ -195,96 +273,160 @@ export function ClaimCountry({ username }: { username: string }) {
           ) : shown.length === 0 ? (
             <Empty>No country matches "{filter}".</Empty>
           ) : (
-            <ul className="grid grid-cols-[repeat(auto-fill,minmax(180px,1fr))] gap-2">
-              {shown.map((t) => (
-                <li key={t.code}>
-                  <button
-                    disabled={t.claimed}
-                    onClick={() => setSelected(t.code)}
-                    className={`flex w-full cursor-pointer items-center justify-between gap-2 border px-3 py-2 text-left text-sm transition-colors disabled:cursor-not-allowed disabled:opacity-45 ${
-                      selected === t.code
-                        ? 'border-fire bg-fire/10 text-fire'
-                        : 'border-steel bg-panel/60 hover:border-khaki hover:bg-panel'
-                    }`}
-                  >
-                    <span className="truncate tracking-wide">{t.name}</span>
-                    {t.claimed && <Badge status="taken" />}
-                  </button>
-                </li>
-              ))}
+            <>
+            {/* Column heads for the ledger, held at the top while it scrolls */}
+            <div aria-hidden className="sticky top-0 z-10 grid grid-cols-[2rem_1fr_auto] gap-4 border-b border-steel bg-panel px-4 py-2 font-label text-xs tracking-[0.2em] text-muted uppercase">
+              <span>Code</span>
+              <span>Region</span>
+            </div>
+            <ul>
+              {shown.map((t) => {
+                const isSelected = selected === t.code
+                // Our own claim landing (the stamp moment): still shown as ours, not as taken by someone else
+                const ours = justClaimed && isSelected
+                const takenByOther = t.claimed && !ours
+                return (
+                  <li key={t.code} className="border-b border-steel last:border-b-0">
+                    <button
+                      disabled={t.claimed}
+                      aria-pressed={isSelected}
+                      onClick={() => setSelected(t.code)}
+                      className={`grid w-full cursor-pointer grid-cols-[2rem_1fr_auto] items-center gap-4 px-4 py-2 text-left leading-6 transition-colors focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-khaki disabled:cursor-not-allowed ${
+                        isSelected ? 'bg-steel' : 'hover:bg-steel/50'
+                      }`}
+                    >
+                      <span aria-hidden className="font-data text-xs tracking-[0.08em] text-khaki">
+                        {t.code}
+                      </span>
+                      <span className={`truncate font-label tracking-wide ${takenByOther ? 'text-muted line-through decoration-muted' : 'text-paper'}`}>
+                        {t.name}
+                      </span>
+                      {takenByOther ? (
+                        <span className="font-label text-xs tracking-[0.2em] text-muted uppercase">taken</span>
+                      ) : ours ? (
+                        <span className="flex items-center gap-2 font-label text-xs tracking-[0.2em] text-khaki uppercase">
+                          yours
+                          <PencilTick />
+                        </span>
+                      ) : isSelected ? (
+                        <PencilTick />
+                      ) : null}
+                    </button>
+                  </li>
+                )
+              })}
             </ul>
+            </>
           )}
+        </div>
+        {/* More rows below: the ledger fades into the panel rather than stopping on a cut row */}
+        <div aria-hidden className="pointer-events-none absolute inset-x-0 bottom-0 h-8 bg-linear-to-t from-panel to-transparent" />
         </div>
       </Panel>
 
-      {/* Claim sheet: the nation is registered on paper */}
-      <section className="paper relative flex shrink-0 flex-col gap-4 self-start p-5 max-lg:w-full lg:w-96">
-        <header className="border-b-2 border-double border-type-muted pb-3">
-          <p className="font-[family-name:var(--font-type)] text-[11px] tracking-[0.24em] text-type-muted uppercase">
-            Form DZ-2 · Registration of nation
-          </p>
-          <h2 className="stencil mt-1 text-2xl tracking-[0.08em]">Claim your nation</h2>
-        </header>
-
-        <p className="font-[family-name:var(--font-type)] text-sm leading-relaxed text-type-muted">
-          {username}, name your nation and pick its territory. Both are unique, and the choice is final.
-        </p>
-
-        <label className="flex flex-col gap-1">
-          <span className="font-mono text-[10px] font-bold tracking-[0.24em] text-type-muted uppercase">Nation name</span>
-          <input
-            ref={nameInputRef}
-            className="paper-input"
-            placeholder="Red Fox Republic"
-            maxLength={24}
-            autoComplete="off"
-            spellCheck={false}
-            value={nationName}
-            onChange={(e) => setNationName(e.target.value)}
-          />
-          <span className={`font-[family-name:var(--font-type)] text-xs ${name && nameProblem ? 'text-type-red' : 'text-type-muted'}`}>
-            {name && nameProblem ? nameProblem : '3 to 24 letters, numbers or spaces.'}
-          </span>
-        </label>
-
-        {/* Live emblem preview */}
-        {name && !nameProblem && (
-          <div className="flex items-center gap-3 border border-dashed border-type-muted/70 p-3">
-            <NationEmblem name={name} size={42} />
-            <div className="min-w-0">
-              <p className="font-mono text-[10px] font-bold tracking-[0.2em] text-type-muted uppercase">Emblem</p>
-              <p className="truncate font-[family-name:var(--font-type)] text-lg tracking-widest">{name.toUpperCase()}</p>
-            </div>
+      {/* The clearance document: the nation is registered on paper, and the tag is issued with it */}
+      <section className={`paper-sheet relative flex w-full shrink-0 flex-col gap-6 p-6 sm:p-8 lg:w-[38rem] ${sheetShadow} ${justClaimed ? 'claim-sheet--filed' : ''}`}>
+        {/* Once filed, the form fades back so the stamp reads clearly; the tag (being issued) stays crisp */}
+        <div
+          className={`flex flex-col gap-6 [&>*:not(.claim-tag-pin)]:transition-opacity [&>*:not(.claim-tag-pin)]:duration-300 motion-reduce:[&>*]:transition-none ${
+            justClaimed ? '[&>*:not(.claim-tag-pin)]:opacity-40' : ''
+          }`}
+        >
+          {/* Header and intro text leave room on the right for the tag pinned to the corner; the rule runs full width */}
+          <div className="flex flex-col gap-4">
+            <header data-tour="claim-form" className="flex flex-col gap-2 border-b border-type-muted pb-4 sm:pr-44">
+              <p className="font-label text-xs tracking-[0.2em] text-type-muted uppercase">Form DZ-2 · Registration of nation</p>
+              <h2 className="font-title text-2xl tracking-[0.06em] sm:text-3xl">Claim your nation</h2>
+              <FileNumber number={docket} className="self-start text-type-muted" />
+            </header>
+            <p className="font-label text-sm leading-relaxed sm:pr-44">
+              {username}, name your nation and pick its territory. Both are unique, and the choice is final.
+            </p>
           </div>
-        )}
 
-        <div className="border-y border-type-muted/60 py-3">
-          <span className="font-mono text-[10px] font-bold tracking-[0.24em] text-type-muted uppercase">Selected territory</span>
-          <p className="stencil mt-1 text-2xl break-words">{chosen ? chosen.name.toUpperCase() : '—'}</p>
+          <div className="flex flex-col gap-2">
+          <label className="flex flex-col gap-2">
+            <span className={fieldLabelClass}>
+              <span aria-hidden className="font-data">01</span>
+              Nation name
+            </span>
+            <input
+              ref={nameInputRef}
+              className={`${paperInputClass} ${nameTaken ? '!border-type-red focus:!border-type-red focus:!shadow-[0_2px_0_0_var(--color-type-red)]' : ''}`}
+              aria-invalid={nameTaken || !!(name && nameProblem)}
+              placeholder="e.g. Red Fox Republic"
+              maxLength={24}
+              autoComplete="off"
+              spellCheck={false}
+              value={nationName}
+              onChange={(e) => {
+                setNationName(e.target.value)
+                setNameTaken(false)
+              }}
+            />
+            <span className={`font-label text-xs ${name && nameProblem ? 'text-type-red' : 'text-type-muted'}`}>
+              {name && nameProblem ? nameProblem : '3 to 24 letters, numbers or spaces.'}
+            </span>
+          </label>
+          {/* A taken name is reported on its own line; any other error sits above Lock in */}
+          {nameTaken && errorNote}
+          </div>
+
+          <div className="flex flex-col gap-2">
+            <span className={fieldLabelClass}>
+              <span aria-hidden className="font-data">02</span>
+              Selected territory
+            </span>
+            <p className="flex min-h-11 items-baseline justify-between gap-4 border-b-[1.5px] border-type-muted pb-2">
+              {chosen ? (
+                <>
+                  <span className="font-label text-2xl tracking-[0.06em] break-words">{chosen.name.toUpperCase()}</span>
+                  <span className="font-data text-sm tracking-[0.08em] text-type-muted">{chosen.code}</span>
+                </>
+              ) : (
+                <span className="font-label text-base text-type-muted">Pick one from the territory index.</span>
+              )}
+            </p>
+          </div>
+
+          {/* On a phone the tag sits in the flow; from sm up it is pinned over the corner */}
+          <div className="claim-tag-pin max-sm:rotate-[-1deg] sm:absolute sm:-top-4 sm:right-8 sm:rotate-[3deg]">
+            <IdTag nation={validName ? validName.toUpperCase() : null} code={chosen?.code ?? null} rejected={nameTaken} issued={justClaimed} />
+          </div>
+
+          {!nameTaken && errorNote}
+
+          {/* Special Elite has a single weight: a hairline stroke in the text colour makes it bolder (paint, not a filter).
+              Wrapped, so the filed fade reaches it (the paper button pins its own opacity when disabled). */}
+          <div className="flex flex-col">
+          <Button
+            data-tour="claim-submit"
+            variant="primary"
+            disabled={!chosen || !!nameProblem || busy}
+            className={`py-3 !font-label !text-sm tracking-[0.24em] [-webkit-text-stroke:0.6px_currentColor] ${paperPrimaryClass}`}
+            onClick={() =>
+              chosen &&
+              ask({
+                title: 'Confirm your nation',
+                body: `Claim ${chosen.name} as ${name}? This can't be changed afterwards.`,
+                confirmLabel: 'Lock in',
+                run: () => claim(chosen.code),
+              })
+            }
+          >
+            {busy ? 'Claiming…' : 'Lock in'}
+          </Button>
+          </div>
         </div>
 
-        {error && (
-          <p role="alert" className="border-l-2 border-type-red bg-type-red/5 px-2 py-1 font-[family-name:var(--font-type)] text-sm text-type-red">
-            {error}
-          </p>
+        {/* Nation established: stamped onto the sheet itself on lock-in */}
+        {justClaimed && (
+          <div role="status" aria-live="polite" className="pointer-events-none absolute inset-0 flex items-center justify-center">
+            <Stamp tilt={-8} className="claim-stamp text-3xl text-type-ink sm:text-4xl">
+              Nation Established
+            </Stamp>
+          </div>
         )}
-
-        <Button
-          variant="primary"
-          disabled={!chosen || !!nameProblem || busy}
-          className={`py-2.5 tracking-[0.3em] ${paperPrimaryClass}`}
-          onClick={() =>
-            chosen &&
-            ask({
-              title: 'Confirm your nation',
-              body: `Claim ${chosen.name} as ${name}? This can't be changed afterwards.`,
-              confirmLabel: 'Lock in',
-              run: () => claim(chosen.code),
-            })
-          }
-        >
-          {busy ? 'Claiming…' : 'Lock in'}
-        </Button>
       </section>
       {dialog}
     </div>

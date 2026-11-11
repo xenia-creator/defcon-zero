@@ -8,7 +8,7 @@ None of them commit. app/services/event_reset.py runs them all in one transactio
 so a failed reset leaves the database as it was.
 """
 
-from sqlalchemy import delete, update
+from sqlalchemy import case, delete, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.match import Match
@@ -65,15 +65,29 @@ async def delete_all_teams(db: AsyncSession) -> int:
     return await delete_all(db, Team)
 
 
-async def reset_all_rounds(db: AsyncSession) -> int:
+async def reset_all_rounds(db: AsyncSession, cuts: dict[int, int]) -> int:
     """Put every round back to waiting, as scripts/create_rounds.py made it.
 
     The times are cleared because a waiting round has none (docs/api.md section 4),
-    and the seed because a new one is drawn when the round is next run. number,
-    game and config are left alone, so the rounds stay the same three rounds.
-    Returns how many rounds were reset.
+    the seed because a new one is drawn when the round is next run, and the run
+    failure because it belongs to a run that is over. Each cut
+    goes back to its value in cuts, by round number, so a cut changed during a dry
+    run does not carry into the real event. number, game and config are left
+    alone, so the rounds stay the same three rounds. Returns how many rounds were
+    reset.
     """
+    # case(cuts, value=Round.number) is SQL's CASE number WHEN 1 THEN 15 ... END.
+    # A number missing from cuts keeps its own cut (else_), rather than becoming
+    # null, which the column would refuse.
     result = await db.execute(
-        update(Round).values(status="waiting", opens_at=None, closes_at=None, seed=None)
+        update(Round).values(
+            status="waiting",
+            opens_at=None,
+            closes_at=None,
+            seed=None,
+            # A failure belongs to a run, and a waiting round has none.
+            run_error=None,
+            cut=case(cuts, value=Round.number, else_=Round.cut),
+        )
     )
     return result.rowcount

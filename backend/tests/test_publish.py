@@ -1,7 +1,7 @@
 """Tests for POST /admin/rounds/{id}/publish: the publish rules and the cut.
 
 Round 1 keeps its top 15, round 2 its top 8 and round 3 its top 2 (docs/api.md
-section 4). The standings are written straight to the database, as a run would
+section 4), unless an organiser has changed the cut with PATCH /admin/rounds/{id}. The standings are written straight to the database, as a run would
 leave them, so these tests need no engine.
 
 Auth for this route is covered with the other admin routes in test_rounds.py.
@@ -200,3 +200,62 @@ async def test_publishing_round_3_leaves_the_winner_and_runner_up(
     assert (winner["team_id"], winner["rank"], winner["status"]) == (ranked[0], 1, "active")
     assert (runner_up["team_id"], runner_up["rank"], runner_up["status"]) == (ranked[1], 2, "active")
     assert all(n["status"] == "eliminated" for n in nations[2:])
+
+
+# --- A changed cut ---
+
+
+async def set_cut(
+    client: httpx.AsyncClient, organiser: dict[str, str], round_id: int, cut: int
+) -> None:
+    response = await client.patch(
+        f"/admin/rounds/{round_id}", json={"cut": cut}, headers=organiser
+    )
+    assert response.status_code == 200
+
+
+@pytest.mark.parametrize("number,cut", [(1, 10), (2, 3), (2, 12)])
+async def test_publish_applies_a_changed_cut(
+    client: httpx.AsyncClient,
+    organiser: dict[str, str],
+    claimed_team: ClaimedTeam,
+    round_ids: dict[int, int],
+    number: int,
+    cut: int,
+) -> None:
+    ranked = [team.id for team in await claim_teams(client, claimed_team, 20)]
+    await reach_review(round_ids, number, ranked)
+    await set_cut(client, organiser, round_ids[number], cut)
+
+    await publish(client, organiser, round_ids[number])
+
+    statuses = await team_statuses()
+    assert [statuses[team_id] for team_id in ranked[:cut]] == ["active"] * cut
+    assert [statuses[team_id] for team_id in ranked[cut:]] == ["eliminated"] * (20 - cut)
+
+
+async def test_a_changed_cut_keeps_the_disqualified_and_ranking_rules(
+    client: httpx.AsyncClient,
+    organiser: dict[str, str],
+    claimed_team: ClaimedTeam,
+    round_ids: dict[int, int],
+) -> None:
+    """Disqualifying a team in the top 3 lets the 4th in, and it stays disqualified."""
+    teams = await claim_teams(client, claimed_team, 6)
+    ranked = [team.id for team in teams]
+    *played, late = ranked
+    await reach_review(round_ids, 2, played)
+    await set_cut(client, organiser, round_ids[2], 3)
+    disqualified = await client.patch(
+        f"/admin/teams/{played[0]}", json={"status": "disqualified"}, headers=organiser
+    )
+    assert disqualified.status_code == 200
+
+    await publish(client, organiser, round_ids[2])
+
+    statuses = await team_statuses()
+    assert statuses[played[0]] == "disqualified"
+    assert [statuses[team_id] for team_id in played[1:4]] == ["active"] * 3
+    assert statuses[played[4]] == "eliminated"
+    # A team with no rank in this round goes out, as before.
+    assert statuses[late] == "eliminated"

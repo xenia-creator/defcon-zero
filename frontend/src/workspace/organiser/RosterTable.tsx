@@ -1,6 +1,7 @@
-import { Fragment, useRef, useState } from 'react'
-import { Badge, Button, Empty, Panel, inputClass, useConfirm } from '../../components/ui'
-import type { AdminTeamRow, RoundStatus } from '../../lib/contract'
+import { Fragment, useRef, useState, type ReactNode } from 'react'
+import { Stamp } from '../../components/period'
+import { Button, useConfirm } from '../../components/ui'
+import type { AdminTeamRow, RoundStatus, TeamStatus } from '../../lib/contract'
 import { useLive } from '../../lib/live'
 import { admin, useRefreshAfterAdmin } from '../../lib/queries'
 import {
@@ -18,11 +19,44 @@ import {
   type SubmissionTone,
 } from './roster'
 
+/** Submission inks on the paper ledger: a rejected bot is the only red. */
 const TONE: Record<SubmissionTone, string> = {
-  none: 'text-muted',
-  checking: 'text-amber',
-  accepted: 'text-coop',
-  rejected: 'text-alert',
+  none: 'text-type-muted',
+  checking: 'text-type-brass',
+  accepted: 'text-type-olive',
+  rejected: 'text-type-red',
+}
+
+/** Status in the ledger: active is plain typed olive; the exceptions are stamped, faded red only for disqualified. */
+const STATUS_INK: Record<TeamStatus, string> = {
+  active: 'text-type-olive',
+  eliminated: 'text-type-muted',
+  disqualified: 'text-type-red',
+}
+
+/** A ledger line by status: eliminated fades to muted ink, disqualified gets a red wash. */
+const ROW_CLASS: Record<TeamStatus, string> = {
+  active: '',
+  eliminated: 'ops-ledger__row--out',
+  disqualified: 'ops-ledger__row--struck',
+}
+
+/** A disqualified nation is struck off the roll in red ink; an eliminated one is typed in muted ink. */
+const NATION_CLASS: Record<TeamStatus, string> = {
+  active: '',
+  eliminated: 'text-type-muted',
+  disqualified: 'line-through decoration-type-red decoration-2',
+}
+
+/** A typed line on the sheet, as on the login form: mono for what is typed, the placeholder typed. Also the order sheet's cut field. */
+export const PAPER_FIELD =
+  'paper-input !bg-transparent !px-0 !font-data placeholder:font-label focus:!border-type-ink focus:!shadow-[0_2px_0_0_var(--color-type-ink)]'
+
+/** Row buttons, restyled for paper: small and outlined, Disqualify in type-red, Restore in ink. Also the cut's Save. */
+export const ROW_BUTTON = '!px-4 !py-1 !font-label !text-xs !font-normal tracking-[0.16em] !bg-transparent'
+const PAPER_ROW_ACTION: Record<RowAction, string> = {
+  disqualify: '!border-type-red !text-type-red hover:!bg-type-red/10',
+  restore: '!border-type-ink !text-type-ink hover:!bg-type-ink/10',
 }
 
 const FILTER_LABEL: Record<StatusFilter, string> = { all: 'All', active: 'Active', eliminated: 'Eliminated', disqualified: 'Disqualified' }
@@ -102,116 +136,136 @@ export function Roster({ teams, round }: { teams: readonly AdminTeamRow[]; round
   }
 
   return (
-    <Panel
-      title={`Teams · Round ${round.number}`}
-      right={
-        <span className="mono text-xs text-muted" data-testid="roster-order">
-          {sortsByScore(round.status) ? 'Sorted by score' : 'Sorted by username'}
-        </span>
-      }
-    >
+    <section className="paper-sheet ops-sheet relative flex flex-col gap-6 p-6 sm:p-8" aria-labelledby="ops-ledger-title">
       {dialog}
-      <div className="space-y-3">
-        <div className="flex flex-wrap items-center gap-2">
-          <input
-            type="search"
-            aria-label="Search teams"
-            placeholder="Search nation or username"
-            className={`${inputClass} !w-auto min-w-0 flex-1`}
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-          />
-          <select aria-label="Status filter" className={`${inputClass} !w-auto`} value={statusFilter} onChange={(e) => setStatusFilter(e.target.value as StatusFilter)}>
-            {STATUS_FILTERS.map((f) => (
-              <option key={f} value={f}>
-                {FILTER_LABEL[f]}
-              </option>
-            ))}
-          </select>
-          <span className="mono text-xs text-muted" data-testid="roster-count">
-            {count}
+      <header className="flex flex-col gap-2 border-b border-type-muted pb-4">
+        <div className="flex items-baseline justify-between gap-4">
+          <p className="font-label text-xs tracking-[0.2em] text-type-muted uppercase">Field ledger · Nominal roll</p>
+          <span className="font-data text-sm text-type-muted" data-testid="roster-order">
+            {sortsByScore(round.status) ? 'Sorted by score' : 'Sorted by username'}
           </span>
         </div>
+        <h2 id="ops-ledger-title" className="font-title text-2xl tracking-[0.06em]">
+          Teams · Round {round.number}
+        </h2>
+      </header>
 
-        {teams.length === 0 ? (
-          <Empty>No team has claimed a nation yet.</Empty>
-        ) : shown.length === 0 ? (
-          <Empty>No teams match.</Empty>
-        ) : (
-          <div className="overflow-x-auto border border-steel bg-ink/60">
-            <table className="w-full text-left text-sm" aria-label="Teams">
-              <thead className="label border-b border-steel">
-                <tr>
-                  <th scope="col" className="px-3 py-2 font-normal">Nation</th>
-                  <th scope="col" className="px-3 py-2 font-normal">Territory</th>
-                  <th scope="col" className="px-3 py-2 font-normal">Username</th>
-                  <th scope="col" className="px-3 py-2 font-normal">Status</th>
-                  <th scope="col" className="px-3 py-2 font-normal">Submission</th>
-                  <th scope="col" className="px-3 py-2 text-right font-normal">Score</th>
-                  <th scope="col" className="px-3 py-2 font-normal">
-                    <span className="sr-only">Actions</span>
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-steel">
-                {shown.map((t) => {
-                  const submission = submissionLabel(t.submission)
-                  const action = rowAction(t.status)
-                  const busy = busyRows.has(t.team_id)
-                  const error = rowErrors[t.team_id]
-                  return (
-                    <Fragment key={t.team_id}>
-                      <tr data-testid="roster-row" className={t.status === 'active' ? '' : 'opacity-70'}>
-                        <td className="px-3 py-2 font-bold tracking-wider uppercase">{t.nation_name}</td>
-                        <td className="mono px-3 py-2 text-xs font-bold text-alert">{t.territory_code}</td>
-                        <td className="mono px-3 py-2 text-xs text-muted">{t.username}</td>
-                        <td className="px-3 py-2">
-                          <Badge status={t.status} />
-                        </td>
-                        <td className={`mono px-3 py-2 text-xs whitespace-nowrap ${TONE[submission.tone]}`}>{submission.text}</td>
-                        <td className="mono px-3 py-2 text-right tabular-nums">{formatScore(t.score)}</td>
-                        <td className="px-3 py-2 text-right whitespace-nowrap">
-                          {action && (
-                            <Button variant={ROW_ACTION[action].variant} className="!px-3 !py-1.5 !text-[10px]" disabled={busy} onClick={() => confirm(t, action)}>
-                              {busy ? 'Sending…' : ROW_ACTION[action].label}
-                            </Button>
-                          )}
+      <div className="flex flex-wrap items-end gap-4">
+        <input
+          type="search"
+          aria-label="Search teams"
+          placeholder="Search nation or username"
+          className={`${PAPER_FIELD} min-w-0 flex-1`}
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+        />
+        <select aria-label="Status filter" className={`${PAPER_FIELD} ops-select !w-auto !font-label`} value={statusFilter} onChange={(e) => setStatusFilter(e.target.value as StatusFilter)}>
+          {STATUS_FILTERS.map((f) => (
+            <option key={f} value={f}>
+              {FILTER_LABEL[f]}
+            </option>
+          ))}
+        </select>
+        <span className="pb-2 font-data text-sm text-type-muted" data-testid="roster-count">
+          {count}
+        </span>
+      </div>
+
+      {teams.length === 0 ? (
+        <PaperEmpty>No team has claimed a nation yet.</PaperEmpty>
+      ) : shown.length === 0 ? (
+        <PaperEmpty>No teams match.</PaperEmpty>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="ops-ledger w-full text-left" aria-label="Teams">
+            <thead>
+              <tr className="font-label text-xs tracking-[0.2em] text-type-muted uppercase">
+                <th scope="col" className="px-2 py-2 font-normal">Nation</th>
+                <th scope="col" className="px-2 py-2 font-normal">Territory</th>
+                <th scope="col" className="px-2 py-2 font-normal">Username</th>
+                <th scope="col" className="px-2 py-2 font-normal">Status</th>
+                <th scope="col" className="px-2 py-2 font-normal">Submission</th>
+                <th scope="col" className="px-2 py-2 text-right font-normal">Score</th>
+                <th scope="col" className="px-2 py-2 font-normal">
+                  <span className="sr-only">Actions</span>
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {shown.map((t) => {
+                const submission = submissionLabel(t.submission)
+                const action = rowAction(t.status)
+                const busy = busyRows.has(t.team_id)
+                const error = rowErrors[t.team_id]
+                return (
+                  <Fragment key={t.team_id}>
+                    <tr data-testid="roster-row" className={ROW_CLASS[t.status]}>
+                      <td className={`px-2 py-2 font-label text-base ${NATION_CLASS[t.status]}`}>{t.nation_name}</td>
+                      <td className="px-2 py-2 font-data text-sm font-bold">{t.territory_code}</td>
+                      <td className="px-2 py-2 font-data text-sm text-type-muted">{t.username}</td>
+                      <td className="px-2 py-2">
+                        {t.status === 'active' ? (
+                          <span className="font-label text-sm tracking-[0.14em] text-type-olive uppercase">{t.status}</span>
+                        ) : (
+                          <Stamp tilt={-3} className={`ops-stamp-sm whitespace-nowrap ${STATUS_INK[t.status]}`}>
+                            {t.status}
+                          </Stamp>
+                        )}
+                      </td>
+                      <td className={`px-2 py-2 font-data text-xs whitespace-nowrap ${TONE[submission.tone]}`}>{submission.text}</td>
+                      <td className="px-2 py-2 text-right font-data text-base font-bold">{formatScore(t.score)}</td>
+                      <td className="px-2 py-2 text-right whitespace-nowrap">
+                        {action && (
+                          <Button variant={ROW_ACTION[action].variant} className={`${ROW_BUTTON} ${PAPER_ROW_ACTION[action]}`} disabled={busy} onClick={() => confirm(t, action)}>
+                            {busy ? 'Sending…' : ROW_ACTION[action].label}
+                          </Button>
+                        )}
+                      </td>
+                    </tr>
+                    {error && (
+                      <tr data-testid="row-error" className="ops-ledger__error">
+                        <td colSpan={COLUMNS} role="alert" className="px-2 pb-2 text-right font-label text-sm text-type-red">
+                          {nationOf(t)}: {error}
                         </td>
                       </tr>
-                      {error && (
-                        <tr data-testid="row-error">
-                          <td colSpan={COLUMNS} role="alert" className="px-3 pb-2 text-right text-xs text-alert">
-                            {nationOf(t)}: {error}
-                          </td>
-                        </tr>
-                      )}
-                    </Fragment>
-                  )
-                })}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
-    </Panel>
+                    )}
+                  </Fragment>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </section>
   )
 }
 
-/** Team accounts that haven't claimed a territory yet. They have no team id, so there's nothing to do to them here. */
+/** An empty ledger, typed on the sheet (the shared Empty is for dark panels). */
+function PaperEmpty({ children }: { children: ReactNode }) {
+  return <p className="py-6 text-center font-label text-sm text-type-muted">{children}</p>
+}
+
+/**
+ * Team accounts that haven't claimed a territory yet: a typed field report at the foot of the order.
+ * They have no team id, so there's nothing to do to them here.
+ */
 export function UnclaimedPanel({ usernames }: { usernames: readonly string[] }) {
   const n = usernames.length
   return (
-    <Panel title="Unclaimed Accounts">
-      <div data-testid="unclaimed" className="space-y-2 text-sm">
-        <p className={n === 0 ? 'text-coop' : 'text-amber'}>{n === 0 ? 'All accounts claimed' : `${n} ${n === 1 ? 'account' : 'accounts'} not claimed`}</p>
+    <section aria-labelledby="ops-unclaimed-title" className="flex flex-col gap-2">
+      <h3 id="ops-unclaimed-title" className="font-label text-xs tracking-[0.2em] text-type-muted uppercase">
+        Field report · Unclaimed accounts
+      </h3>
+      <div data-testid="unclaimed" className="flex flex-col gap-2">
+        <p className={`font-label text-base ${n === 0 ? 'text-type-olive' : 'text-type-brass'}`}>{n === 0 ? 'All accounts claimed' : `${n} ${n === 1 ? 'account' : 'accounts'} not claimed`}</p>
         {n > 0 && (
-          <ul className="mono flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted" aria-label="Unclaimed accounts">
+          <ul className="flex flex-wrap gap-x-4 gap-y-2 font-data text-sm" aria-label="Unclaimed accounts">
             {usernames.map((u) => (
               <li key={u}>{u}</li>
             ))}
           </ul>
         )}
       </div>
-    </Panel>
+    </section>
   )
 }

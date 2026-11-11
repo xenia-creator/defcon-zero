@@ -9,8 +9,16 @@ from app.schemas.submissions import SubmissionStatus
 from app.schemas.teams import TeamStatus
 
 
+# Whether a running round's background run is still playing its matches, or
+# failed and is waiting for an organiser to retry it (docs/api.md section 7, v5.6).
+RunState = Literal["playing", "failed"]
+
+
 class OverviewRound(BaseModel):
-    """The round the console is showing. A cut-down Round object: no config."""
+    """The round the console is showing. A cut-down Round object: no config.
+
+    cut is the one setting it does carry, as the console shows and edits it.
+    """
 
     id: int
     number: int
@@ -18,6 +26,12 @@ class OverviewRound(BaseModel):
     status: RoundStatus
     opens_at: AwareDatetime | None
     closes_at: AwareDatetime | None
+    cut: int
+    # Both null unless status is running. run_error is the short reason the last
+    # run failed, set only when run_state is failed. The status itself stays
+    # running either way, so the round's status machine is unchanged.
+    run_state: RunState | None
+    run_error: str | None
 
 
 class OverviewSubmission(BaseModel):

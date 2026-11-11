@@ -22,6 +22,10 @@ class RoundConfig(BaseModel):
     block_limit: int
     rounds_per_match: int
     repetitions: int
+    # How many teams the round keeps when it is published. Stored in its own
+    # column, not in the config JSON, and added here when the response is built.
+    # Every game has one, so it lives on the shared class.
+    cut: int
 
 
 class TheatreOfWarConfig(RoundConfig):
@@ -74,3 +78,20 @@ class OpenRoundRequest(BaseModel):
 
 class ExtendRoundRequest(BaseModel):
     minutes: int = Field(ge=MIN_WINDOW_MINUTES, le=MAX_WINDOW_MINUTES)
+
+
+class SetTimeRequest(BaseModel):
+    # Minutes from now, not a time, for the same reason as open: the deadline
+    # comes from the server's clock, never the organiser's laptop.
+    minutes: int = Field(ge=MIN_WINDOW_MINUTES, le=MAX_WINDOW_MINUTES)
+
+
+class UpdateRoundRequest(BaseModel):
+    """The body of PATCH /admin/rounds/{id}. The cut is the only editable setting.
+
+    ge=1 turns 0 and negatives into a 400 VALIDATION_ERROR here, as minutes does.
+    The limits that depend on the other rounds' cuts need the database, so the
+    service checks those.
+    """
+
+    cut: int = Field(ge=1)

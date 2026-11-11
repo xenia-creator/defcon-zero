@@ -1,5 +1,5 @@
 /**
- * What the server sends, exactly as written in docs/api.md (v5.3). Every answer is
+ * What the server sends, exactly as written in docs/api.md (v5.6). Every answer is
  * checked against these before use, so a change on the server gives a clear message
  * instead of a broken screen. Keep this file, mock/server.mjs and docs/api.md in step:
  * change one, align the others. Never add a field the contract does not have.
@@ -16,10 +16,13 @@ export const TEAM_STATUSES = ['active', 'eliminated', 'disqualified'] as const
 export const ROUND_STATUSES = ['waiting', 'open', 'running', 'review', 'published'] as const
 export const GAMES = ['prisoners_dilemma', 'theatre_of_war', 'foreign_aid'] as const satisfies readonly GameKey[]
 export const SUBMISSION_STATUSES = ['pending', 'running', 'accepted', 'rejected'] as const
+/** v5.6: a running round's background run: still playing its matches, or failed and waiting for Retry. */
+export const RUN_STATES = ['playing', 'failed'] as const
 
 export type Role = (typeof ROLES)[number]
 export type TeamStatus = (typeof TEAM_STATUSES)[number]
 export type RoundStatus = (typeof ROUND_STATUSES)[number]
+export type RunState = (typeof RUN_STATES)[number]
 export type SubmissionStatus = (typeof SUBMISSION_STATUSES)[number]
 
 /** Section 1, error codes. Branch on these, never on the message. */
@@ -139,6 +142,8 @@ const RoundConfig = z.object({
   /** foreign_aid only: the most a sender can send, and how much it grows on arrival. */
   endowment: z.number().int().nonnegative().optional(),
   multiplier: z.number().int().positive().optional(),
+  /** v5.5: how many teams the round keeps at publish. Every game. Organisers change it with PATCH /admin/rounds/{id}. */
+  cut: z.number().int().positive(),
 })
 
 const RoundShape = z.object({
@@ -173,6 +178,9 @@ export type Rounds = z.infer<typeof Rounds>
 
 /** POST /admin/rounds/{id}/open and /extend body: minutes must be 1 to 240. */
 export type MinutesIn = { minutes: number }
+
+/** v5.5: PATCH /admin/rounds/{id} body. Answers with the Round object. */
+export type RoundCutIn = { cut: number }
 export const MIN_WINDOW_MINUTES = 1
 export const MAX_WINDOW_MINUTES = 240
 
@@ -263,7 +271,7 @@ export type StandingsNation = Standings['nations'][number]
 export type TeamStatusIn = { status: TeamStatus }
 
 export const AdminOverview = z.object({
-  /** The current round, or the first round before any has started. No config, no server_time. */
+  /** The current round, or the first round before any has started. No config (only its cut), no server_time. */
   round: z.object({
     id: z.number(),
     number: z.number(),
@@ -271,6 +279,12 @@ export const AdminOverview = z.object({
     status: RoundStatus,
     opens_at: z.string().nullable(),
     closes_at: z.string().nullable(),
+    /** v5.5: the round's config.cut, how many teams it keeps at publish. */
+    cut: z.number().int().positive(),
+    /** v5.6: while running, whether the matches are playing or the run failed. Null in every other status. */
+    run_state: z.enum(RUN_STATES).nullable(),
+    /** v5.6: why the run failed, at most 200 characters. Set only when run_state is failed. Shown as text, never branched on. */
+    run_error: z.string().nullable(),
   }),
   /** Every claimed team, sorted by username. */
   teams: z.array(

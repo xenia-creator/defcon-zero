@@ -50,6 +50,19 @@ async def round_with_bots(
     return teams
 
 
+async def run_error(round_id: int) -> str | None:
+    rows = await run_sql("SELECT run_error FROM rounds WHERE id = :id", id=round_id)
+    return rows[0][0]
+
+
+async def overview_run(client: httpx.AsyncClient, organiser: dict[str, str]) -> tuple:
+    """The round's (status, run_state, run_error) as the console sees them."""
+    response = await client.get("/admin/overview", headers=organiser)
+    assert response.status_code == 200, response.text
+    round_ = response.json()["round"]
+    return round_["status"], round_["run_state"], round_["run_error"]
+
+
 async def round_seed(round_id: int) -> int | None:
     rows = await run_sql("SELECT seed FROM rounds WHERE id = :id", id=round_id)
     return rows[0][0]
@@ -299,6 +312,95 @@ async def test_a_crashed_run_leaves_the_round_running_and_saves_nothing(
     assert await round_seed(round_ids[1]) is not None
 
 
+async def test_a_crashed_run_shows_as_failed_with_its_reason(
+    client: httpx.AsyncClient,
+    organiser: dict[str, str],
+    claimed_team: ClaimedTeam,
+    round_ids: dict[int, int],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    await round_with_bots(
+        client, organiser, claimed_team, round_ids[1], [TIT_FOR_TAT, ALWAYS_BETRAY]
+    )
+    monkeypatch.setattr(engine_bridge, "run_round_robin", failing_engine)
+
+    await start_round(client, organiser, round_ids[1])
+
+    assert await overview_run(client, organiser) == (
+        "running", "failed", "The match run crashed (RuntimeError: engine down)"
+    )
+
+
+async def test_a_round_whose_run_has_not_finished_shows_as_playing(
+    client: httpx.AsyncClient,
+    organiser: dict[str, str],
+    round_ids: dict[int, int],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Right after start, before the background run has done anything."""
+    await open_round(client, organiser, round_ids[1])
+
+    async def no_run(round_id: int) -> None:
+        return None
+
+    monkeypatch.setattr(round_runs, "run_round", no_run)
+
+    await start_round(client, organiser, round_ids[1])
+
+    assert await overview_run(client, organiser) == ("running", "playing", None)
+
+
+async def test_retry_clears_the_failure_before_the_run_begins(
+    client: httpx.AsyncClient,
+    organiser: dict[str, str],
+    claimed_team: ClaimedTeam,
+    round_ids: dict[int, int],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The console refetches straight after Retry, before the run itself starts."""
+    await round_with_bots(
+        client, organiser, claimed_team, round_ids[1], [TIT_FOR_TAT, ALWAYS_BETRAY]
+    )
+    monkeypatch.setattr(engine_bridge, "run_round_robin", failing_engine)
+    await start_round(client, organiser, round_ids[1])
+    assert await run_error(round_ids[1]) is not None
+
+    async def no_run(round_id: int) -> None:
+        return None
+
+    # The retried run never starts, so only retry itself can have cleared it.
+    monkeypatch.setattr(round_runs, "run_round", no_run)
+    response = await client.post(f"/admin/rounds/{round_ids[1]}/retry", headers=organiser)
+
+    assert response.status_code == 200
+    assert await overview_run(client, organiser) == ("running", "playing", None)
+
+
+async def test_a_retry_that_fails_again_shows_as_failed_again(
+    client: httpx.AsyncClient,
+    organiser: dict[str, str],
+    claimed_team: ClaimedTeam,
+    round_ids: dict[int, int],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    await round_with_bots(
+        client, organiser, claimed_team, round_ids[1], [TIT_FOR_TAT, ALWAYS_BETRAY]
+    )
+    monkeypatch.setattr(engine_bridge, "run_round_robin", failing_engine)
+    await start_round(client, organiser, round_ids[1])
+
+    async def other_failure(*args: object, **kwargs: object) -> None:
+        raise ValueError("bad match")
+
+    monkeypatch.setattr(engine_bridge, "run_round_robin", other_failure)
+    response = await client.post(f"/admin/rounds/{round_ids[1]}/retry", headers=organiser)
+
+    assert response.status_code == 200
+    assert await overview_run(client, organiser) == (
+        "running", "failed", "The match run crashed (ValueError: bad match)"
+    )
+
+
 async def test_retry_after_a_crash_finishes_the_round_with_the_same_seed(
     client: httpx.AsyncClient,
     organiser: dict[str, str],
@@ -321,6 +423,8 @@ async def test_retry_after_a_crash_finishes_the_round_with_the_same_seed(
     assert await round_status(round_ids[1]) == "review"
     assert await round_seed(round_ids[1]) == seed
     assert len(await stored_matches(round_ids[1])) == 1 * REPETITIONS
+    # Out of running, there is no run to report on.
+    assert await overview_run(client, organiser) == ("review", None, None)
 
 
 @pytest.mark.parametrize("status", ["waiting", "open", "review", "published"])
@@ -368,6 +472,58 @@ async def test_a_second_run_of_the_same_round_does_nothing(
 
     assert calls == [round_ids[1]]
     assert round_runs.RUNS_IN_PROGRESS == set()
+
+
+def test_a_checks_timeout_has_its_own_reason() -> None:
+    error = round_runs.ChecksDidNotFinish("Checks in round 1 did not finish in time.")
+
+    assert round_runs.describe_failure(error) == "Bot checks did not finish in time."
+
+
+def test_a_long_reason_is_cut_short() -> None:
+    reason = round_runs.describe_failure(RuntimeError("x" * 1000))
+
+    assert len(reason) == round_runs.RUN_ERROR_MAX_LENGTH
+    assert reason.startswith("The match run crashed (RuntimeError: xxx")
+    assert reason.endswith("…")
+
+
+def test_an_exception_with_no_message_is_named() -> None:
+    assert round_runs.describe_failure(RuntimeError()) == "The match run crashed (RuntimeError)"
+
+
+async def test_a_failure_is_not_recorded_on_a_round_that_moved_on(
+    round_ids: dict[int, int],
+) -> None:
+    """For example a reset while the run was failing: the round is waiting now."""
+    await round_runs.record_failure(round_ids[1], RuntimeError("engine down"))
+
+    assert await run_error(round_ids[1]) is None
+
+
+async def test_the_failure_is_stored_before_the_round_leaves_runs_in_progress(
+    round_ids: dict[int, int], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Otherwise a quick retry could clear it and then have its new run marked failed."""
+    await run_sql("UPDATE rounds SET status = 'running' WHERE id = :id", id=round_ids[1])
+    seen_in_progress = []
+    real_record_failure = round_runs.record_failure
+
+    async def failing_play_round(round_id: int) -> None:
+        raise RuntimeError("engine down")
+
+    async def watching_record_failure(round_id: int, error: Exception) -> None:
+        seen_in_progress.append(round_runs.is_in_progress(round_id))
+        await real_record_failure(round_id, error)
+
+    monkeypatch.setattr(round_runs, "play_round", failing_play_round)
+    monkeypatch.setattr(round_runs, "record_failure", watching_record_failure)
+
+    await round_runs.run_round(round_ids[1])
+
+    assert seen_in_progress == [True]
+    assert await run_error(round_ids[1]) is not None
+    assert not round_runs.is_in_progress(round_ids[1])
 
 
 # --- Waiting for checks, and resuming ---
@@ -434,3 +590,34 @@ async def test_server_startup_resumes_a_round_left_running(
 
     assert await round_status(round_ids[1]) == "review"
     assert len(await stored_matches(round_ids[1])) == 1 * REPETITIONS
+
+
+async def test_a_resumed_run_clears_the_failure_from_before_the_restart(
+    client: httpx.AsyncClient,
+    organiser: dict[str, str],
+    claimed_team: ClaimedTeam,
+    round_ids: dict[int, int],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """While a restart replays a failed round, the console shows it as playing."""
+    await round_with_bots(
+        client, organiser, claimed_team, round_ids[1], [TIT_FOR_TAT, ALWAYS_BETRAY]
+    )
+    monkeypatch.setattr(engine_bridge, "run_round_robin", failing_engine)
+    await start_round(client, organiser, round_ids[1])
+    monkeypatch.undo()
+    assert await run_error(round_ids[1]) is not None
+    seen_while_playing = []
+
+    async def observing_play_round(round_id: int) -> None:
+        seen_while_playing.append(await overview_run(client, organiser))
+
+    monkeypatch.setattr(round_runs, "play_round", observing_play_round)
+
+    async with app.router.lifespan_context(app):
+        for _ in range(600):
+            if seen_while_playing:
+                break
+            await asyncio.sleep(0.05)
+
+    assert seen_while_playing == [("running", "playing", None)]

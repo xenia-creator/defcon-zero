@@ -1,13 +1,14 @@
 """The rounds table: one stage of the event (docs/api.md section 4).
 
 server_time is not stored: it is the current time, added to each response.
-seed is stored but never returned: see the column below.
+seed is stored but never returned: see the column below. cut is returned as
+config.cut, though it is stored in its own column.
 """
 
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import BigInteger, DateTime, UniqueConstraint
+from sqlalchemy import BigInteger, CheckConstraint, DateTime, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -22,6 +23,8 @@ class Round(Base):
         UniqueConstraint("number", name="uq_rounds_number"),
         allowed_values("game", Game),
         allowed_values("status", RoundStatus),
+        # Named "cut_positive"; the naming convention adds the ck_rounds_ prefix.
+        CheckConstraint("cut >= 1", name="cut_positive"),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -35,9 +38,22 @@ class Round(Base):
     # JSONB because the app always reads config as a whole and its keys belong
     # to the API schema, so separate columns would only add migrations.
     config: Mapped[dict[str, Any]] = mapped_column(JSONB)
+    # How many teams this round keeps when it is published. Its own column, not a
+    # key in config, because organisers change it during the event and config is
+    # the game's fixed rules. The API still shows it as config.cut, so the
+    # frontend reads all of a round's rules from one place.
+    cut: Mapped[int]
     # Chosen at random when the round starts, and null before. It decides the
     # number of turns and seeds every match, so a retried run replays the same
     # matches. It must stay secret: a team that knew it could work out the last
     # turn and betray on it. The Round schema has no seed field, so it never
     # reaches a response. BigInteger because it is a 63-bit number.
     seed: Mapped[int | None] = mapped_column(BigInteger)
+    # Why the last background run of this round failed, or null if it has not.
+    # Only meaningful while the round is running: the run writes it when it
+    # crashes, and every new run (start, retry, a resume at startup) clears it.
+    # Stored rather than kept in memory so GET /admin/overview can tell "still
+    # playing" from "failed" even in the moment between start committing and the
+    # background run beginning, when nothing is in memory yet. It is not a
+    # status: the round stays running either way (docs/api.md section 4).
+    run_error: Mapped[str | None] = mapped_column(Text)

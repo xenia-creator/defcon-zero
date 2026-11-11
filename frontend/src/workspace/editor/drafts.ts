@@ -7,12 +7,19 @@ import { z } from 'zod'
 import { BLOCKS_MAX_BYTES, CODE_MAX_BYTES } from '../../lib/contract'
 import type { Layout } from '../blocks/layout'
 
-/** What a team builds: hand-written code that defines strategy, plus block modules. */
-export type Agent = { hand_code: string; modules: Layout[] }
+/**
+ * What a team builds, in Rounds 1 and 3 in two ways, both kept so switching tabs loses nothing:
+ * - Write code: hand-written code that defines strategy, plus block modules (Round 1 only);
+ * - Build with blocks: one strategy block layout, from which the whole strategy.py is generated.
+ * `mode` is the open tab, which is what gets submitted. Older drafts have neither field and open in Write code.
+ */
+export type Agent = { hand_code: string; modules: Layout[]; strategy_blocks?: Layout; mode?: 'blocks' | 'code' }
 
 const AgentShape = z.object({
   hand_code: z.string(),
   modules: z.array(z.record(z.string(), z.unknown())),
+  strategy_blocks: z.record(z.string(), z.unknown()).optional(),
+  mode: z.enum(['blocks', 'code']).optional(),
 })
 const Stored = z.object({ agent: AgentShape, saved_at: z.number() })
 
