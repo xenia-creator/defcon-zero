@@ -16,6 +16,8 @@ export type GameInfo = {
   /** The game-theory name, for example Colonel Blotto. */
   also: string
   brief: string
+  /** Extra rules shown under the brief, one paragraph each, such as Round 1's noise. */
+  notes?: string[]
   question: string
   template: string
   /** Used only until the round arrives from the server. */
@@ -42,6 +44,12 @@ function prisonersDilemma(): GameInfo {
     name: gameName('prisoners_dilemma'),
     also: roundByGame('prisoners_dilemma')!.also,
     brief: 'A pot of points sits between two nations. Each secretly chooses to cooperate (share) or betray (grab it). Betrayal tempts, but if both betray, both lose. Played over many turns, so trust, revenge and forgiveness build up.',
+    // Same wording as docs/api.md section 8. The rate must match the engine's DEFAULT_NOISE:
+    // backend/tests/test_rules_noise.py fails if they drift apart.
+    notes: [
+      'Each move has a 5% chance of being flipped by accident, like a false alarm. Your bot sees the move that actually happened.',
+      'Test matches run without flips, so you see exactly what your bot does.',
+    ],
     question: 'Can your bot build trust, and know when to break it?',
     moves: ['C', 'D'],
     blocks: true,

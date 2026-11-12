@@ -40,6 +40,8 @@ async def check_submission(code: str, game: Game) -> SubmissionCheck:
     Our game keys are the engine's game keys, so game passes straight through.
     turns is left to the engine's default: this is a quick test against the sample
     bots, not the real match, and a longer one would make teams wait for no gain.
+    The engine plays these test matches without noise, even in Prisoner's Dilemma,
+    so a team sees exactly what its bot does. Only round runs flip moves.
 
     The engine's result already has the shape of SubmissionCheck. Validating it
     here means a future change to that shape fails loudly, as a crash the caller

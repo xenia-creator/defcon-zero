@@ -6,6 +6,7 @@ the time the start request returns, and no polling is needed.
 """
 
 import asyncio
+from functools import partial
 
 import httpx
 import pytest
@@ -17,7 +18,6 @@ from tests.tournament_helpers import (
     ALWAYS_BETRAY,
     ALWAYS_COOPERATE,
     BAD_SYNTAX,
-    ROUND_SEED,
     TIME_BOMB,
     TIT_FOR_TAT,
     ClaimedTeam,
@@ -33,6 +33,23 @@ from tests.tournament_helpers import (
 )
 
 REPETITIONS = 5  # From SHARED_LIMITS in app/core/rounds.py.
+
+
+def play_without_noise(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Make this test's round play with no noise, so scores are exact.
+
+    Prisoner's Dilemma flips 5% of moves by default. Patching the engine's
+    DEFAULT_NOISE does not work: the matches run in worker processes, which on
+    macOS start fresh and import the engine again, so they never see a change
+    made in this process. noise=0 passed to the engine's call does reach them,
+    as it travels with each match. The bridge looks the function up by name
+    each time it runs a round, so replacing it here is enough.
+    """
+    monkeypatch.setattr(
+        engine_bridge,
+        "run_safe_round_robin",
+        partial(engine_bridge.run_safe_round_robin, noise=0),
+    )
 
 
 async def round_with_bots(
@@ -108,7 +125,7 @@ async def test_turns_come_from_the_seed_and_stay_secret(
     round_ids: dict[int, int],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr("engine.match.DEFAULT_NOISE", 0)
+    play_without_noise(monkeypatch)
     await round_with_bots(
         client, organiser, claimed_team, round_ids[1], [ALWAYS_COOPERATE, ALWAYS_COOPERATE]
     )
@@ -136,15 +153,11 @@ async def test_default_noise_affects_scores_in_a_real_round(
         client, organiser, claimed_team, round_ids[1],
         [ALWAYS_COOPERATE, ALWAYS_COOPERATE],
     )
-    await run_sql(
-        "UPDATE rounds SET seed = :seed WHERE id = :id",
-        seed=ROUND_SEED,
-        id=round_ids[1],
-    )
 
     await start_round(client, organiser, round_ids[1])
 
-    turns = round_runs.turns_for(ROUND_SEED)
+    # start picks the round's seed, so the turns come from the seed it saved.
+    turns = round_runs.turns_for(await round_seed(round_ids[1]))
     scores = dict(await run_sql(
         "SELECT team_id, score FROM standings WHERE round_id = :id",
         id=round_ids[1],
@@ -283,7 +296,7 @@ async def test_the_latest_accepted_submission_plays(
     round_ids: dict[int, int],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr("engine.match.DEFAULT_NOISE", 0)
+    play_without_noise(monkeypatch)
     changer, cooperator = await round_with_bots(
         client, organiser, claimed_team, round_ids[1], [ALWAYS_COOPERATE, ALWAYS_COOPERATE]
     )

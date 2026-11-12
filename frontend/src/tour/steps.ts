@@ -41,7 +41,7 @@ export const TOUR_STEPS: Record<TourScreen, TourStep[]> = {
     },
     {
       target: 'examples',
-      text: 'Stuck? Start from this loads a ready-made strategy for you to change. Identical bots tie, and ties are a coin toss, so make it yours.',
+      text: 'Stuck? Start from this loads a ready-made strategy for you to change. Bots built from the same example score about the same, so make it yours.',
       when: (ctx) => ctx.game !== 'theatre_of_war',
     },
     { target: 'python', text: "The Python your blocks make. It's exactly what the server runs.", when: (ctx) => ctx.mode === 'blocks' },

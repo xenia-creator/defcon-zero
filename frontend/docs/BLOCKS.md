@@ -427,7 +427,7 @@ In Matcher, the sending fallback is unreachable and is left out (every path alre
 
 - A **Start from this** button opens a short list: name, one-line description and block count.
 - Picking one loads it into the canvas, after "This replaces the blocks on your canvas" if the canvas has more than the strategy block. The team then edits and submits it as usual.
-- **There is no one-click submit from an example.** Identical submissions tie, and ties are broken by a random draw. The list carries that note: "A starting point. Change it to make it yours: identical bots tie, and ties are a coin toss."
+- **There is no one-click submit from an example.** Identical submissions score about the same and gain nothing over each other. The list carries that note: "A starting point. Change it to make it yours: bots built from the same example score about the same."
 - Examples that don't fit the block limit are hidden (as `examplesFor` does today).
 
 ## 1.6 Input and field names
@@ -503,7 +503,7 @@ A short guided build for Round 1 and Round 3. Each round's tutorial builds a rea
 - If the window isn't open, it shows "Submit opens when the round's submission window does. Your strategy is saved here until then." and passes with **Finish**.
 
 **The end card**
-- It says the tutorial is done and points at **Start from this** for more ideas, with the tie reminder ("identical bots tie, and ties are a coin toss, so change it to make it yours").
+- It says the tutorial is done and points at **Start from this** for more ideas, with the reminder ("Bots built from the same example score about the same, so make it yours.").
 - It shows **Keep this** / **Put my blocks back**. **Put my blocks back** appears only if the team replayed the tutorial over existing work.
 
 Wording below is what appears on screen. *Highlight* is the outlined target. *Check* is the condition on the layout (names from section 1.6). `S` is the strategy block's statement input (`BODY` in Round 1, `SEND`/`RECEIVE` in Round 3), and a chain means the blocks linked through `next`.
@@ -753,7 +753,7 @@ The claim screen has no map, so there is no map step.
 ### Team workspace (6 steps)
 1. **`topbar-clock`**: "The round and its countdown. When the window closes, your latest accepted version plays."
 2. **`play-mode`**: "Choose how to build: blocks or code (in Round 2, the troop map or code). Whichever tab is open is what you submit."
-3. **`examples`**: "Stuck? Start from this loads a ready-made strategy for you to change. Identical bots tie, and ties are a coin toss, so make it yours." *(Not in Round 2.)*
+3. **`examples`**: "Stuck? Start from this loads a ready-made strategy for you to change. Bots built from the same example score about the same, so make it yours." *(Not in Round 2.)*
 4. **`python`**: "The Python your blocks make. It's exactly what the server runs." *(Blocks mode only.)*
 5. **`submit`**: "Submit sends your strategy. You can submit as often as you like while the window is open."
 6. **`results`**: "Test results against sample bots land here, and every version you've sent is kept below."

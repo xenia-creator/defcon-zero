@@ -591,13 +591,13 @@ function RoundWorkspace({ team, gameKey }: { team: ClaimedTeam; gameKey: string 
     ? windowOpen && !fallen && !busy && placementProblems.length === 0
     : windowOpen && !fallen && !busy && agent !== null && problems === 0 && !tooLong
 
-  /** Asks first when what would be sent is exactly an example: identical bots tie. It never stops the submit. */
+  /** Asks first when what would be sent is exactly an example: identical bots score about the same. It never stops the submit. */
   function submit() {
     const match = !mapMode && outgoingSubmission ? matchingExample(outgoingSubmission.code, gameKey, strategyConfig) : undefined
     if (!match) return void send()
     ask({
       title: 'Submit an example unchanged?',
-      body: `This is exactly the ${match.name} example. Other teams may submit it too, and identical bots tie, broken by a coin toss. Change something to stand out?`,
+      body: `This is exactly the ${match.name} example. Other teams may submit it too, and bots built from the same example score about the same. Change something to stand out?`,
       confirmLabel: 'Submit anyway',
       run: () => void send(),
     })
@@ -1036,6 +1036,7 @@ function RoundWorkspace({ team, gameKey }: { team: ClaimedTeam; gameKey: string 
                 <div className="flex flex-col gap-2 p-4 text-xs">
                   {game.also && <p className="label !text-amber">{game.also}</p>}
                   {game.brief && <p>{game.brief}</p>}
+                  {game.notes?.map((note) => <p key={note}>{note}</p>)}
                   {game.question && <p className="text-muted italic">{game.question}</p>}
                   {moves.length > 0 ? (
                     <p className="text-muted">Moves: {moves.map((m) => moveOption(m, moveLabel(m))).join(' · ')}</p>

@@ -296,8 +296,7 @@ export function TutorialCard({
       <div aria-live="polite" className="flex flex-col gap-2">
         {ended ? (
           <p className="font-label text-sm leading-relaxed text-type-ink">
-            You built a working strategy. For more ideas, open Start from this below the canvas. Identical bots tie, and ties are a coin toss, so change it to
-            make it yours.
+            You built a working strategy. For more ideas, open Start from this below the canvas. Bots built from the same example score about the same, so make it yours.
           </p>
         ) : flash ? (
           <p className="font-label text-sm font-bold text-type-ink">✓ Done</p>
