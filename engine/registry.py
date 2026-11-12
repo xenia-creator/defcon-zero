@@ -101,7 +101,7 @@ def bots_for(game):
     return REGISTRY.bots_for(game)
 
 
-def play_registered(name1, name2, turns, noise=0.0, seed=None, *, game=None, **kwargs):
+def play_registered(name1, name2, turns, noise=None, seed=None, *, game=None, **kwargs):
     """Play two registered bots. They must belong to the same game."""
     if game is None:
         games1 = {item.key: item for item in REGISTRY.games_for(name1)}

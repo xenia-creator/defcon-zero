@@ -4,7 +4,7 @@ import copy
 import random
 import hashlib
 
-from .noise import apply_noise
+from .noise import DEFAULT_NOISE, apply_noise, validate_noise
 from .games import get_game
 
 
@@ -86,7 +86,7 @@ def _forfeit_result(game, turns, side, reason, history1, history2):
     }
 
 
-def play_match(bot1, bot2, game, turns, noise=0.0, seed=None, *, guard=False,
+def play_match(bot1, bot2, game, turns, noise=None, seed=None, *, guard=False,
                timeout=None, bot_random_seeds=None):
     """Play `turns` rounds of `game`.
 
@@ -94,7 +94,8 @@ def play_match(bot1, bot2, game, turns, noise=0.0, seed=None, *, guard=False,
     copy of the moves actually played so far, oldest first. Noise is applied
     before a move is scored. The histories record the scored moves.
 
-    A seed makes the match repeatable, including bots that use `random`.
+    When omitted, noise defaults to 7% for Prisoner's Dilemma and 0% for
+    other games. A seed makes the match repeatable, including bots that use `random`.
     `guard=True` turns an invalid action, a crash, or a `timeout` into the
     game's forfeit score. Leave it off when the caller (the sandbox) handles
     those failures itself. A `timeout` implies `guard`.
@@ -104,6 +105,9 @@ def play_match(bot1, bot2, game, turns, noise=0.0, seed=None, *, guard=False,
     game = get_game(game)
     if not getattr(game, "configured", True):
         raise NotImplementedError(f"{game.name} rules are pending team approval")
+    if noise is None:
+        noise = DEFAULT_NOISE if game.key == "prisoners_dilemma" else 0.0
+    validate_noise(noise)
     if noise and game.key != "prisoners_dilemma":
         raise ValueError(f"noise is not defined for {game.name}")
     if bot_random_seeds is not None and len(bot_random_seeds) != 2:
