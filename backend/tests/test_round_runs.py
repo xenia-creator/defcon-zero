@@ -17,6 +17,7 @@ from tests.tournament_helpers import (
     ALWAYS_BETRAY,
     ALWAYS_COOPERATE,
     BAD_SYNTAX,
+    ROUND_SEED,
     TIME_BOMB,
     TIT_FOR_TAT,
     ClaimedTeam,
@@ -105,7 +106,9 @@ async def test_turns_come_from_the_seed_and_stay_secret(
     organiser: dict[str, str],
     claimed_team: ClaimedTeam,
     round_ids: dict[int, int],
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    monkeypatch.setattr("engine.match.DEFAULT_NOISE", 0)
     await round_with_bots(
         client, organiser, claimed_team, round_ids[1], [ALWAYS_COOPERATE, ALWAYS_COOPERATE]
     )
@@ -121,6 +124,40 @@ async def test_turns_come_from_the_seed_and_stay_secret(
     turns = round_runs.turns_for(seed)
     assert 150 <= turns <= 250
     assert {m.score_a for m in await stored_matches(round_ids[1])} == {3.0 * turns}
+
+
+async def test_default_noise_affects_scores_in_a_real_round(
+    client: httpx.AsyncClient,
+    organiser: dict[str, str],
+    claimed_team: ClaimedTeam,
+    round_ids: dict[int, int],
+) -> None:
+    teams = await round_with_bots(
+        client, organiser, claimed_team, round_ids[1],
+        [ALWAYS_COOPERATE, ALWAYS_COOPERATE],
+    )
+    await run_sql(
+        "UPDATE rounds SET seed = :seed WHERE id = :id",
+        seed=ROUND_SEED,
+        id=round_ids[1],
+    )
+
+    await start_round(client, organiser, round_ids[1])
+
+    turns = round_runs.turns_for(ROUND_SEED)
+    scores = dict(await run_sql(
+        "SELECT team_id, score FROM standings WHERE round_id = :id",
+        id=round_ids[1],
+    ))
+    theoretical_match_score = 3 * turns
+    theoretical_total_score = theoretical_match_score * REPETITIONS
+
+    assert set(scores) == {team.id for team in teams}
+    assert all(
+        abs(score - theoretical_total_score) <= theoretical_total_score * 0.1
+        for score in scores.values()
+    )
+    assert any(score != theoretical_total_score for score in scores.values())
 
 
 def test_turns_for_stays_in_range_and_repeats_for_the_same_seed() -> None:
@@ -244,7 +281,9 @@ async def test_the_latest_accepted_submission_plays(
     organiser: dict[str, str],
     claimed_team: ClaimedTeam,
     round_ids: dict[int, int],
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    monkeypatch.setattr("engine.match.DEFAULT_NOISE", 0)
     changer, cooperator = await round_with_bots(
         client, organiser, claimed_team, round_ids[1], [ALWAYS_COOPERATE, ALWAYS_COOPERATE]
     )
