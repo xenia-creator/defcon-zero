@@ -16,13 +16,13 @@ class SequenceRng:
         return next(self.values)
 
 
-def test_default_prisoners_dilemma_noise_is_seven_percent():
-    assert DEFAULT_NOISE == 0.07
+def test_default_prisoners_dilemma_noise_is_five_percent():
+    assert DEFAULT_NOISE == 0.05
 
 
 @pytest.mark.parametrize(("move", "expected"), [("C", "D"), ("D", "C")])
 def test_noise_can_flip_cooperation_and_betrayal(move, expected):
-    assert apply_noise(move, ("C", "D"), DEFAULT_NOISE, SequenceRng([0.069])) == expected
+    assert apply_noise(move, ("C", "D"), DEFAULT_NOISE, SequenceRng([0.049])) == expected
 
 
 def test_zero_noise_never_changes_actions_or_draws_randomness():
@@ -41,7 +41,7 @@ def test_invalid_noise_probabilities_are_rejected(noise):
         apply_noise("C", ("C", "D"), noise, SequenceRng([]))
 
 
-@pytest.mark.parametrize("noise", [True, "0.07", None])
+@pytest.mark.parametrize("noise", [True, "0.05", None])
 def test_non_numeric_noise_probabilities_are_rejected(noise):
     with pytest.raises(TypeError, match="noise must be a number"):
         apply_noise("C", ("C", "D"), noise, SequenceRng([]))
@@ -77,7 +77,7 @@ def test_sandbox_match_uses_default_prisoners_dilemma_noise():
     cooperate = "def strategy(my_history, opp_history):\n    return 'C'\n"
     result = play_safe_match(
         "first", "second", {"first": cooperate, "second": cooperate},
-        PRISONERS_DILEMMA, 1, seed=18,
+        PRISONERS_DILEMMA, 1, seed=21,
     )
 
     assert result["history1"] == ["D"]

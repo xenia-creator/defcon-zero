@@ -2,13 +2,13 @@
 
 The match owns a private random stream. Bots keep using the global `random`
 module, which `play_match` seeds separately. The default Prisoner's Dilemma
-noise probability is 7%.
+noise probability is 5%.
 """
 
 import math
 
 
-DEFAULT_NOISE = 0.07
+DEFAULT_NOISE = 0.05
 
 
 def validate_noise(noise):

@@ -100,7 +100,7 @@ async def run_round_robin(
     passed in play: the engine never adds built-in bots to a round robin.
 
     include_self_play is False because a team playing itself would earn points no
-    opponent gave it. Noise uses the engine's game-aware default: 7% for
+    opponent gave it. Noise uses the engine's game-aware default: 5% for
     Prisoner's Dilemma and none for Theatre of War or Foreign Aid.
 
     The result is validated here, as in check_submission, so a change to the

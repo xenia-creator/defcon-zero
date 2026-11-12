@@ -32,7 +32,7 @@ turn-count information.
 
 Actions are `"C"` and `"D"`. The existing payoff matrix and ten built-in
 strategies are preserved. By default, each selected action independently has
-a 7% chance of being flipped before scoring. A seed makes this noise
+a 5% chance of being flipped before scoring. A seed makes this noise
 reproducible; callers may pass `noise=0` to disable it. See
 [rules.md](../docs/rules.md).
 

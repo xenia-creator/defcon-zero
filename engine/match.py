@@ -94,7 +94,7 @@ def play_match(bot1, bot2, game, turns, noise=None, seed=None, *, guard=False,
     copy of the moves actually played so far, oldest first. Noise is applied
     before a move is scored. The histories record the scored moves.
 
-    When omitted, noise defaults to 7% for Prisoner's Dilemma and 0% for
+    When omitted, noise defaults to 5% for Prisoner's Dilemma and 0% for
     other games. A seed makes the match repeatable, including bots that use `random`.
     `guard=True` turns an invalid action, a crash, or a `timeout` into the
     game's forfeit score. Leave it off when the caller (the sandbox) handles

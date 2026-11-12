@@ -25,7 +25,7 @@ score.
 | D | 5, 0 | 1, 1 |
 
 Before scoring, each player's selected action is independently flipped
-(`C` to `D` or `D` to `C`) with probability 0.07. The played actions are
+(`C` to `D` or `D` to `C`) with probability 0.05. The played actions are
 recorded in history. A match seed makes noise reproducible; callers may pass
 `noise=0` to disable it.
 
