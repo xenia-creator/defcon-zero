@@ -134,6 +134,11 @@ describe('waiting for the screen to be free', () => {
     expect(screenBusy()).toBe(true)
   })
 
+  it('waits for the winner flash', () => {
+    document.body.innerHTML = '<div data-testid="winner-flash" role="status"></div>'
+    expect(screenBusy()).toBe(true)
+  })
+
   it('waits for a confirm dialog, but not for its own popover or a non-modal card', () => {
     document.body.innerHTML = '<div role="dialog" aria-modal="true">Lock in?</div>'
     expect(screenBusy()).toBe(true)

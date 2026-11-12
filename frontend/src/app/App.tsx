@@ -9,6 +9,7 @@ import { windowRemaining, useServerNow } from '../lib/clock'
 import { useCurrentRound, useTeam } from '../lib/queries'
 import { gameName } from '../lib/rounds'
 import { WarMapPreview } from '../warmap/WarMapPreview'
+import { WinnerFlash } from '../warmap/WinnerFlash'
 import { ClaimCountry } from '../workspace/auth/ClaimCountry'
 import { Login } from '../workspace/auth/Login'
 import { OrganiserConsole } from '../workspace/organiser/OrganiserConsole'
@@ -168,6 +169,8 @@ function Shell({ session }: { session: Session }) {
       <ZoneOverlay round={round} />
       {/* Not over the Command Console: it would cover the controls the organiser just used */}
       <RoundIntro round={round} enabled={view !== 'command'} />
+      {/* The tournament's one full-screen winner announcement: every role, every view, the console included */}
+      <WinnerFlash round={round} />
     </div>
   )
 }

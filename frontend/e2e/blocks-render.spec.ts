@@ -134,7 +134,7 @@ test('every text field sits inside its block, and fields on a row never overlap'
   await page.setViewportSize({ width: 1366, height: 768 })
   await round3With(page, TEXT_HEAVY)
   const canvas = page.locator('.injectionDiv > svg.blocklySvg .blocklyBlockCanvas')
-  await expect(canvas).toContainText("opponent's average")
+  await expect(canvas).toContainText('on average, what the opponent')
   await expect(canvas).toContainText('this is my first time')
   expect(await textProblems(page)).toEqual([])
 })

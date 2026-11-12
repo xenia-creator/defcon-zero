@@ -160,7 +160,13 @@ test('Round 3: it walks all 7 steps to Grudger with a fair send-back, and the cl
   await expectStep(page, 5, 'Stop trusting them')
   await loadCanvas(page, 'foreign_aid', fa({ sd: 10, send: ifThen(short, sendZero) }))
   await expectStep(page, 6, 'Be fair when receiving')
-  // "what the opponent sent last" dropped on the shadow 5: it replaces it, with nothing loose
+  // The look-alike block, the one a tester dropped by mistake: the step waits and the hint names both
+  const backWith = (type: string) => ({ type: 'fa_return', inputs: { AMOUNT: { block: { type }, ...shadow(5) } } })
+  await loadCanvas(page, 'foreign_aid', fa({ sd: 10, send: ifThen(short, sendZero), receive: backWith('fa_opp_returned_last') }))
+  await expect(card(page)).toContainText('That\'s "returned last". This step needs "gave me last".')
+  await expectStep(page, 6, 'Be fair when receiving')
+  await expect(page.locator('.injectionDiv > svg.blocklySvg .blocklyBlockCanvas')).toContainText('what the opponent returned last')
+  // "what the opponent gave me last" dropped on the shadow 5: it replaces it, with nothing loose
   await loadCanvas(page, 'foreign_aid', fa({ sd: 10, send: ifThen(short, sendZero), receive: { type: 'fa_return', inputs: { AMOUNT: { block: { type: 'fa_opp_sent_last' }, ...shadow(5) } } } }))
   await expectStep(page, 7, 'Send it')
   await expect(python(page)).toContainText('return legal_return((opp_sent[-1] if opp_sent else 0), received)')

@@ -61,22 +61,22 @@ export const EXAMPLES: Record<string, Example[]> = {
   foreign_aid: [
     {
       name: 'Break Even',
-      about: 'Sends 5. When receiving, sends back exactly what was sent, so the sender never loses and you keep the bonus.', weakness: 'Weakness: it keeps sending 5 to an opponent who never sends anything back.',
+      about: 'Sends 5. When receiving, sends back exactly what was sent, so the sender never loses and you keep the bonus.', weakness: 'Weakness: it keeps sending 5 to an opponent who never returns anything.',
       strategy: fa(undefined, 5, sendBack({ type: 'fa_opp_sent_last' })),
     },
     {
       name: 'Mirror',
-      about: 'Sends 10 while the opponent pays back at least what you sent last time, otherwise only 2. Sends back half.', weakness: 'Weakness: an opponent can short-change a 10, repay the next 2 in full, and get 10 again.',
+      about: 'Sends 10 while the opponent returns at least what you sent last time, otherwise only 2. Sends back half.', weakness: 'Weakness: an opponent can short-change a 10, return the next 2 in full, and get 10 again.',
       strategy: fa(ifThen(compare({ type: 'fa_opp_returned_last' }, 'GTE', { type: 'fa_my_last', fields: { WHAT: 'SEND' } }), send(num(10))), 2),
     },
     {
       name: 'Grudger',
-      about: 'Sends 10 until the opponent ever sends back less than you sent, then sends nothing. Sends back half.', weakness: 'Weakness: one stingy send-back, even early, ends the trust and its bonus for good.',
+      about: 'Sends 10 until the opponent ever returns less than you sent, then sends nothing. Sends back half.', weakness: 'Weakness: one stingy return, even early, ends the trust and its bonus for good.',
       strategy: fa(ifThen({ type: 'fa_opp_ever_short' }, send(num(0))), 10),
     },
     {
       name: 'Matcher',
-      about: "Sends 10 the first time, then the opponent's average send. Sends back half.", weakness: 'Weakness: it never sends more than the opponent does, so two careful bots stay low.',
+      about: "Sends 10 the first time, then what the opponent gave on average. Sends back half.", weakness: 'Weakness: it never sends more than the opponent does, so two careful bots stay low.',
       strategy: fa(ifThen({ type: 'fa_first_time' }, send(num(10)), send({ type: 'fa_opp_avg', fields: { WHAT: 'SEND' } })), 5),
     },
   ],

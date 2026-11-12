@@ -74,11 +74,12 @@ export function markerVisible(target: string, doc: Document = document): boolean
 }
 
 /**
- * True while something else owns the screen: the round intro or a confirm dialog. The tour waits.
+ * True while something else owns the screen: the round intro, the winner flash or a confirm dialog. The tour waits.
  * Loading and error states are each screen's own `ready` flag (see useTour).
  */
 export function screenBusy(doc: Document = document): boolean {
-  if (doc.querySelector('[data-testid="round-intro"]')) return true
+  // The round intro and the winner flash (warmap/WinnerFlash.tsx) each cover the whole screen
+  if (doc.querySelector('[data-testid="round-intro"], [data-testid="winner-flash"]')) return true
   return Array.from(doc.querySelectorAll('[role="dialog"][aria-modal="true"]')).some((el) => !el.closest('.driver-popover'))
 }
 

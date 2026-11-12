@@ -3,8 +3,8 @@
  * (each standing team submits every round, so the scores are real ones), the organiser runs
  * open -> start -> publish through the contract routes (docs/api.md sections 2, 4, 5), and the board
  * then names the winner and runner-up from GET /standings (section 6).
- * Playwright sets navigator.webdriver, so the full-screen winner reveal must never render here;
- * the permanent banner is not gated and must show. Fails if the page throws at any point.
+ * Playwright sets navigator.webdriver, so the full-screen winner flash (app-level WinnerFlash) must
+ * never render here; the permanent banner is not gated and must show. Fails if the page throws at any point.
  */
 import { expect, test as base, type APIRequestContext, type Page } from '@playwright/test'
 
@@ -83,7 +83,7 @@ async function playTournament(api: APIRequestContext) {
 }
 
 test.describe('the winner on the war map', () => {
-  test('after Round 3 is published: banner above the final standings, no full-screen reveal under automation', async ({ page }) => {
+  test('after Round 3 is published: banner above the final standings, no full-screen flash under automation', async ({ page }) => {
     await mock(page, 'demo')
     const standings = await playTournament(page.request)
 
@@ -124,15 +124,17 @@ test.describe('the winner on the war map', () => {
     const rowBox = (await firstRow.boundingBox())!
     expect(bannerBox.y + bannerBox.height).toBeLessThanOrEqual(rowBox.y)
 
-    // Under webdriver the full-screen reveal never renders, not even after the polls settle
+    // Under webdriver the full-screen flash never renders, not even after the polls settle, and
+    // nothing winner-related is stored (the flash uses sessionStorage, and only when it plays)
     await page.waitForTimeout(2_500)
-    await expect(page.getByTestId('winner-reveal')).toHaveCount(0)
-    expect(await page.evaluate(() => Object.keys(localStorage).filter((k) => k.startsWith('dz.winner.')))).toEqual([])
+    await expect(page.getByTestId('winner-flash')).toHaveCount(0)
+    expect(await page.evaluate(() => Object.keys(localStorage).filter((k) => k.startsWith('dz.winner')))).toEqual([])
+    expect(await page.evaluate(() => Object.keys(sessionStorage).filter((k) => k.startsWith('dz.winner')))).toEqual([])
 
     // Not gated by localStorage: still there on the next visit
     await page.reload()
     await expect(page.getByTestId('winner-banner')).toBeVisible()
-    await expect(page.getByTestId('winner-reveal')).toHaveCount(0)
+    await expect(page.getByTestId('winner-flash')).toHaveCount(0)
   })
 
   test('no banner before the final round is published', async ({ page }) => {
@@ -146,6 +148,6 @@ test.describe('the winner on the war map', () => {
     await expect(board).toBeVisible()
     await page.waitForTimeout(2_500)
     await expect(page.getByTestId('winner-banner')).toHaveCount(0)
-    await expect(page.getByTestId('winner-reveal')).toHaveCount(0)
+    await expect(page.getByTestId('winner-flash')).toHaveCount(0)
   })
 })
