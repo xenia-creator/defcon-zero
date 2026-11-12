@@ -125,10 +125,13 @@ export const useTerritoryList = () =>
  * GET /standings (public). Published results only. null means no round has started yet (404);
  * `nations: []` means nothing has been published yet. While a round runs or is in review it keeps
  * the last published results.
+ * `enabled` false skips it: the app-level winner flash reads it only once the final round is
+ * published, so a team (which never sees the leaderboard) doesn't poll it all event.
  */
-export const useStandings = () =>
+export const useStandings = (enabled = true) =>
   useQuery({
     queryKey: keys.standings,
+    enabled,
     refetchInterval: STANDINGS_POLL_MS,
     staleTime: 0,
     retry: false,

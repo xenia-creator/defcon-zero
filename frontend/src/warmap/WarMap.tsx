@@ -8,7 +8,7 @@ import { nationColour } from './palette'
 import { territoryCrop, territoryName } from './territoryCrop'
 import type { MapNotice, MapRound, MapTerritory, StandingsNation, TeamStatus, TroopMovement } from './types'
 import type { FinalResult } from './winner'
-import { TerritoryPlate } from './WinnerReveal'
+import { TerritoryPlate } from './TerritoryPlate'
 import './WarMap.css'
 
 const STATUS_LABELS: Record<TeamStatus, string> = {
@@ -348,7 +348,7 @@ export function WarMap({
                 </>
               )}
             </header>
-            {/* The final result, above the final standings: every visit, never gated like the reveal */}
+            {/* The final result, above the final standings: every visit, never gated like the winner flash */}
             {final && <WinnerBanner final={final} territories={territories} />}
             {board.kind === 'awaiting' || rows.length === 0 ? (
               // Nothing published yet: a dossier with its standings censored, so the empty board reads as intentional
@@ -419,7 +419,7 @@ export function WarMapFault({ onRetry, retrying }: { onRetry: () => void; retryi
 
 /**
  * The winner, typed onto the board above the final standings with a victor's stamp, and the
- * runner-up beneath it, smaller. The once-only full-screen moment is WinnerReveal.
+ * runner-up beneath it, smaller. The full-screen moment is the app-level WinnerFlash.
  */
 function WinnerBanner({ final, territories }: { final: FinalResult; territories: MapTerritory[] }) {
   const { winner, runnerUp } = final
@@ -638,7 +638,7 @@ function useTerritoryPulses(nations: StandingsNation[], claimedCodes: string[]):
 // Scores are floats (Theatre of War gives half points, api.md §8). Fixed locale so the projector
 // reads the same whatever machine drives it; up to two decimals, so nothing the server sent is hidden.
 const SCORE_FORMAT = new Intl.NumberFormat('en-GB', { maximumFractionDigits: 2 })
-function formatScore(score: number) {
+export function formatScore(score: number) {
   return SCORE_FORMAT.format(score)
 }
 
