@@ -137,7 +137,7 @@ test('Round 1: started with the button, it walks all 7 steps to Forgiving Tit fo
   expect(await (await mock(page, 'submissions')).json()).toHaveLength(0)
   await page.getByRole('button', { name: 'Submit strategy' }).click()
   await expect(card(page)).toContainText('Tutorial done')
-  await expect(card(page)).toContainText('ties are a coin toss')
+  await expect(card(page)).toContainText('Bots built from the same example score about the same, so make it yours.')
   await expect(card(page).getByRole('button', { name: 'Put my blocks back' })).toHaveCount(0)
   await card(page).getByRole('button', { name: 'Keep this' }).click()
   await expect(card(page)).toHaveCount(0)

@@ -44,7 +44,7 @@ const fa = (sending: BlockState | undefined, SEND_DEFAULT: number, receiving?: B
 export type Example = { name: string; about: string; weakness: string; strategy: BlockState }
 
 /** Shown with the list: identical submissions tie, and ties are broken by a random draw. */
-export const EXAMPLES_NOTE = 'A starting point. Change it to make it yours: identical bots tie, and ties are a coin toss.'
+export const EXAMPLES_NOTE = 'A starting point. Change it to make it yours: bots built from the same example score about the same.'
 
 export const EXAMPLES: Record<string, Example[]> = {
   prisoners_dilemma: [
@@ -113,7 +113,7 @@ const normalise = (code: string) =>
     .trim()
 
 /**
- * The example whose strategy.py this exactly is, if any: identical bots tie, so a team is told before
+ * The example whose strategy.py this exactly is, if any: identical bots score about the same, so a team is told before
  * submitting one unchanged. `config` is the round's, since Round 3 writes its limits into the file.
  */
 export function matchingExample(code: string, game: string, config: StrategyConfig): Example | undefined {

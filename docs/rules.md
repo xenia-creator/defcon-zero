@@ -24,6 +24,11 @@ score.
 | C | 3, 3 | 0, 5 |
 | D | 5, 0 | 1, 1 |
 
+Before scoring, each player's selected action is independently flipped
+(`C` to `D` or `D` to `C`) with probability 0.05. The played actions are
+recorded in history. A match seed makes noise reproducible; callers may pass
+`noise=0` to disable it.
+
 The existing ten built-in strategies retain their intent using the `C`/`D`
 contract. A forfeiting bot receives zero; its opponent receives 3 points per
 configured match turn.

@@ -40,6 +40,8 @@ async def check_submission(code: str, game: Game) -> SubmissionCheck:
     Our game keys are the engine's game keys, so game passes straight through.
     turns is left to the engine's default: this is a quick test against the sample
     bots, not the real match, and a longer one would make teams wait for no gain.
+    The engine plays these test matches without noise, even in Prisoner's Dilemma,
+    so a team sees exactly what its bot does. Only round runs flip moves.
 
     The engine's result already has the shape of SubmissionCheck. Validating it
     here means a future change to that shape fails loudly, as a crash the caller
@@ -100,8 +102,8 @@ async def run_round_robin(
     passed in play: the engine never adds built-in bots to a round robin.
 
     include_self_play is False because a team playing itself would earn points no
-    opponent gave it. Noise is left at the engine's default of none, which is the
-    only value Theatre of War accepts.
+    opponent gave it. Noise uses the engine's game-aware default: 5% for
+    Prisoner's Dilemma and none for Theatre of War or Foreign Aid.
 
     The result is validated here, as in check_submission, so a change to the
     engine's shape fails loudly instead of being saved as wrong matches.

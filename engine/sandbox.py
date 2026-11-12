@@ -24,6 +24,7 @@ from .blotto_strategies import BLOTTO_BOTS
 from .foreign_aid_strategies import FOREIGN_AID_BOTS
 from .games import GAMES, PRISONERS_DILEMMA, get_game
 from .match import play_match
+from .noise import validate_noise
 from .strategies import BUILT_IN_BOTS
 from .tournament import match_seed, schedule, summarize
 
@@ -427,7 +428,7 @@ def _run_in_pool(matches, sources, game, turns, noise, seed, record=False):
     return outcomes
 
 
-def run_safe_round_robin(bot_codes, game, turns, repetitions=1, noise=0.0, seed=None,
+def run_safe_round_robin(bot_codes, game, turns, repetitions=1, noise=None, seed=None,
                          include_self_play=True):
     """Like run_round_robin, but bots are code strings run in worker processes.
 
@@ -447,10 +448,8 @@ def run_safe_round_robin(bot_codes, game, turns, repetitions=1, noise=0.0, seed=
         raise TypeError("turns must be an integer")
     if turns < 1:
         raise ValueError("turns must be at least 1")
-    if isinstance(noise, bool) or not isinstance(noise, (int, float)):
-        raise TypeError("noise must be a number")
-    if not math.isfinite(noise) or not 0 <= noise <= 1:
-        raise ValueError("noise must be between 0 and 1")
+    if noise is not None:
+        validate_noise(noise)
     if not isinstance(include_self_play, bool):
         raise TypeError("include_self_play must be a bool")
 
@@ -522,7 +521,7 @@ def run_safe_round_robin(bot_codes, game, turns, repetitions=1, noise=0.0, seed=
     return summary
 
 
-def play_safe_match(name1, name2, bot_codes, game, turns, noise=0.0, seed=None):
+def play_safe_match(name1, name2, bot_codes, game, turns, noise=None, seed=None):
     """Play one match between two bots in the sandbox and keep the full record.
 
     bot_codes maps name -> code or built-in name, as in run_safe_round_robin.

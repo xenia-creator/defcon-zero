@@ -1,9 +1,10 @@
 # DEFCON Zero API Contract
 
-Status: draft v5.6. Changes in v5.6 are marked **[v5.6]**, changes in v5.5 are marked **[v5.5]**, changes in v5.4 are marked **[v5.4]**, changes in v5.3 are marked **[v5.3]**, changes in v5.2 are marked **[v5.2]**, changes in v5.1 are marked **[v5.1]**, and changes in v5 are marked **[v5]**. Older **[v4]** markers are from v4, and **[NEW]** and **[CHANGED]** markers are from v3.
+Status: draft v5.7. Changes in v5.7 are marked **[v5.7]**, changes in v5.6 are marked **[v5.6]**, changes in v5.5 are marked **[v5.5]**, changes in v5.4 are marked **[v5.4]**, changes in v5.3 are marked **[v5.3]**, changes in v5.2 are marked **[v5.2]**, changes in v5.1 are marked **[v5.1]**, and changes in v5 are marked **[v5]**. Older **[v4]** markers are from v4, and **[NEW]** and **[CHANGED]** markers are from v3.
 Owner: Sumedh (backend). Engine signatures owned by Shashwat.
 
 Changelog:
+- v5.7: Prisoner's Dilemma round matches have 5% noise: each move may be flipped by accident before it is scored, and the flipped move is the one recorded in history. Test matches in `check.test_results` play 50 turns without noise. No request or response shape changes. The `check.test_results` example now shows real 50-turn scores.
 - v5.6: `GET /admin/overview`'s round gains `run_state` (`"playing"` or `"failed"`) and `run_error`, so the console can tell a round whose matches are still playing from one whose run failed and needs `retry`. Both are `null` unless the round is `running`. The round's status machine does not change.
 - v5.5: Each round stores its own cut, shown as `config.cut` and as `cut` on `GET /admin/overview`'s round. `PATCH /admin/rounds/{id}` changes a round's cut until it is published, except the final round's, which is fixed at 2. `POST /admin/rounds/{id}/set-time` sets an open round to close a given number of minutes from now, so it can shorten the window as well as lengthen it. `publish` applies the round's stored cut.
 - v5.4: `POST /admin/rounds/{id}/extend` adds `minutes` to the later of `closes_at` and now, so extending a window that has already ended gives teams real time instead of leaving `closes_at` in the past.
@@ -244,8 +245,8 @@ All return the updated Round object. Invalid transitions return `409 INVALID_ROU
   "check": {
     "error": null,
     "test_results": [
-      { "opponent": "always_cooperate", "my_score": 600, "opp_score": 0 },
-      { "opponent": "tit_for_tat", "my_score": 600, "opp_score": 600 }
+      { "opponent": "always_cooperate", "my_score": 150, "opp_score": 150 },
+      { "opponent": "tit_for_tat", "my_score": 150, "opp_score": 150 }
     ]
   },
   "server_time": "2026-11-12T10:20:15Z"
@@ -255,7 +256,7 @@ All return the updated Round object. Invalid transitions return `409 INVALID_ROU
 - **[NEW] `blocks`:** the Blockly workspace JSON, stored alongside the generated Python so old versions can be reopened in the editor. Python cannot be converted back into blocks, so both are stored. `modules` holds at most `config.max_modules` items (3), validated on the server.
 - `status`: `pending` → `running` → `accepted` or `rejected`.
 - `check.error`: set when `rejected` (syntax error, timeout, invalid move).
-- `check.test_results`: results of test matches against sample bots. This replaces separate practice routes for now. **[v5.1]** It has one entry per sample bot for the round's game. It is empty when the code never ran, for example a syntax error. A bot that fails during a match is `rejected`, and its `test_results` are still included.
+- `check.test_results`: results of test matches against sample bots. This replaces separate practice routes for now. **[v5.1]** It has one entry per sample bot for the round's game. It is empty when the code never ran, for example a syntax error. A bot that fails during a match is `rejected`, and its `test_results` are still included. **[v5.7]** Test matches play 50 turns and run without noise, so the scores show exactly what the bot does. The example above is a Tit for Tat bot: it cooperates every turn with both sample bots, scoring 3 per turn.
 - **[NEW]** `check.test_results[].opponent` is the engine identifier of the sample bot, for example `tit_for_tat`, `even_split`, `always_send_0_return_0`. **[v5.1]**
 - Submissions are **never overwritten**; every submit creates a new version.
 - **The latest `accepted` submission created before `closes_at` is the one that plays.**
@@ -451,6 +452,16 @@ Response `200`:
 **[v5.1]** All three games are in the engine, so a submission is checked for whichever game its round uses.
 
 ### Prisoner's Dilemma
+
+**[v5.7]** Each move has a 5% chance of being flipped by accident, like a false alarm. Your bot sees the move that actually happened.
+
+Noise rules:
+
+- The rate is 5% per move, for each bot independently. A flipped `C` is played as `D`, and a flipped `D` as `C`, before the turn is scored.
+- It applies to the round's matches only. Test matches in `check.test_results` run without noise.
+- `my_history` and `opp_history` record the moves actually played, flipped ones included.
+- A flipped move is never an invalid move, a rule break or a bot error: the bot's own move is checked before any flip, so noise never causes a `rejected` status or a `check.error`.
+- Each round run uses a seed, so the same seed replays the same flips.
 
 ```python
 def strategy(my_history, opp_history):

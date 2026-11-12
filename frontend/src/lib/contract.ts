@@ -1,5 +1,5 @@
 /**
- * What the server sends, exactly as written in docs/api.md (v5.6). Every answer is
+ * What the server sends, exactly as written in docs/api.md (v5.7). Every answer is
  * checked against these before use, so a change on the server gives a clear message
  * instead of a broken screen. Keep this file, mock/server.mjs and docs/api.md in step:
  * change one, align the others. Never add a field the contract does not have.

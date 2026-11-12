@@ -50,7 +50,7 @@ class BuiltInsStayAvailableTests(unittest.TestCase):
 
     def test_a_single_match_can_still_use_a_built_in(self):
         r = sandbox.play_safe_match("mine", "ref", {"mine": COOP, "ref": "always_defect"},
-                                    PD, 5, seed=1)
+                                    PD, 5, noise=0, seed=1)
         self.assertEqual((r["score1"], r["score2"], r["forfeit"]), (0, 25, None))
 
     def test_submission_testing_does_not_depend_on_the_tournament_runner(self):

@@ -1024,7 +1024,7 @@ test.describe('build with blocks', () => {
   const startFrom = async (page: Page, name: string) => {
     await page.getByRole('button', { name: 'Start from this' }).click()
     const list = page.getByRole('region', { name: 'Start from this' })
-    await expect(list).toContainText('identical bots tie, and ties are a coin toss')
+    await expect(list).toContainText('bots built from the same example score about the same')
     await list.getByRole('button', { name: new RegExp(`^${name}`) }).click()
   }
 
@@ -1037,7 +1037,7 @@ test.describe('build with blocks', () => {
 
     await submitButton(page).click()
     const dialog = page.getByRole('dialog')
-    await expect(dialog).toContainText('This is exactly the Tit for Tat example. Other teams may submit it too, and identical bots tie, broken by a coin toss. Change something to stand out?')
+    await expect(dialog).toContainText('This is exactly the Tit for Tat example. Other teams may submit it too, and bots built from the same example score about the same. Change something to stand out?')
     await dialog.getByRole('button', { name: 'Cancel' }).click()
     await expect(dialog).toHaveCount(0)
     expect(await (await mock(page, 'submissions')).json()).toEqual([])

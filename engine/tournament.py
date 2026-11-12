@@ -145,7 +145,7 @@ def summarize(names, results, turns, repetitions):
     return {"leaderboard": leaderboard, "matrix": matrix}
 
 
-def run_round_robin(bots, game, turns, repetitions=1, noise=0.0, seed=None,
+def run_round_robin(bots, game, turns, repetitions=1, noise=None, seed=None,
                     include_self_play=True):
     """Every pair of bots plays one match per repetition, and each bot also plays
     a copy of itself. A seed makes the whole tournament repeatable.

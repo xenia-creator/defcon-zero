@@ -1,5 +1,5 @@
 /**
- * A stand-in for the backend that follows docs/api.md v5.5 route for route, with the same
+ * A stand-in for the backend that follows docs/api.md v5.7 route for route, with the same
  * shapes, error codes and round transitions, so every screen can be built and tested
  * without the real server. It does not run bots: checks and match scores are made up
  * (deterministically). Not used at the event.
@@ -614,4 +614,4 @@ const server = createServer((req, res) => {
   })
 })
 
-server.listen(PORT, () => console.log(`Mock backend (docs/api.md v5.5) on http://localhost:${PORT}: team1, team2 or admin, password "${PASSWORD}"${DEMO ? `, demo teams on (${DEMO})` : ''}`))
+server.listen(PORT, () => console.log(`Mock backend (docs/api.md v5.7) on http://localhost:${PORT}: team1, team2 or admin, password "${PASSWORD}"${DEMO ? `, demo teams on (${DEMO})` : ''}`))
